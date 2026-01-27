@@ -3,7 +3,7 @@ import { Candidate, JobDescription } from '../types/types';
 import SkillTag from '../components/common/SkillTag';
 
 const CandidateFitAnalysisPage = ({ candidate, jobResults, onBack, onJobSelect }) => {
-    if (!candidate || !jobResults) {
+    if (!candidate) {
         return (
             <div className="page-content">
                 <button onClick={onBack} className="back-button">
@@ -11,11 +11,13 @@ const CandidateFitAnalysisPage = ({ candidate, jobResults, onBack, onJobSelect }
                 </button>
                 <div className="empty-state large">
                     <h3>Error</h3>
-                    <p>Candidate or job results not found. Please try again.</p>
+                    <p>Candidate information not found. Please try again.</p>
                 </div>
             </div>
         );
     }
+
+    const displayResults = jobResults || [];
     
     return (
         <div className="page-content candidate-fit-analysis-page">
@@ -37,7 +39,7 @@ const CandidateFitAnalysisPage = ({ candidate, jobResults, onBack, onJobSelect }
 
             <div className="job-results-list">
                 <h3>Top Job Matches</h3>
-                {jobResults.length > 0 ? jobResults.map(job => (
+                {displayResults.length > 0 ? displayResults.map(job => (
                     <div key={job.id} className="card job-result-card" onClick={() => onJobSelect(job)}>
                         <div className="job-result-score">
                             <p className="score-value">{job.matchScore}%</p>

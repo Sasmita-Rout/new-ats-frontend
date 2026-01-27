@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
@@ -888,7 +887,6 @@ const App = () => {
             return { rankedCandidates, keywords };
         } catch (error) {
             console.error("AI-powered analysis failed:", error);
-            alert(`An error occurred during AI analysis.`);
             return { rankedCandidates: [], keywords: [] };
         } finally {
             setIsAnalyzingJobId(null);
@@ -1295,30 +1293,43 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onInviteUser={() => setInviteModalOpen(true)}
                     onAddUser={() => { setUserToEdit(null); setUserEditorModalOpen(true); }}
                 />;
+            case 'Recruiter Tools':
+                // Add your RecruiterToolsHubPage component here when ready
+                return <div className="page-content">
+                    <div className="page-header">
+                        <h1>Recruiter Tools Hub</h1>
+                        <p>Access your AI-powered recruitment tools</p>
+                    </div>
+                    <div className="empty-state large">
+                        <span className="material-symbols-outlined">construction</span>
+                        <h3>Coming Soon</h3>
+                        <p>The Recruiter Tools Hub is currently under development.</p>
+                    </div>
+                </div>;
             default:
                 return <div>Page not found</div>;
-        }
-    };
-    
+            }
+        };
     if (!effectiveUser) return <div className="loading-indicator">Initializing user session...</div>;
 
     const isPageAccessible = (pageName: string): boolean => {
-        const permissionMap: { [key: string]: UserPermission } = {
-            'Dashboard': 'Dashboard',
-            'Job Matching': 'Job Matching',
-            'Candidates': 'All Candidates',
-            'Calendar': 'Calendar',
-            'Communications': 'Communications',
-            'Reports': 'Reports',
-            'Settings': 'Settings',
-            'History': 'History',
-            'Manage Users': 'Settings'
-        };
-        const requiredPermission = permissionMap[pageName];
-        if (!requiredPermission) return true;
-        if (effectiveUser.role.includes('Admin')) return true;
-        return effectiveUser.permissions.includes(requiredPermission);
+    const permissionMap: { [key: string]: UserPermission } = {
+        'Dashboard': 'Dashboard',
+        'Job Matching': 'Job Matching',
+        'Candidates': 'All Candidates',
+        'Calendar': 'Calendar',
+        'Communications': 'Communications',
+        'Reports': 'Reports',
+        'Settings': 'Settings',
+        'History': 'History',
+        'Manage Users': 'Settings',
+        'Recruiter Tools': 'All Candidates' // ADD THIS LINE
     };
+    const requiredPermission = permissionMap[pageName];
+    if (!requiredPermission) return true;
+    if (effectiveUser.role.includes('Admin')) return true;
+    return effectiveUser.permissions.includes(requiredPermission);
+};
 
     const renderAccessDenied = () => (
         <div className="page-content">

@@ -17,6 +17,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     const [aiPrompt, setAiPrompt] = useState('');
     const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
     const [bulkSendProgress, setBulkSendProgress] = useState({ active: false, index: 0 });
+    const [manualEmailInput, setManualEmailInput] = useState('');
     
     useEffect(() => {
         if (initialDraft) {
@@ -44,6 +45,40 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     const handleRemoveTarget = (candidateId: number) => {
         const newTargets = emailTargets.filter(c => c.id !== candidateId);
         onUpdateTargets(newTargets);
+    };
+
+    const addManualEmail = () => {
+        if (!manualEmailInput) return;
+        
+        const email = manualEmailInput.trim();
+        if (isValidEmail(email)) {
+            // Check if already exists
+            if (emailTargets.some(c => c.contact?.email === email)) {
+                setManualEmailInput('');
+                return;
+            }
+
+            const newCandidate: any = {
+                id: Date.now(),
+                name: email.split('@')[0],
+                contact: { email: email, phone: '', location: '' },
+                avatar: getInitials(email),
+                skills: [],
+                tags: [],
+                status: 'Applied',
+                title: 'External Contact'
+            };
+            
+            onUpdateTargets([...emailTargets, newCandidate]);
+            setManualEmailInput('');
+        }
+    };
+
+    const handleManualEmailKeyDown = (e: React.KeyboardEvent) => {
+        if (['Enter', 'Tab', ',', ' '].includes(e.key)) {
+            e.preventDefault();
+            addManualEmail();
+        }
     };
 
     const handleGenerateEmail = async (e) => {
@@ -261,18 +296,24 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                             </div>
                              <div className="form-group">
                                 <label htmlFor="to">To</label>
-                                <div id="to" className="recipient-pills-container">
-                                    {emailTargets.length > 0 ? (
-                                        emailTargets.map(candidate => (
-                                            <div key={candidate.id} className={`recipient-pill ${!isValidEmail(candidate.contact.email) ? 'invalid' : ''}`}>
-                                                <span className="pill-name">{candidate.name}</span>
-                                                <span className="pill-email">&lt;{candidate.contact.email || 'No Email'}&gt;</span>
-                                                <button onClick={() => handleRemoveTarget(candidate.id)} className="remove-recipient-btn" title={`Remove ${candidate.name}`}>&times;</button>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <span className="no-recipients-text">No recipients selected</span>
-                                    )}
+                                <div id="to" className="recipient-pills-container" onClick={() => document.getElementById('manual-email-input')?.focus()}>
+                                    {emailTargets.map(candidate => (
+                                        <div key={candidate.id} className={`recipient-pill ${!isValidEmail(candidate.contact?.email) ? 'invalid' : ''}`}>
+                                            <span className="pill-name">{candidate.name}</span>
+                                            <span className="pill-email">&lt;{candidate.contact?.email || 'No Email'}&gt;</span>
+                                            <button onClick={(e) => { e.stopPropagation(); handleRemoveTarget(candidate.id); }} className="remove-recipient-btn" title={`Remove ${candidate.name}`}>&times;</button>
+                                        </div>
+                                    ))}
+                                    <input
+                                        id="manual-email-input"
+                                        type="text"
+                                        value={manualEmailInput}
+                                        onChange={(e) => setManualEmailInput(e.target.value)}
+                                        onKeyDown={handleManualEmailKeyDown}
+                                        onBlur={addManualEmail}
+                                        placeholder={emailTargets.length === 0 ? "Enter email addresses..." : ""}
+                                        style={{ border: 'none', outline: 'none', flexGrow: 1, minWidth: '150px', background: 'transparent', fontSize: '14px' }}
+                                    />
                                 </div>
                             </div>
                         </div>
