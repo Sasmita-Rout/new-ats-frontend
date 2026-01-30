@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
 // Import types
-import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification, ProjectTeamMember } from './types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification, ProjectTeamMember, UserRole } from './types/types';
 
 // Import pages
 import DashboardPage from './pages/DashboardPage';
@@ -16,8 +18,9 @@ import CommunicationsPage from './pages/CommunicationsPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import CalendarPage from './pages/CalendarPage';
-import ManageUsersPage from './pages/ManageUsersPage';
 import HistoryPage from './pages/HistoryPage';
+
+import CandidateFitAnalysisPage from './pages/CandidateFitAnalysisPage';
 
 
 // Import components
@@ -30,17 +33,19 @@ import ResumeUploadModal from './modals/ResumeUploadModal';
 import JDUploadModal from './modals/JDUploadModal';
 import JobEditorModal from './modals/JobEditorModal';
 import MeetingSchedulerModal from './modals/MeetingSchedulerModal';
-import UserEditorModal from './modals/UserEditorModal';
 import ProjectEditorModal from './modals/ProjectEditorModal';
 import AIGenerateJDModal from './modals/AIGenerateJDModal';
 import InviteMemberModal from './modals/InviteMemberModal';
 import AddTeamMemberModal from './modals/AddTeamMemberModal';
+import { ToastConfirm } from './components/common/ToastConfirm';
 
 
 // Import utils
 import { getInitials } from './utils/helpers';
 import { getTextFromFile } from './utils/fileUtils';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
+import authService from './services/authService';
+import { atsApiService } from './services/atsApiService';
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -51,39 +56,22 @@ const App = () => {
     const [allJobDescriptions, setAllJobDescriptions] = useState<JobDescription[]>(() => JSON.parse(localStorage.getItem('accionTalent_jobs') || '[]'));
     const [allProjects, setAllProjects] = useState<Project[]>(() => JSON.parse(localStorage.getItem('accionTalent_projects') || '[]'));
     const [users, setUsers] = useState<User[]>(() => {
-        const savedUsers = localStorage.getItem('accionTalent_users');
-        if (savedUsers) return JSON.parse(savedUsers);
-        const initialAdmin: User = { id: 1, name: 'Sasmita Rout', email: 'sasmitarout.official@gmail.com', password: 'Suchi@2001', role: 'Main Admin', avatar: getInitials('Sasmita Rout'), permissions: ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'] };
-        return [initialAdmin];
+        // Load from localStorage as fallback, but will be updated by SSO API call
+        const saved = localStorage.getItem('accionTalent_users');
+        return saved ? JSON.parse(saved) : [];
     });
+
     const [historyLog, setHistoryLog] = useState<HistoryEntry[]>(() => JSON.parse(localStorage.getItem('accionTalent_history') || '[]'));
     const [invitations, setInvitations] = useState<Invitation[]>(() => JSON.parse(localStorage.getItem('accionTalent_invitations') || '[]'));
     const [notifications, setNotifications] = useState<Notification[]>(() => JSON.parse(localStorage.getItem('accionTalent_notifications') || '[]'));
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
         const saved = localStorage.getItem('accionTalent_companyProfile');
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            // Migration: If name is still AccionTalent, update to AccionLabs
-            if (parsed.name === 'AccionTalent') {
-                return {
-                    ...parsed,
-                    name: 'AccionLabs',
-                    logo: 'https://mma.prnewswire.com/media/1196052/Accion_Labs_Logo.jpg',
-                    industry: 'Technology & Services',
-                    description: 'AccionLabs is an intelligent Applicant Tracking System designed to streamline recruitment and unlock human potential. We help companies find the perfect fit, faster.',
-                    website: 'https://www.accionlabs.com',
-                    email: 'info@accionlabs.com',
-                    linkedin: 'https://www.linkedin.com/company/accion-labs/',
-                    address: '1225 Washington Pike #401, Bridgeville, PA 15017, United States'
-                };
-            }
-            return parsed;
-        }
+        if (saved) return JSON.parse(saved);
         return {
-            name: 'AccionLabs',
-            logo: 'https://mma.prnewswire.com/media/1196052/Accion_Labs_Logo.jpg',
+            name: 'AccionTalent',
+            logo: '',
             industry: 'Technology & Services',
-            description: 'AccionLabs is an intelligent Applicant Tracking System designed to streamline recruitment and unlock human potential. We help companies find the perfect fit, faster.',
+            description: 'AccionTalent is an intelligent Applicant Tracking System designed to streamline recruitment and unlock human potential. We help companies find the perfect fit, faster.',
             website: 'https://www.accionlabs.com',
             email: 'info@accionlabs.com',
             linkedin: 'https://www.linkedin.com/company/accion-labs/',
@@ -91,18 +79,20 @@ const App = () => {
         };
     });
     
-    // --- AUTH & IMPERSONATION STATE ---
-    const [currentUser, setCurrentUser] = useState<User | null>(() => {
-        const saved = sessionStorage.getItem('accionTalent_currentUser');
-        if (saved) return JSON.parse(saved);
-        const defaultAdmin = users[0];
-        if (defaultAdmin) {
-            sessionStorage.setItem('accionTalent_currentUser', JSON.stringify(defaultAdmin));
-            return defaultAdmin;
-        }
-        return null;
-    });
-    const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
+    // --- AUTH STATE ---
+   const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    // Will be set by SSO API call on mount
+    const savedUsers = localStorage.getItem('accionTalent_users');
+    if (savedUsers) {
+        const parsed = JSON.parse(savedUsers);
+        if (parsed.length > 0) return parsed[0];
+    }
+    return null;
+});
+
+    // Loading state for SSO initialization
+    const [isInitializingSSO, setIsInitializingSSO] = useState(true);
+
     
     // --- UI & MODAL STATE ---
     const [currentPage, setCurrentPage] = useState('Dashboard');
@@ -129,8 +119,6 @@ const App = () => {
     const [candidateForMeeting, setCandidateForMeeting] = useState<Candidate | null>(null);
     const [initialEmailDraft, setInitialEmailDraft] = useState<{subject: string, body: string, cc?: string} | null>(null);
     const [candidatesForAnalysis, setCandidatesForAnalysis] = useState<Candidate[]>([]);
-    const [isUserEditorModalOpen, setUserEditorModalOpen] = useState(false);
-    const [userToEdit, setUserToEdit] = useState<Partial<User> | null>(null);
     const [isProjectEditorModalOpen, setProjectEditorModalOpen] = useState(false);
     const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
     const [isAnalyzingJobId, setIsAnalyzingJobId] = useState<number | null>(null);
@@ -140,8 +128,20 @@ const App = () => {
     const [isAddTeamMemberModalOpen, setAddTeamMemberModalOpen] = useState(false);
     const [projectForTeamAdd, setProjectForTeamAdd] = useState<Project | null>(null);
     
+    // Debug: log resume staging and candidates to help trace upload flow
+    React.useEffect(() => {
+        console.debug('stagedResumes changed:', stagedResumes.map(f => ({ name: f.name, size: f.size })));
+    }, [stagedResumes]);
+
+    React.useEffect(() => {
+        console.debug('allCandidates count:', allCandidates.length);
+    }, [allCandidates]);
+    // --- NEW: Candidate Fit Analysis State ---
+    const [candidateForFitAnalysis, setCandidateForFitAnalysis] = useState<Candidate | null>(null);
+    const [jobFitResults, setJobFitResults] = useState<(JobDescription & { matchScore: number })[] | null>(null);
+    
     // --- DERIVED STATE ---
-    const effectiveUser = impersonatedUser || currentUser;
+    const effectiveUser = currentUser;
 
     // --- DATA PERSISTENCE ---
     useEffect(() => { localStorage.setItem('accionTalent_candidates', JSON.stringify(allCandidates)); }, [allCandidates]);
@@ -152,24 +152,227 @@ const App = () => {
     useEffect(() => { localStorage.setItem('accionTalent_invitations', JSON.stringify(invitations)); }, [invitations]);
     useEffect(() => { localStorage.setItem('accionTalent_notifications', JSON.stringify(notifications)); }, [notifications]);
     useEffect(() => { localStorage.setItem('accionTalent_companyProfile', JSON.stringify(companyProfile)); }, [companyProfile]);
+
+    // --- INITIALIZE DEFAULT USER IF NONE EXIST ---
+    useEffect(() => {
+        if (users.length === 0) {
+            // Logic moved to useState initializer to prevent flash of empty state
+        }
+    }, [users.length]);
+
+    // Removed: No longer syncing from localStorage - using SSO API instead
+
+    // --- SSO AUTHENTICATION: Check session status from backend ---
+    // This is the ONLY way ATS should get user info - via cookie-based SSO or SSO token
+    useEffect(() => {
+        let ssoToken: string | null = null;
+        let hasCompleted = false;
+        
+        // Set timeout to prevent infinite loading (2 seconds max - faster response)
+        const timeoutId = setTimeout(() => {
+            if (!hasCompleted) {
+                console.warn('⏱️ SSO check timeout - proceeding with existing user or guest mode');
+                setIsInitializingSSO(false);
+                hasCompleted = true;
+            }
+        }, 2000);
+        
+        // Listen for SSO token from intranet via postMessage
+        const handleMessage = (event: MessageEvent) => {
+            // Accept messages from intranet origin (adjust as needed)
+            const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const allowedOrigins = isDevelopment 
+                ? ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000']
+                : ['https://intranet.accionlabs.com'];
+            
+            if (!allowedOrigins.includes(event.origin)) {
+                return; // Ignore messages from untrusted origins
+            }
+            
+            // Check if message contains SSO token
+            if (event.data && (event.data.sso_token || event.data.type === 'SSO_TOKEN')) {
+                ssoToken = event.data.sso_token || event.data.token;
+                console.log('📨 Received SSO token from intranet');
+                // Trigger session check with token
+                checkSSOSession(ssoToken);
+            }
+        };
+        
+        window.addEventListener('message', handleMessage);
+        
+        const checkSSOSession = async (providedToken?: string | null) => {
+            try {
+                console.log('🔐 Checking SSO session status...');
+                
+                // Check if sso_token is in URL (passed from intranet)
+                const urlParams = new URLSearchParams(window.location.search);
+                const urlToken = urlParams.get('sso_token');
+                
+                // Use provided token, URL token, or try cookie-based
+                const tokenToUse = providedToken || urlToken;
+                
+                // Try API call with token (if available) or cookie-based SSO
+                try {
+                    console.log('🔑 Using SSO token:', tokenToUse ? 'Yes (from ' + (providedToken ? 'postMessage' : 'URL') + ')' : 'No (cookie-based)');
+                    const sessionStatus = await authService.checkSessionStatus(tokenToUse || undefined);
+                    
+                    console.log('📊 Session status response:', { 
+                        authenticated: sessionStatus.authenticated, 
+                        hasUser: !!sessionStatus.user 
+                    });
+                    
+                    if (sessionStatus.authenticated && sessionStatus.user) {
+                        const userData = sessionStatus.user;
+                        console.log('✅ SSO session authenticated:', { 
+                            method: tokenToUse ? 'token' : 'cookie',
+                            name: userData.name, 
+                            email: userData.email, 
+                            role: userData.role 
+                        });
+                        
+                        updateUserFromSSO(userData);
+                        
+                        // Clean up URL token if present
+                        if (urlToken) {
+                            const newUrl = window.location.pathname;
+                            window.history.replaceState({}, '', newUrl);
+                        }
+                        
+                        // Mark as completed and clear loading
+                        if (!hasCompleted) {
+                            hasCompleted = true;
+                            clearTimeout(timeoutId);
+                            setIsInitializingSSO(false);
+                        }
+                        return; // Success, exit early
+                    } else {
+                        console.warn('⚠️ Session status returned:', { 
+                            authenticated: sessionStatus.authenticated, 
+                            hasUser: !!sessionStatus.user,
+                            reason: !sessionStatus.authenticated ? 'Not authenticated' : 'No user data'
+                        });
+                    }
+                } catch (apiError: any) {
+                    console.error('❌ SSO API call failed:', apiError);
+                    console.error('Error details:', {
+                        message: apiError.message,
+                        stack: apiError.stack,
+                        name: apiError.name
+                    });
+                    
+                    // If CORS error, provide helpful message
+                    if (apiError.message?.includes('CORS') || apiError.message?.includes('Failed to fetch')) {
+                        console.error('❌ CORS Error: Backend must allow requests from:', window.location.origin);
+                        console.log('💡 Configure backend CORS to allow:', window.location.origin);
+                        console.log('💡 API URL being called:', `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/sso_backend'}/api/auth/session-status`);
+                    }
+                }
+                
+                // If we get here, no valid session found
+                console.log('⚠️ No active SSO session - user not authenticated');
+                // Clear loading state even if no session found
+                if (!hasCompleted) {
+                    hasCompleted = true;
+                    clearTimeout(timeoutId);
+                    setIsInitializingSSO(false);
+                }
+                
+            } catch (error) {
+                console.error('❌ Error checking SSO session:', error);
+                // Clear loading state on error
+                if (!hasCompleted) {
+                    hasCompleted = true;
+                    clearTimeout(timeoutId);
+                    setIsInitializingSSO(false);
+                }
+            }
+        };
+        
+        // Helper function to update user from SSO data
+        const updateUserFromSSO = (userData: any) => {
+            // Map backend role to ATS role
+            const mappedRole: UserRole = userData.is_super_admin 
+                ? 'Main Admin' 
+                : (userData.role === 'Recruiter' ? 'Recruiter' : 'Admin');
+            
+            const atsUser: User = {
+                id: userData.id || 1,
+                name: userData.name,
+                email: userData.email,
+                password: 'admin123', // Not used in SSO mode
+                role: mappedRole,
+                avatar: userData.avatar || getInitials(userData.name),
+                permissions: allPermissions,
+                apps: userData.apps || [],
+                is_super_admin: userData.is_super_admin || false,
+            };
+            
+            // Update current user
+            setCurrentUser(atsUser);
+            
+            // Update users list and persist to localStorage
+            setUsers(prev => {
+                const existingIndex = prev.findIndex(u => u.email === atsUser.email);
+                let updatedUsers: User[];
+                if (existingIndex !== -1) {
+                    updatedUsers = prev.map((u, idx) => idx === existingIndex ? atsUser : u);
+                } else {
+                    updatedUsers = [atsUser, ...prev];
+                }
+                // Persist to localStorage
+                localStorage.setItem('accionTalent_users', JSON.stringify(updatedUsers));
+                return updatedUsers;
+            });
+        };
+        
+        // Check session on mount - always clear loading after check
+        const runInitialCheck = async () => {
+            try {
+                await checkSSOSession();
+            } catch (error) {
+                console.error('SSO check error:', error);
+            } finally {
+                // ALWAYS clear loading state after check completes
+                setTimeout(() => {
+                    setIsInitializingSSO(false);
+                    clearTimeout(timeoutId);
+                }, 100);
+            }
+        };
+        
+        runInitialCheck();
+        
+        // Optionally: Check session periodically (every 5 minutes) - but don't show loading
+        const interval = setInterval(() => {
+            checkSSOSession().catch(() => {
+                // Silent failure for periodic checks
+            });
+        }, 5 * 60 * 1000);
+        
+        return () => {
+            clearTimeout(timeoutId);
+            clearInterval(interval);
+            window.removeEventListener('message', handleMessage);
+        };
+    }, []); // Run only once on mount
+
     
     // --- CORE HANDLERS ---
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
         const userContext = directUser || effectiveUser;
         if (!userContext) return;
-    
+
         const newLog: HistoryEntry = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
             userId: userContext.id,
             userName: userContext.name,
             userRole: userContext.role,
-            impersonatingUserName: (directUser === null && impersonatedUser) ? currentUser?.name : undefined,
             action,
             ...details
         };
         setHistoryLog(prev => [newLog, ...prev]);
-    }, [currentUser, impersonatedUser, effectiveUser]);
+    }, [effectiveUser]);
 
     // --- NOTIFICATION HANDLERS ---
     const addNotification = useCallback((userId: number, message: string, linkTo?: { page: string; targetId?: number }) => {
@@ -199,89 +402,7 @@ const App = () => {
         }
     };
 
-    const handleLogout = () => {
-        if (!currentUser) return;
 
-        const newLog: HistoryEntry = {
-            id: Date.now(),
-            timestamp: new Date().toISOString(),
-            userId: currentUser.id,
-            userName: currentUser.name,
-            userRole: currentUser.role,
-            impersonatingUserName: undefined,
-            action: 'User logged out',
-        };
-
-        if (impersonatedUser) {
-            newLog.action = `User logged out while impersonating`;
-            newLog.targetType = 'User';
-            newLog.targetName = impersonatedUser.name;
-            newLog.targetId = impersonatedUser.id;
-        }
-        
-        setHistoryLog(prev => [newLog, ...prev]);
-        
-        setCurrentUser(null);
-        setImpersonatedUser(null);
-        sessionStorage.removeItem('accionTalent_currentUser');
-        window.location.reload();
-    };
-
-    const handleImpersonate = (userToImpersonate: User) => {
-        if (currentUser?.role.includes('Admin')) {
-            setImpersonatedUser(userToImpersonate);
-            logAction(`Started impersonating`, { targetType: 'User', targetName: userToImpersonate.name, targetId: userToImpersonate.id });
-
-            const impersonationNoticeLog: HistoryEntry = {
-                id: Date.now() + 1,
-                timestamp: new Date().toISOString(),
-                userId: userToImpersonate.id,
-                userName: userToImpersonate.name,
-                userRole: userToImpersonate.role,
-                action: `Was impersonated by`,
-                targetType: 'User',
-                targetName: currentUser.name,
-                targetId: currentUser.id,
-            };
-            setHistoryLog(prev => [impersonationNoticeLog, ...prev]);
-
-            handleNavigate('Dashboard');
-        }
-    };
-
-    const handleStopImpersonation = () => {
-        if (!impersonatedUser || !currentUser) return;
-
-        const adminLog: HistoryEntry = {
-            id: Date.now(),
-            timestamp: new Date().toISOString(),
-            userId: currentUser.id,
-            userName: currentUser.name,
-            userRole: currentUser.role,
-            impersonatingUserName: undefined,
-            action: `Stopped impersonating`,
-            targetType: 'User',
-            targetName: impersonatedUser.name,
-            targetId: impersonatedUser.id,
-        };
-        
-        const userNoticeLog: HistoryEntry = {
-            id: Date.now() + 1,
-            timestamp: new Date().toISOString(),
-            userId: impersonatedUser.id,
-            userName: impersonatedUser.name,
-            userRole: impersonatedUser.role,
-            action: `Impersonation session ended by`,
-            targetType: 'User',
-            targetName: currentUser.name,
-            targetId: currentUser.id,
-        };
-        
-        setHistoryLog(prev => [userNoticeLog, adminLog, ...prev]);
-        
-        setImpersonatedUser(null);
-        handleNavigate('Dashboard');
-    };
     
     const handleOpenMeetingModal = (candidate: Candidate) => {
         setCandidateForMeeting(candidate);
@@ -335,7 +456,7 @@ const App = () => {
             setHistoryLog([]);
             logAction('Reset all application data');
         } else {
-            alert('Could not find Main Admin to preserve. Aborting reset.');
+            toast.error('Could not find Main Admin to preserve. Aborting reset.');
         }
     };
     
@@ -345,6 +466,8 @@ const App = () => {
         setSelectedJobForDetail(null);
         setSelectedProject(null);
         setCandidatesForAnalysis([]);
+        setCandidateForFitAnalysis(null);
+        setJobFitResults(null);
         if (page !== 'Communications') setEmailTargets([]);
         setCurrentPage(page);
     };
@@ -371,49 +494,7 @@ const App = () => {
         }
     };
     
-    // --- USER MANAGEMENT ---
-    const handleSaveUser = (userData: Partial<User> & { invitationId?: number }, userId?: number) => {
-        if (userId) {
-            if (currentUser && currentUser.id === userId) {
-                const updatedCurrentUser = { ...currentUser, ...userData, password: userData.password || currentUser.password };
-                setCurrentUser(updatedCurrentUser);
-                sessionStorage.setItem('accionTalent_currentUser', JSON.stringify(updatedCurrentUser));
-            }
-            setUsers(users.map(u => u.id === userId ? { ...u, ...userData, password: userData.password || u.password } : u));
-            logAction('Updated user', { targetType: 'User', targetName: userData.name, targetId: userId });
-        } else {
-             const newUser: User = { 
-                id: Date.now(), 
-                avatar: getInitials(userData.name),
-                permissions: userData.role === 'Admin' ? allPermissions : [],
-                ...userData 
-            } as User;
-            setUsers(prev => [newUser, ...prev]);
-            
-            const invitation = invitations.find(i => i.id === userData.invitationId);
-            if (invitation) {
-                handleUpdateInvitationStatus(invitation.id, 'Approved');
-                if (invitation.type === 'ProjectTeam' && invitation.projectId) {
-                    setAllProjects(prevProjects => prevProjects.map(p => {
-                        if (p.id === invitation.projectId) {
-                            const updatedTeam = [...p.team, { userId: newUser.id, role: 'Member' as const }];
-                            return { ...p, team: updatedTeam };
-                        }
-                        return p;
-                    }));
-                     addNotification(newUser.id, `You've been added to project: ${invitation.projectName}`, { page: 'Dashboard' });
-                }
-            } else {
-                logAction('Created user manually', { targetType: 'User', targetName: newUser.name, targetId: newUser.id });
-            }
 
-            const subject = "Welcome to AccionTalent - Your Account Credentials";
-            const body = `Hi ${newUser.name},\n\nAn account has been created for you on the AccionTalent platform.\n\nYour login credentials are:\nUsername: ${newUser.email}\nPassword: ${userData.password}\n\nYou can log in here: ${window.location.href}\n\nWe recommend changing your password in your profile settings after your first login.\n\nBest regards,\nThe AccionTalent Team`;
-
-            const mailtoLink = `mailto:${newUser.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            window.open(mailtoLink, '_blank');
-        }
-    };
 
     const handleUpdateCurrentUser = (updatedData: Partial<User>) => {
         if (!currentUser) return;
@@ -431,19 +512,9 @@ const App = () => {
         logAction('Updated own profile');
     };
     
-    const handleUpdateAllUsers = (updatedUsers: User[]) => {
-        setUsers(updatedUsers);
-        logAction('Updated multiple user roles/permissions');
-    };
 
-    const handleDeleteUser = (userId: number) => {
-        const userToDelete = users.find(u => u.id === userId);
-        if (!userToDelete) return;
-        if (window.confirm(`Are you sure you want to delete user "${userToDelete.name}"?`)) {
-            setUsers(prev => prev.filter(u => u.id !== userId));
-            logAction('Deleted user', { targetType: 'User', targetName: userToDelete.name, targetId: userId });
-        }
-    };
+
+
     
     const handleInviteUser = (email: string) => {
         if (!effectiveUser) return;
@@ -473,10 +544,11 @@ const App = () => {
         const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
 
         if (existingUser) {
+            // User exists, add them to the project
             setAllProjects(prevProjects => prevProjects.map(p => {
                 if (p.id === projectForTeamAdd.id) {
                     if (p.team.some(member => member.userId === existingUser.id)) {
-                        alert(`${existingUser.name} is already a member of this project.`);
+                        toast.warning(`${existingUser.name} is already a member of this project.`);
                         return p;
                     }
                     const updatedTeam: ProjectTeamMember[] = [...p.team, { userId: existingUser.id, role: 'Member' }];
@@ -488,6 +560,7 @@ const App = () => {
                 return p;
             }));
         } else {
+            // User does not exist, create an invitation for admin approval
             const newInvitation: Invitation = {
                 id: Date.now(),
                 inviterId: effectiveUser.id,
@@ -542,31 +615,35 @@ const App = () => {
     };
     
     const handleImportData = (file: File) => {
-        if (!window.confirm("Are you sure you want to import data? This will overwrite all existing jobs, candidates, users, and settings.")) return;
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const data = JSON.parse(event.target.result as string);
-                if (data.users && data.allCandidates && data.allJobDescriptions && data.allProjects && data.companyProfile) {
-                    setAllCandidates(data.allCandidates);
-                    setAllJobDescriptions(data.allJobDescriptions);
-                    setAllProjects(data.allProjects);
-                    setUsers(data.users);
-                    setHistoryLog(data.historyLog || []);
-                    setCompanyProfile(data.companyProfile);
-                    logAction('Imported workspace data');
-                    alert("Data imported successfully. The application will now reload.");
-                    window.location.reload();
-                } else {
-                    throw new Error("Invalid data file structure.");
-                }
-            } catch (error) {
-                console.error("Import failed:", error);
-                alert(`Failed to import data: ${error.message}`);
-            }
-        };
-        reader.readAsText(file);
+        toast(<ToastConfirm 
+            message="Are you sure you want to import data? This will overwrite all existing jobs, candidates, users, and settings."
+            confirmLabel="Import & Overwrite"
+            onConfirm={() => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result as string);
+                        if (data.users && data.allCandidates && data.allJobDescriptions && data.allProjects && data.companyProfile) {
+                            setAllCandidates(data.allCandidates);
+                            setAllJobDescriptions(data.allJobDescriptions);
+                            setAllProjects(data.allProjects);
+                            setUsers(data.users);
+                            setHistoryLog(data.historyLog || []);
+                            setCompanyProfile(data.companyProfile);
+                            logAction('Imported workspace data');
+                            toast.success("Data imported successfully. The application will now reload.");
+                            setTimeout(() => window.location.reload(), 2000);
+                        } else {
+                            throw new Error("Invalid data file structure.");
+                        }
+                    } catch (error) {
+                        console.error("Import failed:", error);
+                        toast.error(`Failed to import data: ${error.message}`);
+                    }
+                };
+                reader.readAsText(file);
+            }}
+        />, { autoClose: false, closeOnClick: false });
     };
 
     // --- PROJECT & JOB HANDLERS ---
@@ -589,11 +666,6 @@ const App = () => {
             } as Project;
             setAllProjects(prev => [newProject, ...prev]);
             logAction('Created project', { targetType: 'Project', targetName: newProject.name, targetId: newProject.id });
-
-            // Automatically prompt to create a JD for the new project
-            setSelectedProject(newProject);
-            setJobToEdit(null);
-            setJobEditorModalOpen(true);
         }
     };
 
@@ -601,14 +673,19 @@ const App = () => {
         const projectToDelete = allProjects.find(p => p.id === projectId);
         if (!projectToDelete) return;
 
-        if (window.confirm(`Are you sure you want to delete the project "${projectToDelete.name}"? This will also delete all associated jobs.`)) {
-            setAllProjects(prev => prev.filter(p => p.id !== projectId));
-            setAllJobDescriptions(prev => prev.filter(j => j.projectId !== projectId));
-            logAction('Deleted project', { targetType: 'Project', targetName: projectToDelete.name, targetId: projectId });
-            if (selectedProject?.id === projectId) {
-                setSelectedProject(null);
-            }
-        }
+        toast(<ToastConfirm 
+            message={`Are you sure you want to delete the project "${projectToDelete.name}"? This will also delete all associated jobs.`}
+            confirmLabel="Delete Project"
+            onConfirm={() => {
+                setAllProjects(prev => prev.filter(p => p.id !== projectId));
+                setAllJobDescriptions(prev => prev.filter(j => j.projectId !== projectId));
+                logAction('Deleted project', { targetType: 'Project', targetName: projectToDelete.name, targetId: projectId });
+                if (selectedProject?.id === projectId) {
+                    setSelectedProject(null);
+                }
+                toast.success("Project deleted successfully.");
+            }}
+        />, { autoClose: false, closeOnClick: false });
     };
     
     const handleSaveJob = (jobData: Partial<JobDescription>, projectId: number) => {
@@ -622,6 +699,8 @@ const App = () => {
                 ownerId: effectiveUser.id, 
                 status: 'Active' as const, 
                 postedDate: new Date().toISOString().split('T')[0], 
+                
+                // Defaults for fields that might be missing from AI parsing
                 title: 'Untitled Job',
                 companyName: '',
                 companyLogo: '',
@@ -637,11 +716,15 @@ const App = () => {
                 roleCategory: 'N/A',
                 industry: 'N/A',
                 numberOfPositions: 1,
+                
+                // Crucial defaults for array fields to prevent .map() errors
                 requiredSkills: [],
                 highlights: [],
                 responsibilities: [],
                 qualifications: [],
                 preferredQualifications: [],
+
+                // Spread the parsed data, which will overwrite defaults if present
                 ...jobData 
             } as JobDescription;
             setAllJobDescriptions(prev => [newJob, ...prev]);
@@ -651,11 +734,12 @@ const App = () => {
 
     const handleProcessJds = async () => {
         if (!selectedProject) {
-            alert("No project selected. Cannot process JDs.");
+            toast.error("No project selected. Cannot process JDs.");
             return;
         }
         
         setIsProcessingJds(true);
+        
         const totalFiles = stagedJds.length;
         let successCount = 0;
         
@@ -664,7 +748,6 @@ const App = () => {
             setProcessingJdsStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
             
             try {
-                // Fix: Re-instantiate AI right before the call.
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 const jdSchema = {
                     type: Type.OBJECT,
@@ -692,15 +775,16 @@ const App = () => {
                 const jdText = await getTextFromFile(file, ai);
                 const prompt = `You are an expert JD parser. Extract structured information from the following job description text. Fill out all fields of the JSON schema as completely as possible. Preserve formatting like bullet points using newline characters (\\n).\n\nJD Text:\n\n${jdText}`;
     
-                // Fix: Updated model name to 'gemini-3-flash-preview' for basic parsing tasks.
                 const response = await ai.models.generateContent({
-                    model: 'gemini-3-flash-preview',
+                    model: 'gemini-2.5-flash',
                     contents: { parts: [{ text: prompt }] },
                     config: { responseMimeType: 'application/json', responseSchema: jdSchema }
                 });
     
                 let jsonString = response.text.trim();
-                if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
+                if (jsonString.startsWith('```json')) {
+                    jsonString = jsonString.slice(7, -3).trim();
+                }
                 const parsedData = JSON.parse(jsonString);
     
                 const newJobData: Partial<JobDescription> = {
@@ -726,18 +810,29 @@ const App = () => {
 
     const handleDeleteJobs = (ids: number[]) => {
         const jobsToDelete = allJobDescriptions.filter(j => ids.includes(j.id));
-        if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? This action cannot be undone.`)) {
-            setAllJobDescriptions(prev => prev.filter(j => !ids.includes(j.id)));
-            jobsToDelete.forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
-            if (selectedJob && ids.includes(selectedJob.id)) setSelectedJob(null);
-            if (selectedJobForDetail && ids.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
-        }
+        toast(<ToastConfirm 
+            message={`Are you sure you want to delete ${jobsToDelete.length} selected jobs? This action cannot be undone.`}
+            confirmLabel="Delete Jobs"
+            onConfirm={() => {
+                setAllJobDescriptions(prev => prev.filter(j => !ids.includes(j.id)));
+                jobsToDelete.forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
+                if (selectedJob && ids.includes(selectedJob.id)) {
+                    setSelectedJob(null);
+                }
+                if (selectedJobForDetail && ids.includes(selectedJobForDetail.id)) {
+                    setSelectedJobForDetail(null);
+                }
+                toast.success("Jobs deleted successfully.");
+            }}
+        />, { autoClose: false, closeOnClick: false });
     };
 
     const handleJobStatusUpdate = (jobId: number, status: JobDescription['status']) => {
         const jobToUpdate = allJobDescriptions.find(j => j.id === jobId);
         setAllJobDescriptions(prev => prev.map(j => j.id === jobId ? { ...j, status } : j));
-        if(jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
+        if(jobToUpdate) {
+            logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
+        }
     };
 
     const handleGenerateJdWithAI = async (prompt: string, projectId: number) => {
@@ -747,7 +842,6 @@ const App = () => {
         setAIGenerateModalOpen(false);
 
         try {
-            // Fix: Re-instantiate AI right before the call.
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const jdSchema = {
                 type: Type.OBJECT,
@@ -772,11 +866,10 @@ const App = () => {
                 },
             };
 
-            const fullPrompt = `You are an expert recruitment consultant. Generate a complete and professional job description based on this user request: "${prompt}". Fill out all fields of the JSON schema as completely as possible.`;
+            const fullPrompt = `You are an expert recruitment consultant. Generate a complete and professional job description based on this user request: "${prompt}". Fill out all fields of the JSON schema as completely as possible. If a field like "companyName" isn't specified, you can use a placeholder like "A Leading Tech Company". Make the responsibilities and qualifications detailed and use bullet points (separated by newlines \\n).`;
 
-            // Fix: Updated model name to 'gemini-3-flash-preview' for text generation tasks.
             const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
+                model: 'gemini-2.5-flash',
                 contents: { parts: [{ text: fullPrompt }] },
                 config: { responseMimeType: 'application/json', responseSchema: jdSchema }
             });
@@ -809,12 +902,13 @@ const App = () => {
                 numberOfPositions: parsedData.numberOfPositions || 1,
             };
 
+            setJobEditorModalOpen(false); // Ensure any open editor is closed
             setJobToEdit(newJobData as JobDescription);
             setJobEditorModalOpen(true);
 
         } catch (error) {
             console.error("AI JD generation failed:", error);
-            alert(`Sorry, the AI failed to generate the job description.`);
+            toast.error(`Sorry, the AI failed to generate the job description. Please try again or create it manually.\nError: ${error.message}`);
         } finally {
             setIsGeneratingJD(false);
         }
@@ -829,32 +923,56 @@ const App = () => {
             if (currentJobState.analysisKeywords && currentJobState.analysisKeywords.length > 0) {
                 keywords = currentJobState.analysisKeywords;
             } else {
-                // Fix: Re-instantiate AI right before the call.
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 const keywordsSchema = {
                     type: Type.OBJECT,
                     properties: {
-                        keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+                        keywords: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING },
+                            description: "A list of relevant job titles and core technology combinations."
+                        }
                     },
                     required: ['keywords']
                 };
     
-                const prompt = `You are an expert technical headhunter. Generate a JSON object with a "keywords" key containing highly specific keywords (titles and critical tech) to find strong candidate matches for: "${job.title}". Skills: ${(job.requiredSkills || []).join(', ')}`;
+                const prompt = `You are an expert technical headhunter. Your goal is to create a list of highly specific keywords that will ONLY find candidates who are a strong fit for a given role. You must prioritize precision over finding every possible candidate. Avoid broad terms that could match irrelevant profiles.
+
+**Job Details:**
+*   **Title:** "${job.title}"
+*   **Required Skills:** "${(job.requiredSkills || []).join(', ')}"
+*   **Description Snippet:** "${(job.description || '').substring(0, 500)}..."
+
+**Instructions:**
+1.  **Primary Keywords (Job Titles):** Generate a list of relevant job titles, synonyms, and seniority variations. This is the most important part. Examples: "Frontend Engineer", "UI Developer", "Senior React Developer".
+2.  **Secondary Keywords (Role + Tech):** Generate keywords that combine a role with a core technology. Example: "React.js Developer", "Frontend React Engineer".
+3.  **Tertiary Keywords (Core Tech):** Generate a maximum of 2-3 of the MOST CRITICAL and DIFFERENTIATING standalone technologies. For a React role, this might be "React" and "Redux". Do NOT include "JavaScript" as it is too broad.
+4.  **Strictly Prohibited:** Your output MUST NOT contain any of the following low-signal, generic keywords. This is a non-negotiable rule.
+    **Prohibited List:** \`JavaScript\`, \`SQL\`, \`Git\`, \`CI/CD\`, \`Agile\`, \`Jira\`, \`Scrum\`, \`REST\`, \`RESTful\`, \`API\`, \`JSON\`, \`HTML\`, \`HTML5\`, \`CSS\`, \`CSS3\`, \`Unit Testing\`, \`Teamwork\`, \`Communication\`, \`Problem Solving\`, \`Responsive Design\`.
+
+Generate a JSON object with a "keywords" key containing an array of strings.`;
     
-                // Fix: Updated model to 'gemini-3-pro-preview' as keyword analysis for matching is a complex task.
                 const response = await ai.models.generateContent({
-                    model: 'gemini-3-pro-preview',
+                    model: 'gemini-2.5-flash',
                     contents: { parts: [{ text: prompt }] },
                     config: { responseMimeType: 'application/json', responseSchema: keywordsSchema }
                 });
     
                 let jsonString = response.text.trim();
                 if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
+    
                 const { keywords: aiKeywords } = JSON.parse(jsonString);
                 keywords = aiKeywords;
-                setAllJobDescriptions(prevJobs => prevJobs.map(j => j.id === job.id ? { ...j, analysisKeywords: keywords } : j));
+    
+                setAllJobDescriptions(prevJobs => prevJobs.map(j => 
+                    j.id === job.id ? { ...j, analysisKeywords: keywords } : j
+                ));
             }
             
+            if (!keywords.map(k => k.toLowerCase()).includes(job.title.toLowerCase())) {
+                keywords.push(job.title);
+            }
+    
             const keywordsLower = keywords.map(k => k.toLowerCase());
             const relevantCandidates = allCandidates.filter(c =>
                 keywordsLower.some(kw =>
@@ -866,82 +984,39 @@ const App = () => {
             );
     
             const jobRequirements = parseJobRequirementsFromText(job);
+    
             const rankedCandidates = relevantCandidates.map(c => {
                 const candidateSkillsLower = new Set(c.skills.map(s => s.toLowerCase()));
                 const matchCount = job.requiredSkills.filter(skill => candidateSkillsLower.has(skill.toLowerCase())).length;
                 const skillScore = job.requiredSkills.length > 0 ? (matchCount / job.requiredSkills.length) * 100 : 100;
+    
                 const candidateTotalExp = calculateTotalExperience(c.experience);
                 const expMatch = jobRequirements.minYearsExperience === null || candidateTotalExp >= jobRequirements.minYearsExperience;
                 const expScore = expMatch ? 100 : 0;
+                
                 let eduMatch = true;
                 if (jobRequirements.requiredDegree) {
                     const requiredLower = jobRequirements.requiredDegree.toLowerCase();
                     eduMatch = c.education.some(edu => edu.degree.toLowerCase().includes(requiredLower) || requiredLower.includes(edu.degree.toLowerCase()));
                 }
                 const eduScore = eduMatch ? 100 : 0;
+                
                 const overallScore = Math.round((skillScore * 0.6) + (expScore * 0.3) + (eduScore * 0.1));
                 const missingSkills = job.requiredSkills.filter(skill => !candidateSkillsLower.has(skill.toLowerCase()));
+                
                 return { ...c, overallScore, skillScore, expMatch, eduMatch, missingSkills, candidateTotalExp };
             }).sort((a, b) => b.overallScore - a.overallScore);
     
             return { rankedCandidates, keywords };
+    
         } catch (error) {
             console.error("AI-powered analysis failed:", error);
+            toast.error(`An error occurred during AI analysis. Please try again. Error: ${error.message}`);
             return { rankedCandidates: [], keywords: [] };
         } finally {
             setIsAnalyzingJobId(null);
         }
     }, [allCandidates, allJobDescriptions]);
-
-    const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
-        try {
-            // Fix: Re-instantiate AI right before the call.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const matchSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    matchScore: { type: Type.NUMBER },
-                    summary: { type: Type.STRING },
-                    matchingSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    missingSkills: { type: Type.ARRAY, items: { type: Type.STRING } }
-                },
-                required: ['matchScore', 'summary', 'matchingSkills', 'missingSkills']
-            };
-
-            const prompt = `You are an expert recruiter. Analyze how well this candidate matches this job description. Provide a match score from 0-100, a brief summary, list of matching skills, and list of missing skills.
-
-Candidate:
-Name: ${candidate.name}
-Title: ${candidate.title}
-Summary: ${candidate.summary}
-Experience: ${candidate.experience.map(e => `${e.title} at ${e.company} (${e.duration})`).join(', ')}
-Skills: ${candidate.skills.join(', ')}
-Education: ${candidate.education.map(e => `${e.degree} from ${e.institution}`).join(', ')}
-
-Job Description:
-Title: ${jd.title}
-Description: ${jd.description}
-Required Skills: ${jd.requiredSkills?.join(', ') || 'N/A'}
-Experience: ${jd.experience}
-Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
-
-            // Fix: Updated model to 'gemini-3-flash-preview' for analysis tasks.
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { parts: [{ text: prompt }] },
-                config: { responseMimeType: 'application/json', responseSchema: matchSchema }
-            });
-
-            let jsonString = response.text.trim();
-            if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
-            const result = JSON.parse(jsonString) as MatchResult;
-
-            return result;
-        } catch (error) {
-            console.error("Failed to analyze fit:", error);
-            return null;
-        }
-    }, []);
     
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = (updatedCandidate: Candidate) => {
@@ -952,15 +1027,14 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     };
 
-    const handleParseFileToCandidate = useCallback(async (file: File, source: string = 'Bulk Upload'): Promise<Candidate | null> => {
+    const handleParseFileToCandidate = useCallback(async (file: File, source: string = 'Instant ATS Checker'): Promise<Candidate | null> => {
         try {
-            // Fix: Re-instantiate AI right before the call.
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const resumeSchema = {
                 type: Type.OBJECT,
                 properties: {
                     name: { type: Type.STRING }, title: { type: Type.STRING }, summary: { type: Type.STRING },
-                    totalExperienceYears: { type: Type.NUMBER },
+                    totalExperienceYears: { type: Type.NUMBER, description: "The candidate's total years of professional experience, either explicitly stated or calculated from work history dates. Provide a single number." },
                     contact: { type: Type.OBJECT, properties: { email: { type: Type.STRING }, phone: { type: Type.STRING }, location: { type: Type.STRING } } },
                     experience: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, company: { type: Type.STRING }, duration: { type: Type.STRING }, description: { type: Type.STRING } } } },
                     education: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { degree: { type: Type.STRING }, institution: { type: Type.STRING }, duration: { type: Type.STRING } } } },
@@ -975,11 +1049,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             };
     
             const resumeText = await getTextFromFile(file, ai);
-            const prompt = `You are an expert resume parser. Extract structured information from: \n\n${resumeText}`;
+            const prompt = `You are an expert resume parser. Extract structured information from the following resume text. For 'totalExperienceYears', find an explicit statement (e.g., '5 years of experience') or calculate the total by summing up work durations. If you calculate, be precise. Preserve formatting like bullet points using newline characters (\\n).\n\nResume Text:\n\n${resumeText}`;
 
-            // Fix: Updated model name to 'gemini-3-flash-preview' for extraction tasks.
             const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
+                model: 'gemini-2.5-flash',
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: 'application/json', responseSchema: resumeSchema }
             });
@@ -988,7 +1061,13 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
             const parsedData = JSON.parse(jsonString);
 
-            let totalExperience = parsedData.totalExperienceYears || calculateTotalExperience(parsedData.experience || []);
+            // Fallback calculation
+            let totalExperience = parsedData.totalExperienceYears;
+            if (totalExperience === undefined || totalExperience === null) {
+                if (parsedData.experience && parsedData.experience.length > 0) {
+                    totalExperience = calculateTotalExperience(parsedData.experience);
+                }
+            }
             
             const newCandidate: Candidate = {
                 id: Date.now(),
@@ -1026,58 +1105,249 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
         } catch (error) {
             console.error("Failed to parse resume:", error);
-            alert(`Failed to parse resume.`);
+            toast.error(`Failed to parse resume: ${error.message}`);
             return null;
         }
     }, [logAction]);
 
-    const handleClearStagedResumes = () => {
-        if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
-            processingRef.current = false; 
-            setStagedResumes([]);
-            setIsProcessing(false);
-            setProcessingStatus('');
+    // Fetch all resumes from backend to sync frontend with backend storage
+    const fetchBackendResumes = useCallback(async () => {
+        try {
+            const API_BASE_URL = 'https://intranet.accionlabs.com/atsbackend';
+            const response = await fetch(`${API_BASE_URL}/list-resumes`);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Failed to fetch resumes from backend:', errorText);
+                return;
+            }
+            
+            const data = await response.json();
+            console.log('Backend resumes synced:', data);
+            // The data structure is already being handled correctly in CandidatesPage
+        } catch (error) {
+            console.error('Error fetching backend resumes:', error);
         }
+    }, []);
+
+    const handleClearStagedResumes = () => {
+        toast(<ToastConfirm
+            message="Are you sure you want to clear all resumes from the queue? This will stop any ongoing processing."
+            confirmLabel="Clear Queue"
+            onConfirm={() => {
+                processingRef.current = false;
+                setStagedResumes([]);
+                setIsProcessing(false);
+                setProcessingStatus('');
+            }}
+        />, { autoClose: false, closeOnClick: false });
+    };
+
+    const handleViewResume = async (file: File) => {
+        try {
+            const blob = await atsApiService.downloadResume(file.name);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to download resume:', error);
+            toast.error('Failed to download resume');
+        }
+    };
+
+    const handleDeleteResume = async (file: File) => {
+        toast(<ToastConfirm
+            message={`Are you sure you want to delete "${file.name}" from cloud storage? This action cannot be undone.`}
+            confirmLabel="Delete Resume"
+            onConfirm={async () => {
+                try {
+                    // Backend uses FOLDER_PREFIX + filename as S3 key
+                    // From backend code: FOLDER_PREFIX = "ats/"
+                    const s3Key = file.name;
+                    console.log('Deleting file with S3 key:', s3Key);
+
+                    await atsApiService.deleteResume(s3Key);
+                    toast.success('Resume deleted successfully');
+                    // Remove from staged resumes if present
+                    setStagedResumes(prev => prev.filter(f => f !== file));
+                } catch (error) {
+                    console.error('Failed to delete resume:', error);
+                    toast.error(`Failed to delete resume: ${error.message}`);
+                }
+            }}
+        />, { autoClose: false, closeOnClick: false });
     };
 
     const handleProcessResumes = async () => {
         setIsProcessing(true);
         processingRef.current = true;
+        const addedCandidateIdsInThisBatch: number[] = [];
+
         const filesToProcess = [...stagedResumes];
         const totalFiles = filesToProcess.length;
         let successCount = 0;
 
         for (let i = 0; i < totalFiles; i++) {
-            if (!processingRef.current) return;
+            if (!processingRef.current) {
+                setAllCandidates(prev => prev.filter(c => !addedCandidateIdsInThisBatch.includes(c.id)));
+                console.log(`Processing cancelled. Rolled back ${addedCandidateIdsInThisBatch.length} candidates.`);
+                return;
+            }
+
             const file = filesToProcess[i];
             setProcessingStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
             try {
                 const newCandidate = await handleParseFileToCandidate(file, 'Bulk Resume Upload');
-                if (newCandidate) successCount++;
+                if (newCandidate) {
+                    successCount++;
+                    addedCandidateIdsInThisBatch.push(newCandidate.id);
+                }
             } catch (error) {
                 console.error(`Failed to process ${file.name}:`, error);
             }
         }
         
         if (processingRef.current) {
-            setProcessingStatus(`Processing complete. ${successCount}/${totalFiles} resumes added.`);
+            setProcessingStatus(`Processing complete. ${successCount}/${totalFiles} resumes added successfully.`);
             logAction(`Bulk processed ${totalFiles} resumes, added ${successCount} new candidates`);
+
             setTimeout(() => {
                 if (processingRef.current) {
                     setStagedResumes([]);
                     setIsProcessing(false);
                     setProcessingStatus('');
                     processingRef.current = false;
+                    // Fetch updated resume list from backend
+                    fetchBackendResumes();
                 }
             }, 3000);
         }
     };
 
+    const handleManualCandidateSave = useCallback((candidateData: Partial<Candidate>): Candidate => {
+        const newCandidate: Candidate = {
+            id: Date.now(),
+            name: candidateData.name || 'Manual Entry',
+            avatar: getInitials(candidateData.name || 'ME'),
+            title: candidateData.title || '',
+            summary: candidateData.summary || '',
+            contact: candidateData.contact || { email: '', phone: '', location: '' },
+            skills: candidateData.skills || [],
+            resumeContent: `Name: ${candidateData.name}\nTitle: ${candidateData.title}\nEmail: ${candidateData.contact?.email}\nSkills: ${candidateData.skills?.join(', ')}\nSummary: ${candidateData.summary}`,
+            // fill the rest with defaults
+            experience: [],
+            education: [],
+            softSkills: [],
+            languages: [],
+            certifications: [],
+            links: [],
+            status: 'Applied',
+            appliedDate: new Date().toISOString().split('T')[0],
+            salaryExpectation: null,
+            originalResumeFile: null,
+            applicationHistory: [{ stage: 'Applied', date: new Date().toISOString(), notes: 'Manually created via Candidates page' }],
+            tasks: [],
+            notes: [],
+            category: 'Manual Entry',
+            tags: ['manual-entry'],
+            source: 'Manual Entry',
+            rejectionReason: null,
+            communicationHistory: [],
+            interviews: [],
+        };
+        setAllCandidates(prev => [newCandidate, ...prev]);
+        logAction('Manually created candidate', { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
+        return newCandidate;
+    }, [logAction]);
+
+    const handleParseFileToJd = useCallback(async (file: File): Promise<Partial<JobDescription> | null> => {
+         try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+             const jdSchema = {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING },
+                    requiredSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    description: { type: Type.STRING },
+                },
+                 required: ['title', 'requiredSkills', 'description']
+            };
+            const jdText = await getTextFromFile(file, ai);
+            const prompt = `You are an expert JD parser. Extract the job title, a list of required skills, and the full job description from the following text:\n\n${jdText}`;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts: [{ text: prompt }] },
+                config: { responseMimeType: 'application/json', responseSchema: jdSchema }
+            });
+            let jsonString = response.text.trim();
+            if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
+            const parsedData = JSON.parse(jsonString);
+            return { ...parsedData, jdContent: jdText };
+        } catch (error) {
+            console.error("Failed to parse JD:", error);
+            toast.error(`Failed to parse job description: ${error.message}`);
+            return null;
+        }
+    }, []);
+
+    const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const matchSchema = {
+                type: Type.OBJECT,
+                properties: {
+                    matchScore: { type: Type.NUMBER, description: "A percentage score from 0 to 100 representing how well the candidate fits the job." },
+                    summary: { type: Type.STRING, description: "A 2-3 sentence summary explaining the reason for the score." },
+                    matchingSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    missingSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ['matchScore', 'summary', 'matchingSkills', 'missingSkills']
+            };
+
+            const prompt = `You are an expert AI recruiter. Analyze the following resume against the job description. Provide a match score, a brief summary, and lists of matching/missing skills.
+
+**Job Description:**
+Title: ${jd.title}
+Required Skills: ${(jd.requiredSkills || []).join(', ')}
+---
+${jd.jdContent}
+---
+
+**Candidate Resume:**
+---
+${candidate.resumeContent}
+---
+`;
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts: [{ text: prompt }] },
+                config: { responseMimeType: 'application/json', responseSchema: matchSchema }
+            });
+            let jsonString = response.text.trim();
+            if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
+            const parsedData = JSON.parse(jsonString);
+            logAction('Performed instant ATS match analysis', { targetType: 'Candidate', targetName: candidate.name, targetId: candidate.id });
+            return parsedData;
+        } catch (error) {
+            console.error("Failed to analyze match:", error);
+            toast.error(`Failed to analyze match: ${error.message}`);
+            return null;
+        }
+    }, [logAction]);
+
     const handleDeleteCandidates = (ids: number[]) => {
         const candidatesToDelete = allCandidates.filter(c => ids.includes(c.id));
         setAllCandidates(prev => prev.filter(c => !ids.includes(c.id)));
         candidatesToDelete.forEach(c => logAction('Deleted candidate', { targetType: 'Candidate', targetName: c.name, targetId: c.id }));
-        if (selectedCandidate && ids.includes(selectedCandidate.id)) setSelectedCandidate(null);
+        if (selectedCandidate && ids.includes(selectedCandidate.id)) {
+            setSelectedCandidate(null);
+        }
     };
 
     const handleEmailSelected = (ids: number[]) => {
@@ -1153,8 +1423,42 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         return { candidates, jobs };
     }, [globalSearchTerm, allCandidates, allJobDescriptions]);
     
+    // --- PAGE RENDERING LOGIC ---
+    // Modified: removed currentUser check for LoginPage rendering
+    
     const renderContent = () => {
-        if (!effectiveUser) return <div className="loading-indicator">Loading user...</div>;
+        // Show loading only during initial SSO check (with timeout)
+        if (isInitializingSSO) {
+            return <div className="loading-indicator">Initializing user session...</div>;
+        }
+        
+        // If no user after initialization, create a fallback guest user
+        if (!effectiveUser) {
+            // Create a fallback guest user if none exists
+            if (!currentUser && users.length === 0) {
+                const guestUser: User = {
+                    id: 1,
+                    name: 'Guest User',
+                    email: 'guest@acciontalent.com',
+                    password: 'admin123',
+                    role: 'Admin',
+                    avatar: 'GU',
+                    permissions: allPermissions,
+                    apps: [],
+                    is_super_admin: false,
+                };
+                setCurrentUser(guestUser);
+                setUsers([guestUser]);
+                // Return loading briefly while setting guest user
+                return <div className="loading-indicator">Loading...</div>;
+            }
+            // If we have users but no currentUser, use the first one
+            if (!currentUser && users.length > 0) {
+                setCurrentUser(users[0]);
+                return <div className="loading-indicator">Loading...</div>;
+            }
+            return <div className="loading-indicator">Loading user...</div>;
+        }
 
         switch (currentPage) {
             case 'Dashboard':
@@ -1193,7 +1497,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         onClearCandidatesForAnalysis={() => setCandidatesForAnalysis([])}
                         onAnalyzeJobFit={handleAnalyzeJobFit}
                         isAnalyzingJobId={isAnalyzingJobId}
-                        onOpenAIGenerateModal={() => setAIGenerateModalOpen(true)}
+                        onOpenAIGenerateModal={() => { setJobEditorModalOpen(false); setAIGenerateModalOpen(true); }}
                         onAddTeamMember={(project) => { setProjectForTeamAdd(project); setAddTeamMemberModalOpen(true); }}
                         allUsers={users}
                     />;
@@ -1234,11 +1538,14 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onSearchChange={setSearchTerm}
                     onUpload={() => setUploadModalOpen(true)}
                     stagedResumes={stagedResumes}
+                    setStagedResumes={setStagedResumes}
                     isProcessing={isProcessing}
                     processingStatus={processingStatus}
                     onProcess={handleProcessResumes}
                     onClear={handleClearStagedResumes}
                     onRemoveResume={(fileToRemove: File) => setStagedResumes(prev => prev.filter(f => f !== fileToRemove))}
+                    onViewResume={handleViewResume}
+                    onDeleteResume={handleDeleteResume}
                     onDeleteCandidates={handleDeleteCandidates}
                     onEmailSelected={handleEmailSelected}
                     onAnalyzeSelected={handleAnalyzeSelected}
@@ -1253,102 +1560,115 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onClearDraft={() => setInitialEmailDraft(null)}
                     onScheduleMeeting={(c) => c && handleOpenMeetingModal(c)}
                 />;
+
             case 'Reports':
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
                  return <CalendarPage candidates={allCandidates} interviews={allInterviews} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
-            case 'Manage Users':
-                 return <ManageUsersPage 
-                    users={users}
-                    currentUser={currentUser}
-                    onAddUser={() => { setUserToEdit(null); setUserEditorModalOpen(true); }}
-                    onEditUser={(u) => { setUserToEdit(u); setUserEditorModalOpen(true); }}
-                    onDeleteUser={handleDeleteUser}
-                    onImpersonateUser={handleImpersonate}
-                    invitations={invitations}
-                    onUpdateInvitationStatus={handleUpdateInvitationStatus}
-                />;
             case 'History':
-                 return <HistoryPage 
-                    historyLog={historyLog} 
-                    effectiveUser={effectiveUser} 
-                    onNavigateTo={handleNavigateTo} 
+                 return <HistoryPage
+                    historyLog={historyLog}
+                    effectiveUser={effectiveUser}
+                    onNavigateTo={handleNavigateTo}
                     currentUser={currentUser}
-                    impersonatedUser={impersonatedUser}
                     allUsers={users}
                 />;
             case 'Settings':
-                return <SettingsPage 
-                    effectiveUser={effectiveUser} 
-                    onUpdateUser={handleSaveUser}
+                return <SettingsPage
+                    effectiveUser={effectiveUser}
+                    onUpdateUser={handleUpdateCurrentUser}
                     onResetAllData={handleResetAllData}
                     companyProfile={companyProfile}
                     onUpdateCompanyProfile={handleUpdateCompanyProfile}
                     allUsers={users}
-                    onUpdateAllUsers={handleUpdateAllUsers}
+                    onUpdateAllUsers={() => {}}
                     onExportData={handleExportData}
                     onImportData={handleImportData}
                     invitations={invitations}
                     onInviteUser={() => setInviteModalOpen(true)}
-                    onAddUser={() => { setUserToEdit(null); setUserEditorModalOpen(true); }}
                 />;
-            case 'Recruiter Tools':
-                // Add your RecruiterToolsHubPage component here when ready
-                return <div className="page-content">
-                    <div className="page-header">
-                        <h1>Recruiter Tools Hub</h1>
-                        <p>Access your AI-powered recruitment tools</p>
-                    </div>
-                    <div className="empty-state large">
-                        <span className="material-symbols-outlined">construction</span>
-                        <h3>Coming Soon</h3>
-                        <p>The Recruiter Tools Hub is currently under development.</p>
-                    </div>
-                </div>;
             default:
                 return <div>Page not found</div>;
-            }
-        };
-    if (!effectiveUser) return <div className="loading-indicator">Initializing user session...</div>;
+        }
+    };
+    
+    // Show loading only during initial SSO check
+    if (isInitializingSSO) {
+        return <div className="loading-indicator">Initializing user session...</div>;
+    }
+    
+    // If no user after initialization, create a fallback guest user
+    if (!effectiveUser) {
+        // Create a fallback guest user if none exists
+        if (!currentUser && users.length === 0) {
+            const guestUser: User = {
+                id: 1,
+                name: 'Guest User',
+                email: 'guest@acciontalent.com',
+                password: 'admin123',
+                role: 'Admin',
+                avatar: 'GU',
+                permissions: allPermissions,
+                apps: [],
+                is_super_admin: false,
+            };
+            setCurrentUser(guestUser);
+            setUsers([guestUser]);
+            return <div className="loading-indicator">Loading...</div>;
+        }
+        // If we have users but no currentUser, use the first one
+        if (!currentUser && users.length > 0) {
+            setCurrentUser(users[0]);
+            return <div className="loading-indicator">Loading...</div>;
+        }
+        return <div className="loading-indicator">Loading user...</div>;
+    }
+
+    const hasPermission = (page: UserPermission) => {
+        if (!effectiveUser) return false;
+        if (effectiveUser.role === 'Admin' || effectiveUser.role === 'Main Admin') return true;
+        return effectiveUser.permissions.includes(page);
+    };
 
     const isPageAccessible = (pageName: string): boolean => {
-    const permissionMap: { [key: string]: UserPermission } = {
-        'Dashboard': 'Dashboard',
-        'Job Matching': 'Job Matching',
-        'Candidates': 'All Candidates',
-        'Calendar': 'Calendar',
-        'Communications': 'Communications',
-        'Reports': 'Reports',
-        'Settings': 'Settings',
-        'History': 'History',
-        'Manage Users': 'Settings',
-        'Recruiter Tools': 'All Candidates' // ADD THIS LINE
+        const permissionMap: { [key: string]: UserPermission } = {
+            'Dashboard': 'Dashboard',
+            'Job Matching': 'Job Matching',
+            'Candidates': 'All Candidates',
+            'Calendar': 'Calendar',
+            'Communications': 'Communications',
+            'Reports': 'Reports',
+            'Settings': 'Settings',
+            'History': 'History'
+        };
+    
+        const requiredPermission = permissionMap[pageName];
+        if (!requiredPermission) return true; // Pages not in the map are public
+    
+        if (effectiveUser.role.includes('Admin')) return true;
+        
+        return effectiveUser.permissions.includes(requiredPermission);
     };
-    const requiredPermission = permissionMap[pageName];
-    if (!requiredPermission) return true;
-    if (effectiveUser.role.includes('Admin')) return true;
-    return effectiveUser.permissions.includes(requiredPermission);
-};
 
     const renderAccessDenied = () => (
         <div className="page-content">
             <div className="empty-state large">
                 <span className="material-symbols-outlined" style={{fontSize: '64px', color: '#EF4444'}}>lock</span>
                 <h3>Access Denied</h3>
-                <p>You do not have permission to view this page.</p>
+                <p>You do not have permission to view this page. Please contact an administrator if you believe this is an error.</p>
             </div>
         </div>
     );
+    
 
     return (
         <div className="app-container">
-            <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} onLogout={handleLogout} />
+            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" aria-label="Notifications" />
+            <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} />
             <main className="main-content">
-                <Header 
+                <Header
                     user={effectiveUser}
-                    impersonatedUser={impersonatedUser} 
-                    onStopImpersonation={handleStopImpersonation} 
                     globalSearchTerm={globalSearchTerm}
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}
@@ -1356,21 +1676,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onCandidateSelect={(c) => { setSelectedCandidate(c); setCurrentPage('Candidates'); setGlobalSearchTerm(''); }}
                     onJobSelect={(j) => { setSelectedJobForDetail(j); setCurrentPage('Job Matching'); setGlobalSearchTerm(''); }}
                     onUpdateCurrentUser={handleUpdateCurrentUser}
-                    onLogout={handleLogout}
                     onNavigate={handleNavigate}
                     notifications={notifications.filter(n => n.userId === effectiveUser.id)}
                     onMarkAsRead={handleMarkAsRead}
                     onMarkAllAsRead={handleMarkAllAsRead}
                     onNotificationNavigate={handleNotificationNavigate}
                 />
+                
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
+
             </main>
+
+            {/* --- GLOBALLY AVAILABLE MODALS --- */}
             <Chatbot jobs={allJobDescriptions} candidates={allCandidates} currentUser={effectiveUser} />
-            <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} />
+            <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} onAddCandidates={(candidates) => setAllCandidates(prev => [...prev, ...candidates])} />
             <JDUploadModal isOpen={isJdUploadModalOpen} onClose={() => setJdUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedJds(prev => [...prev, ...Array.from(files)])} />
             <JobEditorModal isOpen={isJobEditorModalOpen} onClose={() => setJobEditorModalOpen(false)} onSave={(jobData) => handleSaveJob(jobData, selectedProject!.id)} jobToEdit={jobToEdit} />
             <MeetingSchedulerModal isOpen={isMeetingModalOpen} onClose={() => setMeetingModalOpen(false)} onSchedule={handleScheduleMeeting} candidate={candidateForMeeting} />
-            <UserEditorModal isOpen={isUserEditorModalOpen} onClose={() => setUserEditorModalOpen(false)} onSave={handleSaveUser} userToEdit={userToEdit} />
             <ProjectEditorModal isOpen={isProjectEditorModalOpen} onClose={() => setProjectEditorModalOpen(false)} onSave={handleSaveProject} projectToEdit={projectToEdit} />
             <AIGenerateJDModal isOpen={isAIGenerateModalOpen} onClose={() => setAIGenerateModalOpen(false)} onGenerate={(prompt) => handleGenerateJdWithAI(prompt, selectedProject!.id)} isGenerating={isGeneratingJD} />
             <InviteMemberModal isOpen={isInviteModalOpen} onClose={() => setInviteModalOpen(false)} onInvite={handleInviteUser} />

@@ -18,6 +18,12 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
     if (!analysisResult) return null;
     const { loading, candidates: initialRankedCandidates, keywords } = analysisResult;
     
+    const getScoreColor = (score) => {
+        if (score >= 75) return 'text-emerald-600';
+        if (score >= 50) return 'text-amber-600';
+        return 'text-rose-600';
+    };
+
     useEffect(() => {
         setSelectedIds([]);
     }, [filters, initialRankedCandidates]);
@@ -154,12 +160,19 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                                                 </div>
                                             </div>
                                         </td>
-                                        <td>{c.totalExperienceYears}</td>
+                                        <td>{c.totalExperienceYears || 0} Years</td>
                                         <td>{c.contact.location}</td>
-                                        <td>{c.overallScore}</td>
+                                        <td><span className={`ats-score-pill ${getScoreColor(c.overallScore)}`}>{c.overallScore}%</span></td>
                                         <td>
                                             <div className="skills-container">
-                                                {c.skills.map(skill => <span key={skill} className="skill-tag-simple">{skill}</span>)}
+                                                {c.matchingSkills && c.matchingSkills.length > 0 ? (
+                                                    c.matchingSkills.slice(0, 3).map(skill => <span key={skill} className="skill-tag-simple" style={{background: '#D1FAE5', color: '#065F46', borderColor: '#A7F3D0'}}>{skill}</span>)
+                                                ) : (
+                                                    <span style={{color: '#888', fontSize: '12px'}}>None</span>
+                                                )}
+                                                {c.matchingSkills && c.matchingSkills.length > 3 && (
+                                                    <span className="skill-tag-simple" style={{fontSize: '11px'}}>+{c.matchingSkills.length - 3}</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td>
@@ -171,12 +184,14 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                                             </div>
                                         </td>
                                         <td>
-                                            <button className="btn btn-secondary btn-small" onClick={() => onCandidateSelect(c)}>
-                                                View
-                                            </button>
-                                            <button className="btn btn-danger btn-small" onClick={() => onDeleteCandidates([c.id])}>
-                                                Delete
-                                            </button>
+                                            <div className="action-buttons">
+                                                <button className="btn btn-secondary btn-small" onClick={() => onCandidateSelect(c)}>
+                                                    <span className="material-symbols-outlined">visibility</span> View
+                                                </button>
+                                                <button className="btn btn-danger btn-small" onClick={() => onDeleteCandidates([c.id])}>
+                                                    <span className="material-symbols-outlined">delete</span> Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 )) : (
