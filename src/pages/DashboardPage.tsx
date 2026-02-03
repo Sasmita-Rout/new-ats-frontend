@@ -2,8 +2,9 @@
 
 import React, { useMemo } from 'react';
 import { Candidate, JobDescription, User, Project } from '../types/types';
+import { getInitials } from '../utils/helpers';
 
-const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, onNavigate }) => {
+const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, onNavigate, allUsers }) => {
     const totalCandidates = candidates.length;
     const activeProjects = projects.filter(p => p.status === 'Active').length;
     const openPositions = jobs.length;
@@ -23,6 +24,30 @@ const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, on
         return Math.round(totalDays / hiredCandidates.length);
     }, [candidates]);
     
+    const statusCounts = useMemo(() => {
+        const counts = { Applied: 0, Screening: 0, Interview: 0, Offer: 0, Hired: 0, Rejected: 0 };
+        candidates.forEach(c => {
+            if (c.status in counts) counts[c.status]++;
+        });
+        return Object.entries(counts).filter(([_, count]) => count > 0 || true); // Keep all for structure
+    }, [candidates]);
+
+    const recruiterStats = useMemo(() => {
+        if (!allUsers) return [];
+        // Filter for users who are likely to post jobs (Admins and Recruiters)
+        return allUsers.filter(u => u.role !== 'User').map(u => {
+            const userJobs = jobs.filter(j => j.ownerId === u.id);
+            const activeJobs = userJobs.filter(j => j.status === 'Active').length;
+            return {
+                id: u.id,
+                name: u.name,
+                avatar: u.avatar,
+                activeJobs,
+                totalJobs: userJobs.length
+            };
+        }).sort((a, b) => b.activeJobs - a.activeJobs).slice(0, 5); // Top 5
+    }, [allUsers, jobs]);
+
     return (
         <>
             <div className="page-header">
@@ -42,7 +67,7 @@ const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, on
                         cursor: 'pointer',
                         border: '1px solid var(--primary-color)'
                     }}
-                    onClick={() => onNavigate('Settings')}
+                    onClick={() => onNavigate('Manage Users')}
                 >
                     <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
                         <span className="material-symbols-outlined" style={{color: 'var(--primary-color)'}}>mark_email_unread</span>
@@ -71,12 +96,57 @@ const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, on
             </div>
             <div className="dashboard-grid single-col">
                 <div className="chart-card">
-                    <h4>System-Wide Activity</h4>
-                    <div className="chart-placeholder">Live system-wide activity graph will be displayed here.</div>
+                    <h4>System-Wide Pipeline</h4>
+                    <div className="pipeline-chart">
+                        {statusCounts.map(([status, count]) => (
+                            <div key={status} className="pipeline-bar">
+                                <span className="pipeline-bar-label" style={{width: '100px'}}>{status}</span>
+                                <div className="pipeline-bar-progress">
+                                    <div 
+                                        className={`pipeline-bar-fill ${status.toLowerCase()}`} 
+                                        style={{
+                                            width: `${totalCandidates > 0 ? (count / totalCandidates) * 100 : 0}%`,
+                                            backgroundColor: status === 'Hired' ? '#10B981' : status === 'Rejected' ? '#EF4444' : 'var(--primary-color)'
+                                        }}
+                                    >
+                                        {count}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
                  <div className="chart-card">
-                    <h4>Recruiter Performance</h4>
-                     <div className="chart-placeholder">Recruiter performance metrics will be displayed here.</div>
+                    <h4>Recruiter Performance (Top 5)</h4>
+                     <div className="candidates-table-container" style={{boxShadow: 'none', border: 'none', marginTop: '0'}}>
+                        <table className="candidates-table" style={{tableLayout: 'fixed'}}>
+                            <colgroup>
+                                <col style={{width: '60%'}} />
+                                <col style={{width: '20%'}} />
+                                <col style={{width: '20%'}} />
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Recruiter</th>
+                                    <th style={{textAlign: 'center'}}>Active Jobs</th>
+                                    <th style={{textAlign: 'center'}}>Total Jobs Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {recruiterStats.map(stat => (
+                                    <tr key={stat.id}>
+                                        <td style={{display: 'flex', alignItems: 'center', gap: '10px', borderBottom: 'none', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                                            <div className="user-avatar small">{typeof stat.avatar === 'string' && stat.avatar.startsWith('data:') ? <img src={stat.avatar} alt={stat.name} /> : getInitials(stat.name)}</div>
+                                            <span style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{stat.name}</span>
+                                        </td>
+                                        <td style={{borderBottom: 'none', textAlign: 'center'}}><strong>{stat.activeJobs}</strong></td>
+                                        <td style={{borderBottom: 'none', textAlign: 'center'}}>{stat.totalJobs}</td>
+                                    </tr>
+                                ))}
+                                {recruiterStats.length === 0 && <tr><td colSpan={3} style={{textAlign: 'center', color: '#666'}}>No recruiter activity found.</td></tr>}
+                            </tbody>
+                        </table>
+                     </div>
                 </div>
             </div>
         </>
@@ -210,7 +280,7 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
     );
 }
 
-const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate }) => {
+const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate, allUsers }) => {
     const isAdminView = effectiveUser.role.includes('Admin');
     
     // Centralized filtering logic for this page.
@@ -232,6 +302,7 @@ const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSel
                     projects={myProjects}
                     pendingInvitationCount={pendingInvitationCount}
                     onNavigate={onNavigate}
+                    allUsers={allUsers}
                 />
             ) : (
                 <RecruiterDashboard 

@@ -16,8 +16,6 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
     const [selectedJobIds, setSelectedJobIds] = useState<number[]>([]);
     const [analysisData, setAnalysisData] = useState<{ [key: number]: AnalysisResult }>({});
 
-    const userMap = useMemo(() => new Map(allUsers.map(user => [user.id, user])), [allUsers]);
-
 
     useEffect(() => {
         setSelectedJobIds([]);
@@ -50,6 +48,15 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
         }
     };
 
+    const handleReAnalyze = (job: JobDescription) => {
+        setAnalysisData(prev => {
+            const newState = { ...prev };
+            delete newState[job.id];
+            return newState;
+        });
+        handleAnalyzeFit(job);
+    };
+
     const handleSelectJob = (jobId: number) => {
         setSelectedJobIds(prev =>
             prev.includes(jobId) ? prev.filter(id => id !== jobId) : [...prev, jobId]
@@ -69,6 +76,23 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
             onDeleteJobs(selectedJobIds);
             setSelectedJobIds([]);
         }
+    };
+
+    const handleLocalDeleteCandidates = (ids: number[]) => {
+        onDeleteCandidates(ids);
+        setAnalysisData(prev => {
+            const newData = { ...prev };
+            Object.keys(newData).forEach(key => {
+                const jobId = Number(key);
+                if (newData[jobId]?.candidates) {
+                    newData[jobId] = {
+                        ...newData[jobId],
+                        candidates: newData[jobId].candidates.filter(c => !ids.includes(c.id))
+                    };
+                }
+            });
+            return newData;
+        });
     };
     
     return (
@@ -101,6 +125,9 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                     </>
                 ) : (
                     <>
+                        <button className="btn btn-secondary" onClick={() => onAddTeamMember(project)}>
+                            <span className="material-symbols-outlined">person_add</span> Add Member
+                        </button>
                         <button className="btn btn-secondary" onClick={onUploadJds}>
                             <span className="material-symbols-outlined">upload</span> Upload JDs
                         </button>
@@ -115,23 +142,33 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
             </div>
         </div>
         
-        <div className="job-detail-grid" style={{gridTemplateColumns: 'minmax(0, 2.5fr) minmax(320px, 1fr)', alignItems: 'start'}}>
-            <div style={{display: 'flex', flexDirection: 'column', gap: '24px'}}>
-                <div className="card" style={{ padding: '24px' }}>
-                     <div className="project-details-grid">
-                        <div style={{ gridColumn: '1 / -1' }}><strong>Description:</strong> <p>{project.description || 'N/A'}</p></div>
-                        <div><strong>Priority:</strong> <span className={`status-pill ${project.priority?.toLowerCase()}`}>{project.priority}</span></div>
-                        <div><strong>Dates:</strong> <p>{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'N/A'} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : 'N/A'}</p></div>
-                        <div><strong>Budget:</strong> <p>{project.budget || 'N/A'}</p></div>
-                        <div><strong>Status:</strong> <span className={`status-pill ${project.status.toLowerCase().replace(' ', '-')}`}>{project.status}</span></div>
-                    </div>
-                    <div className="recruitment-progress-container" style={{ marginTop: '20px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <span style={{ fontWeight: 600 }}>Recruitment Progress</span>
-                            <span style={{ fontWeight: 600 }}>{filledPositions} / {totalPositions} Positions Filled</span>
+        <div className="job-detail-grid" style={{gridTemplateColumns: '1fr', alignItems: 'start'}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
+                <div className="card" style={{ padding: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '300px' }}>
+                            {project.description && <p style={{ marginBottom: '12px', color: '#555', fontSize: '14px' }}>{project.description}</p>}
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', fontSize: '13px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#666' }}>calendar_today</span>
+                                    <span>{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'N/A'} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : 'N/A'}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#666' }}>attach_money</span>
+                                    <span>{project.budget || 'N/A'}</span>
+                                </div>
+                                <span className={`status-pill ${project.priority?.toLowerCase()}`}>{project.priority} Priority</span>
+                                <span className={`status-pill ${project.status.toLowerCase().replace(' ', '-')}`}>{project.status}</span>
+                            </div>
                         </div>
-                        <div className="progress-bar">
-                            <div className="progress-bar-inner" style={{ width: `${recruitmentProgress}%` }}></div>
+                        <div className="recruitment-progress-container" style={{ width: '250px', marginTop: '0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '13px' }}>
+                                <span style={{ fontWeight: 600 }}>Progress</span>
+                                <span>{filledPositions} / {totalPositions} Filled</span>
+                            </div>
+                            <div className="progress-bar" style={{ height: '8px' }}>
+                                <div className="progress-bar-inner" style={{ width: `${recruitmentProgress}%` }}></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -173,10 +210,11 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                                                  />                                {analyzingJobId === job.id && (
                                      <InlineATSAnalysis
                                         job={job}
-                                        analysisResult={analysisData[job.id]}
+                                        analysisResult={analysisData[job.id] || { loading: true, candidates: [], keywords: [] }}
                                         onCandidateSelect={onCandidateSelect}
-                                        onDeleteCandidates={onDeleteCandidates}
+                                        onDeleteCandidates={handleLocalDeleteCandidates}
                                         onEmailSelected={onEmailSelected}
+                                        onReAnalyze={() => handleReAnalyze(job)}
                                     />
                                 )}
                             </React.Fragment>
@@ -193,31 +231,6 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                     )
                 )}
             </div>
-            <aside className="job-detail-sidebar">
-                <div className="job-detail-card-v2">
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <h3>Team Members ({project.team.length})</h3>
-                        <button className="btn btn-secondary btn-small" onClick={() => onAddTeamMember(project)}>
-                            <span className="material-symbols-outlined">group_add</span> Add Member
-                        </button>
-                    </div>
-                     <div className="recipient-list" style={{gap: '12px', marginTop: '16px'}}>
-                        {project.team.map(member => {
-                            const user = userMap.get(member.userId);
-                            if (!user) return null;
-                            return (
-                                <div key={user.id} className="recipient-item" style={{background: 'var(--hover-color-light)'}}>
-                                    <div className="user-avatar small">{getInitials(user.name)}</div>
-                                    <div>
-                                        <p className="recipient-name">{user.name}</p>
-                                        <p className="recipient-email">{member.role}</p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </aside>
         </div>
     </div>
     )

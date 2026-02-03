@@ -11,12 +11,12 @@ type AnalysisResult = {
     keywords: string[];
 };
 
-const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCandidates, onEmailSelected }: { job: JobDescription, analysisResult: AnalysisResult, onCandidateSelect: (c: Candidate) => void, onDeleteCandidates: (ids: number[]) => void, onEmailSelected: (ids: number[]) => void }) => {
+const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCandidates, onEmailSelected, onReAnalyze }: { job: JobDescription, analysisResult: AnalysisResult, onCandidateSelect: (c: Candidate) => void, onDeleteCandidates: (ids: number[]) => void, onEmailSelected: (ids: number[]) => void, onReAnalyze: () => void }) => {
     const [filters, setFilters] = useState(defaultFilters);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
     if (!analysisResult) return null;
-    const { loading, candidates: initialRankedCandidates, keywords } = analysisResult;
+    const { loading, candidates: allRankedCandidates, keywords } = analysisResult;
     
     const getScoreColor = (score) => {
         if (score >= 75) return 'text-emerald-600';
@@ -24,9 +24,32 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
         return 'text-rose-600';
     };
 
+    // Apply filters to ranked candidates
+    const initialRankedCandidates = useMemo(() => {
+        if (!allRankedCandidates || allRankedCandidates.length === 0) return [];
+
+        return allRankedCandidates.filter(c => {
+            const statusMatch = filters.status.length === 0 || filters.status.includes(c.status);
+            const skillsMatch = !filters.skills || filters.skills.toLowerCase().split(',').every(skill => c.skills.some(cs => cs.toLowerCase().includes(skill.trim())));
+            const locationMatch = !filters.location || c.contact.location.toLowerCase().includes(filters.location.toLowerCase());
+            const categoryMatch = !filters.roleCategory || c.category.toLowerCase().includes(filters.roleCategory.toLowerCase());
+            const educationMatch = !filters.education || (c.education && c.education.some(edu => 
+                edu.degree.toLowerCase().includes(filters.education.toLowerCase()) || 
+                edu.institution.toLowerCase().includes(filters.education.toLowerCase())
+            ));
+            const salaryMin = parseFloat(filters.salaryMin);
+            const salaryMax = parseFloat(filters.salaryMax);
+            const salaryMatch = (!filters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
+                                (!filters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
+            const tagsMatch = !filters.tags || filters.tags.toLowerCase().split(',').every(tag => c.tags.some(ct => ct.toLowerCase().includes(tag.trim())));
+            
+            return statusMatch && skillsMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch;
+        });
+    }, [allRankedCandidates, filters]);
+
     useEffect(() => {
         setSelectedIds([]);
-    }, [filters, initialRankedCandidates]);
+    }, [filters, allRankedCandidates]);
 
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
@@ -89,10 +112,13 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
             ) : (
                 <>
                     <div className="analysis-keywords-header">
-                        <strong>Filtered using keywords:</strong>
+                        <strong>Analysis Keywords:</strong>
                         <div className="skills-container">
                             {keywords.map(kw => <span key={kw} className="skill-tag-simple">{kw}</span>)}
                         </div>
+                        <button className="btn btn-small btn-secondary" onClick={onReAnalyze} title="Re-run analysis" style={{marginLeft: 'auto'}}>
+                            <span className="material-symbols-outlined">refresh</span>
+                        </button>
                     </div>
 
                     <div className="inline-ats-toolbar">
@@ -131,11 +157,11 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                                             aria-label="Select all candidates in this view"
                                         />
                                     </th>
-                                    <th>Candidate Name</th>
+                                    <th>Candidate</th>
                                     <th>Experience</th>
                                     <th>Location</th>
                                     <th>Score</th>
-                                    <th>Matched Skills</th>
+                                    <th>Matching Skills</th>
                                     <th>Missing Skills</th>
                                     <th>Actions</th>
                                 </tr>
@@ -185,17 +211,21 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                                         </td>
                                         <td>
                                             <div className="action-buttons">
-                                                <button className="btn btn-secondary btn-small" onClick={() => onCandidateSelect(c)}>
-                                                    <span className="material-symbols-outlined">visibility</span> View
+                                                <button className="icon-btn" title="View Details" onClick={() => onCandidateSelect(c)}>
+                                                    <span className="material-symbols-outlined">visibility</span>
                                                 </button>
-                                                <button className="btn btn-danger btn-small" onClick={() => onDeleteCandidates([c.id])}>
-                                                    <span className="material-symbols-outlined">delete</span> Delete
+                                                <button className="icon-btn" title="Delete Candidate" onClick={() => onDeleteCandidates([c.id])}>
+                                                    <span className="material-symbols-outlined">delete</span>
                                                 </button>
                                             </div>
                                         </td>
                                     </tr>
                                 )) : (
-                                    <tr><td colSpan={8} style={{textAlign: 'center', padding: '32px', color: '#666'}}>No candidates match the current filters.</td></tr>
+                                    <tr><td colSpan={8} style={{textAlign: 'center', padding: '32px', color: '#666'}}>
+                                        {allRankedCandidates.length === 0 
+                                            ? "No relevant candidates found. Try adding more candidates or adjusting the job description." 
+                                            : "No candidates match the current filters."}
+                                    </td></tr>
                                 )}
                             </tbody>
                         </table>

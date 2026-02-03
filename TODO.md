@@ -1,0 +1,4 @@
+- [x] Modify setSession method to use account.name and account.username from MSAL
+- [x] Modify getUserData method to use account.name and account.username from MSAL
+- [x] Modify checkSessionStatus method to use account.name and account.username from MSAL
+- [ ] Test the changes to ensure name displays correctly
