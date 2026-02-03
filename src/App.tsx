@@ -367,7 +367,6 @@ const App = () => {
             timestamp: new Date().toISOString(),
             userId: userContext.id,
             userName: userContext.name,
-            userRole: userContext.role,
             action,
             ...details
         };
@@ -1627,7 +1626,7 @@ ${candidate.resumeContent}
 
     const hasPermission = (page: UserPermission) => {
         if (!effectiveUser) return false;
-        if (effectiveUser.role === 'Admin' || effectiveUser.role === 'Main Admin') return true;
+        // Admin permissions are handled by checking permissions array
         return effectiveUser.permissions.includes(page);
     };
 
@@ -1642,12 +1641,10 @@ ${candidate.resumeContent}
             'Settings': 'Settings',
             'History': 'History'
         };
-    
+
         const requiredPermission = permissionMap[pageName];
         if (!requiredPermission) return true; // Pages not in the map are public
-    
-        if (effectiveUser.role.includes('Admin')) return true;
-        
+
         return effectiveUser.permissions.includes(requiredPermission);
     };
 

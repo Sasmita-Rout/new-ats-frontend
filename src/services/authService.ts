@@ -1,5 +1,5 @@
 import { PublicClientApplication, Configuration, AuthenticationResult, AccountInfo } from '@azure/msal-browser';
-import { User } from '../types/types';
+import { User, UserRole } from '../types/types';
 
 // -----------------------
 // MSAL CONFIGURATION
@@ -113,8 +113,10 @@ export class AuthService {
         email: account.username,
         name: account.name || '',
         avatar: account.name ? account.name.charAt(0).toUpperCase() : '',
-        role: data.is_super_admin ? 'Main Admin' : (data.role || 'Recruiter'),
+        role: 'Recruiter' as UserRole,
         permissions: data.permissions || [],
+        apps: [],
+        is_super_admin: false,
         password: '',
       };
     } catch (error) {
@@ -144,8 +146,10 @@ export class AuthService {
         email: account.username,
         name: account.name || '',
         avatar: account.name ? account.name.charAt(0).toUpperCase() : '',
-        role: data.is_super_admin ? 'Main Admin' : (data.role || 'Recruiter'),
+        role: 'Recruiter' as UserRole,
         permissions: data.permissions || [],
+        apps: [],
+        is_super_admin: false,
         password: '',
       };
     } catch (error) {
@@ -196,24 +200,28 @@ export class AuthService {
       console.log('📦 Session status response:', data);
 
       if (data.authenticated) {
-        const account = this.getCurrentAccount();
-        if (account && account.name && account.username) {
+        if (data.email && data.name) {
+          // Get MSAL account to use intranet name
+          const account = this.getCurrentAccount();
+          const intranetName = account?.name || data.name; // Use MSAL account name (from intranet) as primary
+
           return {
             authenticated: true,
             user: {
               id: 0,
-              email: account.username,
-              name: account.name,
-              avatar: account.name.charAt(0).toUpperCase(),
+              email: data.email,
+              name: intranetName, // Use name from intranet (MSAL account)
+              avatar: intranetName.charAt(0).toUpperCase(),
               role: data.is_super_admin ? 'Main Admin' : (data.role || 'Recruiter'),
               permissions: data.permissions || [],
+              apps: data.apps || [],
+              is_super_admin: data.is_super_admin || false,
               password: '',
             },
           };
         } else {
-          console.warn('⚠️ Authenticated but no account data, using getUserData fallback...');
-          const fallbackUser = await this.getUserData();
-          return { authenticated: true, user: fallbackUser || undefined };
+          console.warn('⚠️ Authenticated but no user data from intranet');
+          return { authenticated: true };
         }
       }
 

@@ -11,6 +11,8 @@ export type User = {
   role: UserRole;
   avatar: string;
   permissions: UserPermission[];
+  apps: string[];
+  is_super_admin: boolean;
 };
 
 export type InvitationStatus = 'Pending' | 'Approved' | 'Rejected';
