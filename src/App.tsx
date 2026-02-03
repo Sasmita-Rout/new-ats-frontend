@@ -19,6 +19,7 @@ import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import CalendarPage from './pages/CalendarPage';
 import HistoryPage from './pages/HistoryPage';
+import LoginPage from './pages/LoginPage';
 
 import CandidateFitAnalysisPage from './pages/CandidateFitAnalysisPage';
 
@@ -80,15 +81,7 @@ const App = () => {
     });
     
     // --- AUTH STATE ---
-   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    // Will be set by SSO API call on mount
-    const savedUsers = localStorage.getItem('accionTalent_users');
-    if (savedUsers) {
-        const parsed = JSON.parse(savedUsers);
-        if (parsed.length > 0) return parsed[0];
-    }
-    return null;
-});
+   const [currentUser, setCurrentUser] = useState<User | null>(null); // Don't use localStorage fallback for SSO
 
     // Loading state for SSO initialization
     const [isInitializingSSO, setIsInitializingSSO] = useState(true);
@@ -1423,60 +1416,26 @@ ${candidate.resumeContent}
     }, [globalSearchTerm, allCandidates, allJobDescriptions]);
     
     // --- PAGE RENDERING LOGIC ---
-    // Modified: removed currentUser check for LoginPage rendering
-    
-    const renderContent = () => {
-        // Show loading only during initial SSO check (with timeout)
-        if (isInitializingSSO) {
-            return <div className="loading-indicator">Initializing user session...</div>;
-        }
-        
-        // If no user after initialization, create a fallback guest user
-        if (!effectiveUser) {
-            // Create a fallback guest user if none exists
-            if (!currentUser && users.length === 0) {
-                const guestUser: User = {
-                    id: 1,
-                    name: 'Guest User',
-                    email: 'guest@acciontalent.com',
-                    password: 'admin123',
-                    role: 'Admin',
-                    avatar: 'GU',
-                    permissions: allPermissions,
-                    apps: [],
-                    is_super_admin: false,
-                };
-                setCurrentUser(guestUser);
-                setUsers([guestUser]);
-                // Return loading briefly while setting guest user
-                return <div className="loading-indicator">Loading...</div>;
-            }
-            // If we have users but no currentUser, use the first one
-            if (!currentUser && users.length > 0) {
-                setCurrentUser(users[0]);
-                return <div className="loading-indicator">Loading...</div>;
-            }
-            return <div className="loading-indicator">Loading user...</div>;
-        }
 
+    const renderContent = () => {
         switch (currentPage) {
             case 'Dashboard':
                 const pendingCount = invitations.filter(i => i.inviterId === effectiveUser.id && i.status === 'Pending').length;
-                return <DashboardPage 
-                    effectiveUser={effectiveUser} 
-                    candidates={allCandidates} 
-                    jobs={allJobDescriptions} 
-                    projects={allProjects} 
+                return <DashboardPage
+                    effectiveUser={effectiveUser}
+                    candidates={allCandidates}
+                    jobs={allJobDescriptions}
+                    projects={allProjects}
                     onProjectSelect={(p) => { setSelectedProject(p); setCurrentPage('Job Matching'); }}
                     pendingInvitationCount={pendingCount}
                     onNavigate={handleNavigate}
                 />;
             case 'Job Matching':
                 if (selectedProject) {
-                     return <ProjectDetailPage 
-                        project={selectedProject} 
-                        jobsForProject={allJobDescriptions.filter(j => j.projectId === selectedProject.id)} 
-                        onBack={() => setSelectedProject(null)} 
+                     return <ProjectDetailPage
+                        project={selectedProject}
+                        jobsForProject={allJobDescriptions.filter(j => j.projectId === selectedProject.id)}
+                        onBack={() => setSelectedProject(null)}
                         onJobSelect={(j) => { setSelectedJobForDetail(j); }}
                         onJobCreateManually={() => { setJobToEdit(null); setJobEditorModalOpen(true); }}
                         onJobStatusUpdate={handleJobStatusUpdate}
@@ -1502,17 +1461,17 @@ ${candidate.resumeContent}
                     />;
                 }
                 if (selectedJobForDetail) {
-                    return <JobDetailPage 
-                        job={selectedJobForDetail} 
+                    return <JobDetailPage
+                        job={selectedJobForDetail}
                         onBack={() => setSelectedJobForDetail(null)}
                         onMatch={(j) => { setSelectedJob(j); setCurrentPage('Candidates'); }}
                         onEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                     />;
                 }
-                 return <ProjectsPage 
-                    projects={allProjects} 
-                    jobs={allJobDescriptions} 
-                    onProjectSelect={(p) => setSelectedProject(p)} 
+                 return <ProjectsPage
+                    projects={allProjects}
+                    jobs={allJobDescriptions}
+                    onProjectSelect={(p) => setSelectedProject(p)}
                     onProjectCreate={() => { setProjectToEdit(null); setProjectEditorModalOpen(true); }}
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
                     onDeleteProject={handleDeleteProject}
@@ -1550,8 +1509,8 @@ ${candidate.resumeContent}
                     onAnalyzeSelected={handleAnalyzeSelected}
                  />;
             case 'Communications':
-                return <CommunicationsPage 
-                    emailTargets={emailTargets} 
+                return <CommunicationsPage
+                    emailTargets={emailTargets}
                     onClearTargets={() => setEmailTargets([])}
                     onUpdateTargets={setEmailTargets}
                     onSendEmail={(ids, subject) => logAction(`Sent email with subject "${subject}" to ${ids.length} candidate(s)`)}
@@ -1591,37 +1550,30 @@ ${candidate.resumeContent}
                 return <div>Page not found</div>;
         }
     };
-    
+
     // Show loading only during initial SSO check
     if (isInitializingSSO) {
         return <div className="loading-indicator">Initializing user session...</div>;
     }
-    
-    // If no user after initialization, create a fallback guest user
+
+    // If no user after initialization, show login page
     if (!effectiveUser) {
-        // Create a fallback guest user if none exists
-        if (!currentUser && users.length === 0) {
-            const guestUser: User = {
-                id: 1,
-                name: 'Guest User',
-                email: 'guest@acciontalent.com',
-                password: 'admin123',
+        return <LoginPage onLogin={async (email: string, password: string) => {
+            // For manual login, create a user with the provided credentials
+            const manualUser: User = {
+                id: Date.now(),
+                name: email.split('@')[0], // Use email prefix as name
+                email: email,
+                password: password,
                 role: 'Admin',
-                avatar: 'GU',
+                avatar: email.charAt(0).toUpperCase(),
                 permissions: allPermissions,
                 apps: [],
                 is_super_admin: false,
             };
-            setCurrentUser(guestUser);
-            setUsers([guestUser]);
-            return <div className="loading-indicator">Loading...</div>;
-        }
-        // If we have users but no currentUser, use the first one
-        if (!currentUser && users.length > 0) {
-            setCurrentUser(users[0]);
-            return <div className="loading-indicator">Loading...</div>;
-        }
-        return <div className="loading-indicator">Loading user...</div>;
+            setCurrentUser(manualUser);
+            setUsers([manualUser]);
+        }} error={null} />;
     }
 
     const hasPermission = (page: UserPermission) => {
@@ -1657,7 +1609,6 @@ ${candidate.resumeContent}
             </div>
         </div>
     );
-    
 
     return (
         <div className="app-container">
@@ -1679,7 +1630,7 @@ ${candidate.resumeContent}
                     onMarkAllAsRead={handleMarkAllAsRead}
                     onNotificationNavigate={handleNotificationNavigate}
                 />
-                
+
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
 
             </main>
