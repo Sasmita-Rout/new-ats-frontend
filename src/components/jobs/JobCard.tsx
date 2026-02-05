@@ -1,56 +1,26 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { JobDescription } from '../../types/types';
 
-const JobStatusEditor = ({ status, onStatusChange }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const selectRef = useRef<HTMLSelectElement>(null);
-    const jobStatuses: JobDescription['status'][] = ['Active', 'Paused', 'Closed'];
-
-    const handleStatusClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setIsEditing(true);
-    };
-
-    const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        e.stopPropagation();
-        onStatusChange(e.target.value as JobDescription['status']);
-        setIsEditing(false);
-    };
-
-    const handleBlur = (e: React.FocusEvent<HTMLSelectElement>) => {
-        e.stopPropagation();
-        setIsEditing(false);
-    };
-    
-    useEffect(() => {
-        if (isEditing) {
-            selectRef.current?.focus();
-        }
-    }, [isEditing]);
-    
-    if (isEditing) {
-        return (
-             <select
-                ref={selectRef}
-                value={status}
-                onChange={handleChange}
-                onBlur={handleBlur}
-                onClick={e => e.stopPropagation()}
-                className={`status-pill editable ${status.toLowerCase()}`}
-            >
-                {jobStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-        );
-    }
-
-    return (
-        <span onClick={handleStatusClick} className={`status-pill editable ${status.toLowerCase()}`}>
-            {status}
-        </span>
-    );
+const getInitials = (name: string) => {
+    const cleaned = (name || '').trim();
+    if (!cleaned) return 'JD';
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] || '';
+    const last = parts.length > 1 ? parts[parts.length - 1]?.[0] || '' : '';
+    return (first + last).toUpperCase() || 'JD';
 };
 
-const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnalysis, onStatusUpdate, isSelected, onSelect, onDelete }) => (
+const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete }) => {
+    const companyName = (job.companyName || '').trim();
+    const companyDomain = companyName
+        ? `${companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`
+        : '';
+    const [logoError, setLogoError] = useState(false);
+    const logoSrc = job.companyLogo
+        || (companyDomain ? `https://logo.clearbit.com/${companyDomain}?size=80` : '');
+    const showLogo = !!logoSrc && !logoError;
+
+    return (
     <div className={`job-card-wrapper ${isSelected ? 'selected' : ''}`}>
         <input 
             type="checkbox" 
@@ -83,16 +53,30 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
                 </div>
             </div>
             <div className="job-card-aside">
-                <img 
-                    src={job.companyLogo || `https://logo.clearbit.com/${job.companyName.toLowerCase().replace(/ /g, '')}.com?size=80`} 
-                    alt={`${job.companyName} logo`} 
-                    className="job-card-logo" 
-                    onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = 'https://via.placeholder.com/80'; }}
-                />
-                <div className="job-status-container">
-                     <JobStatusEditor status={job.status} onStatusChange={(newStatus) => onStatusUpdate(job.id, newStatus)} />
+                {showLogo ? (
+                    <img 
+                        src={logoSrc} 
+                        alt={`${job.companyName} logo`} 
+                        className="job-card-logo" 
+                        onError={() => setLogoError(true)}
+                    />
+                ) : (
+                    <div className="job-card-logo-fallback" aria-label={`${job.companyName || 'Company'} logo`}>
+                        {getInitials(companyName)}
+                    </div>
+                )}
+                <div className="job-card-actions stack">
+                    <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onJobSelect(job);}}>
+                        <span className="material-symbols-outlined">visibility</span> View
+                    </button>
+                    <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onEdit(job);}}>
+                        <span className="material-symbols-outlined">edit</span> Edit
+                    </button>
+                    <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onChangeJd(job);}}>
+                        <span className="material-symbols-outlined">description</span> Change JD
+                    </button>
                 </div>
-                 <div className="job-card-actions">
+                <div className="job-card-actions">
                      <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onAnalyzeFit();}} disabled={isProcessingAnalysis}>
                         {isProcessingAnalysis ? (
                             <span className="material-symbols-outlined spin">autorenew</span>
@@ -117,6 +101,7 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
             </div>
         </div>
     </div>
-);
+    );
+};
 
 export default JobCard;

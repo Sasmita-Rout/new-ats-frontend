@@ -13,18 +13,13 @@ const Chatbot: React.FC<ChatbotProps> = ({ jobs, candidates, currentUser }) => {
     const storageKey = `accionTalent_chatbotHistory_${currentUser.id}`;
 
     const [isOpen, setIsOpen] = useState(false);
-    const [allChats, setAllChats] = useState<ChatSession[]>(() => {
-        const savedChats = localStorage.getItem(storageKey);
-        return savedChats ? JSON.parse(savedChats) : [];
-    });
+    const [allChats, setAllChats] = useState<ChatSession[]>([]);
     const [activeChatId, setActiveChatId] = useState<number | null>(null);
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        localStorage.setItem(storageKey, JSON.stringify(allChats));
-    }, [allChats, storageKey]);
+    // TODO: Chat history will eventually be managed via an API.
 
     useEffect(() => {
         if (isOpen) {

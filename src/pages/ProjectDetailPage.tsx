@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { JobDescription, Candidate, Project, CandidateWithScore, User } from '../types/types';
+import { JobDescription, Candidate, Project, CandidateWithScore } from '../types/types';
 import JobCard from '../components/jobs/JobCard';
 import InlineATSAnalysis from '../components/jobs/InlineATSAnalysis';
 import ProcessingQueue from '../components/common/ProcessingQueue';
-import { getInitials } from '../utils/helpers';
 
 type AnalysisResult = {
     loading: boolean;
@@ -11,13 +10,10 @@ type AnalysisResult = {
     keywords: string[];
 };
 
-const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobCreateManually, onJobStatusUpdate, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onAddTeamMember, allUsers }) => {
+const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal }) => {
     const [analyzingJobId, setAnalyzingJobId] = useState<number | null>(null);
     const [selectedJobIds, setSelectedJobIds] = useState<number[]>([]);
     const [analysisData, setAnalysisData] = useState<{ [key: number]: AnalysisResult }>({});
-
-    const userMap = useMemo(() => new Map(allUsers.map(user => [user.id, user])), [allUsers]);
-
 
     useEffect(() => {
         setSelectedJobIds([]);
@@ -78,8 +74,7 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
         </button>
         <div className="page-header with-action">
             <div>
-                <h1>{project.name}</h1>
-                <p>Client / Department: {project.clientOrDepartment}</p>
+                <h1>{project.project_name}</h1>
             </div>
              <div className="actions-group">
                 {selectedJobIds.length > 0 ? (
@@ -115,15 +110,11 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
             </div>
         </div>
         
-        <div className="job-detail-grid" style={{gridTemplateColumns: 'minmax(0, 2.5fr) minmax(320px, 1fr)', alignItems: 'start'}}>
+        <div className="job-detail-grid" style={{gridTemplateColumns: 'minmax(0, 1fr)', alignItems: 'start'}}>
             <div style={{display: 'flex', flexDirection: 'column', gap: '24px'}}>
                 <div className="card" style={{ padding: '24px' }}>
                      <div className="project-details-grid">
-                        <div style={{ gridColumn: '1 / -1' }}><strong>Description:</strong> <p>{project.description || 'N/A'}</p></div>
-                        <div><strong>Priority:</strong> <span className={`status-pill ${project.priority?.toLowerCase()}`}>{project.priority}</span></div>
-                        <div><strong>Dates:</strong> <p>{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'N/A'} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : 'N/A'}</p></div>
-                        <div><strong>Budget:</strong> <p>{project.budget || 'N/A'}</p></div>
-                        <div><strong>Status:</strong> <span className={`status-pill ${project.status.toLowerCase().replace(' ', '-')}`}>{project.status}</span></div>
+                        <div style={{ gridColumn: '1 / -1' }}><strong>Description:</strong> <p>{project.project_description || 'N/A'}</p></div>
                     </div>
                     <div className="recruitment-progress-container" style={{ marginTop: '20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -166,7 +157,8 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                                                     onAnalyzeFit={() => handleAnalyzeFit(job)}
                                                                     isAnalyzing={analyzingJobId === job.id}
                                                                     isProcessingAnalysis={analysisData[job.id]?.loading || false}
-                                                                    onStatusUpdate={onJobStatusUpdate}
+                                                                    onEdit={onJobEdit}
+                                                                    onChangeJd={onJobChangeJd}
                                                                     isSelected={selectedJobIds.includes(job.id)}
                                                                     onSelect={handleSelectJob}
                                                                     onDelete={(jobId) => onDeleteJobs([jobId])}
@@ -193,31 +185,6 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                     )
                 )}
             </div>
-            <aside className="job-detail-sidebar">
-                <div className="job-detail-card-v2">
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <h3>Team Members ({project.team.length})</h3>
-                        <button className="btn btn-secondary btn-small" onClick={() => onAddTeamMember(project)}>
-                            <span className="material-symbols-outlined">group_add</span> Add Member
-                        </button>
-                    </div>
-                     <div className="recipient-list" style={{gap: '12px', marginTop: '16px'}}>
-                        {project.team.map(member => {
-                            const user = userMap.get(member.userId);
-                            if (!user) return null;
-                            return (
-                                <div key={user.id} className="recipient-item" style={{background: 'var(--hover-color-light)'}}>
-                                    <div className="user-avatar small">{getInitials(user.name)}</div>
-                                    <div>
-                                        <p className="recipient-name">{user.name}</p>
-                                        <p className="recipient-email">{member.role}</p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </aside>
         </div>
     </div>
     )

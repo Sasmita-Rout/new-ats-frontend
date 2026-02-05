@@ -23,7 +23,7 @@ export type Invitation = {
   status: InvitationStatus;
   createdAt: string; // ISO string
   type: 'User' | 'ProjectTeam';
-  projectId?: number;
+  projectId?: string;
   projectName?: string;
 };
 
@@ -50,25 +50,12 @@ export type CompanyProfile = {
   address: string;
 };
 
-export type ProjectTeamMember = {
-  userId: number;
-  role: 'Owner' | 'Member';
-};
-
 export type Project = {
-  id: number;
-  name: string;
-  description: string;
-  clientOrDepartment: string;
-  ownerId: number;
-  status: 'Active' | 'On Hold' | 'Closed';
-  priority: 'High' | 'Medium' | 'Low';
-  startDate: string; // ISO string for date
-  endDate: string; // ISO string for date
-  budget?: string;
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
-  team: ProjectTeamMember[];
+  project_id: string;
+  project_name: string;
+  project_description?: string;
+  uploaded_by: string;
+  status?: 'active' | 'inactive';
 };
 
 export type Experience = {
@@ -152,7 +139,8 @@ export type Candidate = {
 
 export type JobDescription = {
     id: number;
-    projectId: number;
+    jobId?: string;
+    projectId: string;
     title: string;
     companyName: string;
     companyLogo: string;
@@ -179,6 +167,7 @@ export type JobDescription = {
     analysisKeywords?: string[];
     // Added to store the raw text content of the JD
     jdContent?: string;
+    aiFilled?: boolean;
 };
 
 export type CandidateWithScore = Candidate & { 

@@ -1,9 +1,11 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
 // Import types
-import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification, ProjectTeamMember } from './types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification } from './types/types';
 
 // Import pages
 import DashboardPage from './pages/DashboardPage';
@@ -19,6 +21,7 @@ import SettingsPage from './pages/SettingsPage';
 import CalendarPage from './pages/CalendarPage';
 import ManageUsersPage from './pages/ManageUsersPage';
 import HistoryPage from './pages/HistoryPage';
+import LoginPage from './pages/LoginPage';
 
 
 // Import components
@@ -35,51 +38,47 @@ import UserEditorModal from './modals/UserEditorModal';
 import ProjectEditorModal from './modals/ProjectEditorModal';
 import AIGenerateJDModal from './modals/AIGenerateJDModal';
 import InviteMemberModal from './modals/InviteMemberModal';
-import AddTeamMemberModal from './modals/AddTeamMemberModal';
 
 
 // Import utils
 import { getInitials } from './utils/helpers';
-import { getTextFromFile } from './utils/fileUtils';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
 
+const hashStringToInt = (value: string): number => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+        hash = ((hash << 5) - hash) + value.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash) || 1;
+};
+
+const defaultUser: User = {
+    id: 1,
+    name: 'Default Admin',
+    email: 'admin@default.com',
+    role: 'Main Admin',
+    avatar: getInitials('Default Admin'),
+    permissions: allPermissions,
+};
+
 const App = () => {
     // --- MAIN DATA STATE ---
-    const [allCandidates, setAllCandidates] = useState<Candidate[]>(() => JSON.parse(localStorage.getItem('accionTalent_candidates') || '[]'));
-    const [allJobDescriptions, setAllJobDescriptions] = useState<JobDescription[]>(() => JSON.parse(localStorage.getItem('accionTalent_jobs') || '[]'));
-    const [allProjects, setAllProjects] = useState<Project[]>(() => JSON.parse(localStorage.getItem('accionTalent_projects') || '[]'));
-    const [users, setUsers] = useState<User[]>(() => {
-        const savedUsers = localStorage.getItem('accionTalent_users');
-        if (savedUsers) return JSON.parse(savedUsers);
-        const initialAdmin: User = { id: 1, name: 'Sasmita Rout', email: 'sasmitarout.official@gmail.com', password: 'Suchi@2001', role: 'Main Admin', avatar: getInitials('Sasmita Rout'), permissions: ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'] };
-        return [initialAdmin];
-    });
-    const [historyLog, setHistoryLog] = useState<HistoryEntry[]>(() => JSON.parse(localStorage.getItem('accionTalent_history') || '[]'));
-    const [invitations, setInvitations] = useState<Invitation[]>(() => JSON.parse(localStorage.getItem('accionTalent_invitations') || '[]'));
-    const [notifications, setNotifications] = useState<Notification[]>(() => JSON.parse(localStorage.getItem('accionTalent_notifications') || '[]'));
+    const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
+    const [allJobDescriptions, setAllJobDescriptions] = useState<JobDescription[]>([]);
+    const [allProjects, setAllProjects] = useState<Project[]>([]);
+    const [users, setUsers] = useState<User[]>([defaultUser]);
+    const [historyLog, setHistoryLog] = useState<HistoryEntry[]>([]);
+    const [invitations, setInvitations] = useState<Invitation[]>([]);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
-        const saved = localStorage.getItem('accionTalent_companyProfile');
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            // Migration: If name is still AccionTalent, update to AccionLabs
-            if (parsed.name === 'AccionTalent') {
-                return {
-                    ...parsed,
-                    name: 'AccionLabs',
-                    logo: 'https://mma.prnewswire.com/media/1196052/Accion_Labs_Logo.jpg',
-                    industry: 'Technology & Services',
-                    description: 'AccionLabs is an intelligent Applicant Tracking System designed to streamline recruitment and unlock human potential. We help companies find the perfect fit, faster.',
-                    website: 'https://www.accionlabs.com',
-                    email: 'info@accionlabs.com',
-                    linkedin: 'https://www.linkedin.com/company/accion-labs/',
-                    address: '1225 Washington Pike #401, Bridgeville, PA 15017, United States'
-                };
-            }
-            return parsed;
-        }
         return {
             name: 'AccionLabs',
             logo: 'https://mma.prnewswire.com/media/1196052/Accion_Labs_Logo.jpg',
@@ -91,20 +90,11 @@ const App = () => {
             address: '1225 Washington Pike #401, Bridgeville, PA 15017, United States'
         };
     });
-    
+
     // --- AUTH & IMPERSONATION STATE ---
-    const [currentUser, setCurrentUser] = useState<User | null>(() => {
-        const saved = sessionStorage.getItem('accionTalent_currentUser');
-        if (saved) return JSON.parse(saved);
-        const defaultAdmin = users[0];
-        if (defaultAdmin) {
-            sessionStorage.setItem('accionTalent_currentUser', JSON.stringify(defaultAdmin));
-            return defaultAdmin;
-        }
-        return null;
-    });
+    const [currentUser, setCurrentUser] = useState<User | null>(defaultUser);
     const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
-    
+
     // --- UI & MODAL STATE ---
     const [currentPage, setCurrentPage] = useState('Dashboard');
     const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
@@ -123,6 +113,7 @@ const App = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [processingStatus, setProcessingStatus] = useState('');
     const processingRef = useRef(false);
+    const initialDataFetchRef = useRef(false);
     const [isProcessingJds, setIsProcessingJds] = useState(false);
     const [processingJdsStatus, setProcessingJdsStatus] = useState('');
     const [mainFilters, setMainFilters] = useState(defaultFilters);
@@ -138,21 +129,12 @@ const App = () => {
     const [isAIGenerateModalOpen, setAIGenerateModalOpen] = useState(false);
     const [isGeneratingJD, setIsGeneratingJD] = useState(false);
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
-    const [isAddTeamMemberModalOpen, setAddTeamMemberModalOpen] = useState(false);
-    const [projectForTeamAdd, setProjectForTeamAdd] = useState<Project | null>(null);
     
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
 
     // --- DATA PERSISTENCE ---
-    useEffect(() => { localStorage.setItem('accionTalent_candidates', JSON.stringify(allCandidates)); }, [allCandidates]);
-    useEffect(() => { localStorage.setItem('accionTalent_jobs', JSON.stringify(allJobDescriptions)); }, [allJobDescriptions]);
-    useEffect(() => { localStorage.setItem('accionTalent_projects', JSON.stringify(allProjects)); }, [allProjects]);
-    useEffect(() => { localStorage.setItem('accionTalent_users', JSON.stringify(users)); }, [users]);
-    useEffect(() => { localStorage.setItem('accionTalent_history', JSON.stringify(historyLog)); }, [historyLog]);
-    useEffect(() => { localStorage.setItem('accionTalent_invitations', JSON.stringify(invitations)); }, [invitations]);
-    useEffect(() => { localStorage.setItem('accionTalent_notifications', JSON.stringify(notifications)); }, [notifications]);
-    useEffect(() => { localStorage.setItem('accionTalent_companyProfile', JSON.stringify(companyProfile)); }, [companyProfile]);
+    // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
     
     // --- CORE HANDLERS ---
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
@@ -184,6 +166,24 @@ const App = () => {
         };
         setNotifications(prev => [newNotification, ...prev].slice(0, 100)); // Keep max 100 notifications
     }, []);
+
+    const notifySuccess = useCallback((message: string) => {
+        toast.success(message);
+        const userId = effectiveUser?.id ?? defaultUser.id;
+        addNotification(userId, message);
+    }, [addNotification, effectiveUser]);
+
+    const notifyError = useCallback((message: string) => {
+        toast.error(message);
+        const userId = effectiveUser?.id ?? defaultUser.id;
+        addNotification(userId, message);
+    }, [addNotification, effectiveUser]);
+
+    const notifyInfo = useCallback((message: string) => {
+        toast.info(message);
+        const userId = effectiveUser?.id ?? defaultUser.id;
+        addNotification(userId, message);
+    }, [addNotification, effectiveUser]);
 
     const handleMarkAsRead = (notificationId: number) => {
         setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
@@ -224,7 +224,7 @@ const App = () => {
         
         setCurrentUser(null);
         setImpersonatedUser(null);
-        sessionStorage.removeItem('accionTalent_currentUser');
+        // TODO: Logout functionality will interact with an authentication API.
         window.location.reload();
     };
 
@@ -364,7 +364,7 @@ const App = () => {
                 setCurrentPage('Job Matching');
             }
         } else if (type === 'Project') {
-            const project = allProjects.find(p => p.id === id);
+            const project = allProjects.find(p => p.project_id === String(id));
             if (project) {
                 setSelectedProject(project);
                 setCurrentPage('Job Matching');
@@ -378,7 +378,7 @@ const App = () => {
             if (currentUser && currentUser.id === userId) {
                 const updatedCurrentUser = { ...currentUser, ...userData, password: userData.password || currentUser.password };
                 setCurrentUser(updatedCurrentUser);
-                sessionStorage.setItem('accionTalent_currentUser', JSON.stringify(updatedCurrentUser));
+                // TODO: User session persistence will be handled via API calls.
             }
             setUsers(users.map(u => u.id === userId ? { ...u, ...userData, password: userData.password || u.password } : u));
             logAction('Updated user', { targetType: 'User', targetName: userData.name, targetId: userId });
@@ -394,16 +394,6 @@ const App = () => {
             const invitation = invitations.find(i => i.id === userData.invitationId);
             if (invitation) {
                 handleUpdateInvitationStatus(invitation.id, 'Approved');
-                if (invitation.type === 'ProjectTeam' && invitation.projectId) {
-                    setAllProjects(prevProjects => prevProjects.map(p => {
-                        if (p.id === invitation.projectId) {
-                            const updatedTeam = [...p.team, { userId: newUser.id, role: 'Member' as const }];
-                            return { ...p, team: updatedTeam };
-                        }
-                        return p;
-                    }));
-                     addNotification(newUser.id, `You've been added to project: ${invitation.projectName}`, { page: 'Dashboard' });
-                }
             } else {
                 logAction('Created user manually', { targetType: 'User', targetName: newUser.name, targetId: newUser.id });
             }
@@ -427,7 +417,7 @@ const App = () => {
         const updatedUser = { ...currentUser, ...updatedData, avatar: newAvatar };
         
         setCurrentUser(updatedUser);
-        sessionStorage.setItem('accionTalent_currentUser', JSON.stringify(updatedUser));
+        // TODO: User session persistence will be handled via API calls.
         setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
         logAction('Updated own profile');
     };
@@ -466,50 +456,6 @@ const App = () => {
         });
 
         setInviteModalOpen(false);
-    };
-
-    const handleAddTeamMemberToProject = (email: string) => {
-        if (!projectForTeamAdd || !effectiveUser) return;
-
-        const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-        if (existingUser) {
-            setAllProjects(prevProjects => prevProjects.map(p => {
-                if (p.id === projectForTeamAdd.id) {
-                    if (p.team.some(member => member.userId === existingUser.id)) {
-                        alert(`${existingUser.name} is already a member of this project.`);
-                        return p;
-                    }
-                    const updatedTeam: ProjectTeamMember[] = [...p.team, { userId: existingUser.id, role: 'Member' }];
-                    logAction(`Added ${existingUser.name} to project`, { targetType: 'Project', targetName: p.name, targetId: p.id });
-                    addNotification(existingUser.id, `You've been added to project "${p.name}" by ${effectiveUser.name}.`, { page: 'Dashboard' });
-                    addNotification(p.ownerId, `${existingUser.name} was added to your project "${p.name}".`, { page: 'Job Matching' });
-                    return { ...p, team: updatedTeam };
-                }
-                return p;
-            }));
-        } else {
-            const newInvitation: Invitation = {
-                id: Date.now(),
-                inviterId: effectiveUser.id,
-                inviterName: effectiveUser.name,
-                email,
-                status: 'Pending',
-                createdAt: new Date().toISOString(),
-                type: 'ProjectTeam',
-                projectId: projectForTeamAdd.id,
-                projectName: projectForTeamAdd.name,
-            };
-            setInvitations(prev => [newInvitation, ...prev]);
-            logAction(`Requested to add new user ${email} to project`, { targetType: 'Project', targetName: projectForTeamAdd.name, targetId: projectForTeamAdd.id });
-            
-            const admins = users.filter(u => u.role.includes('Admin'));
-            admins.forEach(admin => {
-                addNotification(admin.id, `${effectiveUser.name} requested to add a new user (${email}) to project "${projectForTeamAdd.name}".`, { page: 'Manage Users' });
-            });
-        }
-        setAddTeamMemberModalOpen(false);
-        setProjectForTeamAdd(null);
     };
 
     const handleUpdateInvitationStatus = (invitationId: number, status: InvitationStatus) => {
@@ -571,82 +517,160 @@ const App = () => {
     };
 
     // --- PROJECT & JOB HANDLERS ---
-    const handleSaveProject = (projectData: Partial<Project>) => {
-        const now = new Date().toISOString();
-        if (projectData.id) {
-            const updatedProject = { ...projectData, updatedAt: now } as Project;
-            setAllProjects(prev => prev.map(p => p.id === projectData.id ? { ...p, ...updatedProject } : p));
-            logAction('Updated project', { targetType: 'Project', targetName: projectData.name, targetId: projectData.id });
+    const handleSaveProject = async (projectData: Partial<Project>) => {
+        if (projectData.project_id) {
+            try {
+                console.info('[Project Update Payload]', {
+                    project_id: projectData.project_id,
+                    project_name: projectData.project_name,
+                    project_description: projectData.project_description,
+                    status: projectData.status,
+                });
+                await apiRequest(`/project/${encodeURIComponent(projectData.project_id)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_name: projectData.project_name,
+                        project_description: projectData.project_description,
+                        status: projectData.status,
+                    }),
+                });
+                await fetchProjects();
+                logAction('Updated project', { targetType: 'Project', targetName: projectData.project_name, targetId: Number(projectData.project_id) || 0 });
+                notifySuccess(`Project updated: ${projectData.project_name || 'Untitled'}`);
+            } catch (error) {
+                console.error('Failed to update project:', error);
+                notifyError('Project update failed.');
+            }
         } else {
-            const newProject: Project = { 
-                id: Date.now(), 
-                ownerId: effectiveUser.id,
-                priority: 'Medium',
-                status: 'Active', 
-                createdAt: now, 
-                updatedAt: now,
-                team: [{ userId: effectiveUser.id, role: 'Owner' }],
-                ...projectData 
-            } as Project;
-            setAllProjects(prev => [newProject, ...prev]);
-            logAction('Created project', { targetType: 'Project', targetName: newProject.name, targetId: newProject.id });
+            const newProjectId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                ? crypto.randomUUID()
+                : Date.now().toString();
+            const newProject: Project = {
+                project_id: newProjectId,
+                uploaded_by: effectiveUser?.email || defaultUser.email,
+                project_name: projectData.project_name || 'Untitled Project',
+                project_description: projectData.project_description || '',
+                status: projectData.status || 'active',
+            };
+            try {
+                console.info('[Project Create Payload]', newProject);
+                await apiRequest('/project/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newProject),
+                });
+                await fetchProjects();
+                logAction('Created project', { targetType: 'Project', targetName: newProject.project_name, targetId: Number(newProject.project_id) || 0 });
+                notifySuccess(`Project created: ${newProject.project_name}`);
 
-            // Automatically prompt to create a JD for the new project
-            setSelectedProject(newProject);
-            setJobToEdit(null);
-            setJobEditorModalOpen(true);
-        }
-    };
-
-    const handleDeleteProject = (projectId: number) => {
-        const projectToDelete = allProjects.find(p => p.id === projectId);
-        if (!projectToDelete) return;
-
-        if (window.confirm(`Are you sure you want to delete the project "${projectToDelete.name}"? This will also delete all associated jobs.`)) {
-            setAllProjects(prev => prev.filter(p => p.id !== projectId));
-            setAllJobDescriptions(prev => prev.filter(j => j.projectId !== projectId));
-            logAction('Deleted project', { targetType: 'Project', targetName: projectToDelete.name, targetId: projectId });
-            if (selectedProject?.id === projectId) {
-                setSelectedProject(null);
+                // Automatically prompt to create a JD for the new project
+                setSelectedProject(newProject);
+                setJobToEdit(null);
+                setJobEditorModalOpen(true);
+            } catch (error) {
+                console.error('Failed to create project:', error);
+                notifyError('Project creation failed.');
             }
         }
     };
     
-    const handleSaveJob = (jobData: Partial<JobDescription>, projectId: number) => {
-        if (jobData.id) {
-            setAllJobDescriptions(prev => prev.map(j => j.id === jobData.id ? { ...j, ...jobData } as JobDescription : j));
-            logAction('Updated job', { targetType: 'Job', targetName: jobData.title, targetId: jobData.id });
-        } else {
-            const newJob = { 
-                id: Date.now(), 
-                projectId, 
-                ownerId: effectiveUser.id, 
-                status: 'Active' as const, 
-                postedDate: new Date().toISOString().split('T')[0], 
-                title: 'Untitled Job',
-                companyName: '',
-                companyLogo: '',
-                location: 'N/A',
-                experience: 'N/A',
-                type: 'Full-time',
-                salary: 'N/A',
-                applicants: 0,
-                matches: 0,
-                description: 'No description provided.',
-                education: 'N/A',
-                department: 'N/A',
-                roleCategory: 'N/A',
-                industry: 'N/A',
-                numberOfPositions: 1,
-                requiredSkills: [],
-                highlights: [],
-                responsibilities: [],
-                qualifications: [],
-                preferredQualifications: [],
-                ...jobData 
-            } as JobDescription;
-            setAllJobDescriptions(prev => [newJob, ...prev]);
-            logAction('Created job', { targetType: 'Job', targetName: newJob.title, targetId: newJob.id });
+    const handleSaveJob = async (jobData: Partial<JobDescription>, projectId: string) => {
+        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const existing = jobData.jobId
+            ? jobData
+            : allJobDescriptions.find(j => j.id === jobData.id);
+        const { min, max } = parseExperienceRange(jobData.experience);
+        const skills = (jobData.requiredSkills && jobData.requiredSkills.length > 0)
+            ? jobData.requiredSkills
+            : ['General'];
+        const title = (jobData.title || '').trim();
+        const location = (jobData.location || '').trim();
+        const description = (jobData.description || '').trim();
+        const validationErrors: string[] = [];
+        if (title.length < 3) validationErrors.push('Job title must be at least 3 characters.');
+        if (location.length < 2) validationErrors.push('Location must be at least 2 characters.');
+        if (description.length < 10) validationErrors.push('Job description must be at least 10 characters.');
+        if (validationErrors.length > 0) {
+            notifyError(validationErrors.join(' '));
+            return;
+        }
+
+        if (existing?.jobId) {
+            try {
+                console.info('[Job Update Payload]', {
+                    job_id: existing.jobId,
+                    project_id: projectId,
+                    job_title: title,
+                    job_description: description,
+                    job_skills: skills,
+                    job_location: location,
+                    job_experience_min: min,
+                    job_experience_max: max,
+                    status: jobData.status?.toLowerCase() === 'closed' ? 'closed' : 'active',
+                });
+                await apiRequest(`/job/${encodeURIComponent(existing.jobId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_title: title,
+                        job_description: description,
+                        job_skills: skills,
+                        job_location: location,
+                        job_experience_min: min,
+                        job_experience_max: max,
+                        status: jobData.status?.toLowerCase() === 'closed' ? 'closed' : 'active',
+                        project_id: projectId,
+                    }),
+                });
+                await fetchJobs();
+                logAction('Updated job', { targetType: 'Job', targetName: jobData.title, targetId: jobData.id || 0 });
+                notifySuccess(`Job updated: ${jobData.title || 'Untitled Job'}`);
+            } catch (error) {
+                console.error('Failed to update job:', error);
+                notifyError('Job update failed.');
+            }
+            return;
+        }
+
+        const newJobId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : Date.now().toString();
+        try {
+            console.info('[Job Create Payload]', {
+                job_id: newJobId,
+                project_id: projectId,
+                uploaded_by: uploadedBy,
+                job_title: title || 'Untitled Job',
+                job_location: location || 'N/A',
+                job_experience_min: min,
+                job_experience_max: max,
+                job_skills: skills,
+                job_description: description || '',
+                ai_filled: !!jobData.aiFilled,
+            });
+            await apiRequest('/job/process-job-json', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    job_id: newJobId,
+                    project_id: projectId,
+                    uploaded_by: uploadedBy,
+                    job_title: title || 'Untitled Job',
+                    job_location: location || 'N/A',
+                    job_experience_min: min,
+                    job_experience_max: max,
+                    job_skills: skills,
+                    job_description: description || '',
+                    ai_filled: !!jobData.aiFilled,
+                }),
+            });
+            await fetchJobs();
+            logAction('Created job', { targetType: 'Job', targetName: jobData.title || 'Untitled Job', targetId: 0 });
+            notifySuccess(`Job created: ${jobData.title || 'Untitled Job'}`);
+        } catch (error) {
+            console.error('Failed to create job:', error);
+            notifyError('Job creation failed.');
         }
     };
 
@@ -659,163 +683,140 @@ const App = () => {
         setIsProcessingJds(true);
         const totalFiles = stagedJds.length;
         let successCount = 0;
+        const uploadedBy = effectiveUser?.email || defaultUser.email;
         
         for (let i = 0; i < totalFiles; i++) {
             const file = stagedJds[i];
             setProcessingJdsStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
             
             try {
-                // Fix: Re-instantiate AI right before the call.
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                const jdSchema = {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        companyName: { type: Type.STRING },
-                        location: { type: Type.STRING },
-                        experience: { type: Type.STRING },
-                        type: { type: Type.STRING },
-                        salary: { type: Type.STRING },
-                        requiredSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        description: { type: Type.STRING },
-                        highlights: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        responsibilities: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        qualifications: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        preferredQualifications: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        education: { type: Type.STRING },
-                        department: { type: Type.STRING },
-                        roleCategory: { type: Type.STRING },
-                        industry: { type: Type.STRING },
-                        numberOfPositions: { type: Type.INTEGER }
-                    },
-                };
-                
-                const jdText = await getTextFromFile(file, ai);
-                const prompt = `You are an expert JD parser. Extract structured information from the following job description text. Fill out all fields of the JSON schema as completely as possible. Preserve formatting like bullet points using newline characters (\\n).\n\nJD Text:\n\n${jdText}`;
-    
-                // Fix: Updated model name to 'gemini-3-flash-preview' for basic parsing tasks.
-                const response = await ai.models.generateContent({
-                    model: 'gemini-3-flash-preview',
-                    contents: { parts: [{ text: prompt }] },
-                    config: { responseMimeType: 'application/json', responseSchema: jdSchema }
+                const formData = new FormData();
+                const jobId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                    ? crypto.randomUUID()
+                    : Date.now().toString();
+                formData.append('job_id', jobId);
+                formData.append('uploaded_by', uploadedBy);
+                formData.append('project_id', selectedProject.project_id);
+                formData.append('jd_file', file);
+
+                console.info('[JD Upload Payload]', {
+                    job_id: jobId,
+                    project_id: selectedProject.project_id,
+                    uploaded_by: uploadedBy,
+                    filename: file.name,
                 });
-    
-                let jsonString = response.text.trim();
-                if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
-                const parsedData = JSON.parse(jsonString);
-    
-                const newJobData: Partial<JobDescription> = {
-                    ...parsedData,
-                    jdContent: jdText,
-                    companyName: parsedData.companyName || selectedProject.clientOrDepartment,
-                };
-    
-                handleSaveJob(newJobData, selectedProject.id);
+                await apiRequest('/job/process-job-file', {
+                    method: 'POST',
+                    body: formData,
+                });
                 successCount++;
     
             } catch (error) {
                 console.error(`Failed to process ${file.name}:`, error);
+                notifyError(`JD upload failed: ${file.name}`);
             }
         }
         
+        await fetchJobs();
         setProcessingJdsStatus(`Processing complete. ${successCount}/${totalFiles} JDs added successfully.`);
+        if (successCount > 0) notifySuccess(`JD upload complete: ${successCount}/${totalFiles}`);
         setTimeout(() => {
             setIsProcessingJds(false);
             setStagedJds([]);
         }, 3000);
     };
 
-    const handleDeleteJobs = (ids: number[]) => {
+    const handleDeleteJobs = async (ids: number[]) => {
         const jobsToDelete = allJobDescriptions.filter(j => ids.includes(j.id));
         if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? This action cannot be undone.`)) {
-            setAllJobDescriptions(prev => prev.filter(j => !ids.includes(j.id)));
-            jobsToDelete.forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
-            if (selectedJob && ids.includes(selectedJob.id)) setSelectedJob(null);
-            if (selectedJobForDetail && ids.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
+        const results = await Promise.all(jobsToDelete.map(async (job) => {
+            if (!job.jobId) return { id: job.id, ok: false };
+            try {
+                console.info('[Job Delete]', { job_id: job.jobId });
+                await apiRequest(`/job/${encodeURIComponent(job.jobId)}`, { method: 'DELETE' });
+                return { id: job.id, ok: true };
+            } catch (error) {
+                console.error('Failed to delete job:', error);
+                return { id: job.id, ok: false };
+            }
+        }));
+            const deletedIds = results.filter(r => r.ok).map(r => r.id);
+            if (deletedIds.length > 0) {
+                setAllJobDescriptions(prev => prev.filter(j => !deletedIds.includes(j.id)));
+                jobsToDelete.filter(j => deletedIds.includes(j.id))
+                    .forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
+                notifySuccess(`Deleted ${deletedIds.length} job(s).`);
+                if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
+                if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
+            }
         }
     };
 
-    const handleJobStatusUpdate = (jobId: number, status: JobDescription['status']) => {
+    const handleJobStatusUpdate = async (jobId: number, status: JobDescription['status']) => {
         const jobToUpdate = allJobDescriptions.find(j => j.id === jobId);
         setAllJobDescriptions(prev => prev.map(j => j.id === jobId ? { ...j, status } : j));
+        if (jobToUpdate?.jobId) {
+            try {
+                await apiRequest(`/job/${encodeURIComponent(jobToUpdate.jobId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: status.toLowerCase() === 'closed' ? 'closed' : 'active' }),
+                });
+                await fetchJobs();
+            } catch (error) {
+                console.error('Failed to update job status:', error);
+            }
+        }
         if(jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
     };
 
-    const handleGenerateJdWithAI = async (prompt: string, projectId: number) => {
+    const handleGenerateJdWithAI = async (prompt: string, projectId: string) => {
         if (!prompt || !projectId) return;
 
         setIsGeneratingJD(true);
         setAIGenerateModalOpen(false);
 
         try {
-            // Fix: Re-instantiate AI right before the call.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const jdSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    title: { type: Type.STRING },
-                    companyName: { type: Type.STRING },
-                    location: { type: Type.STRING },
-                    experience: { type: Type.STRING },
-                    type: { type: Type.STRING },
-                    salary: { type: Type.STRING },
-                    requiredSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    description: { type: Type.STRING },
-                    highlights: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    responsibilities: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    qualifications: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    preferredQualifications: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    education: { type: Type.STRING },
-                    department: { type: Type.STRING },
-                    roleCategory: { type: Type.STRING },
-                    industry: { type: Type.STRING },
-                    numberOfPositions: { type: Type.INTEGER }
-                },
-            };
-
-            const fullPrompt = `You are an expert recruitment consultant. Generate a complete and professional job description based on this user request: "${prompt}". Fill out all fields of the JSON schema as completely as possible.`;
-
-            // Fix: Updated model name to 'gemini-3-flash-preview' for text generation tasks.
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { parts: [{ text: fullPrompt }] },
-                config: { responseMimeType: 'application/json', responseSchema: jdSchema }
+            console.info('[AI JD Generate Payload]', { prompt, project_id: projectId });
+            const data = await apiRequest('/job/generate-with-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt }),
             });
-
-            let jsonString = response.text.trim();
-            if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
-            const parsedData = JSON.parse(jsonString);
+            const jobData = data?.job || data;
 
             const newJobData: Partial<JobDescription> = {
                 projectId,
-                title: parsedData.title || 'Untitled Job',
-                companyName: parsedData.companyName || '',
+                title: jobData.title || 'Untitled Job',
+                companyName: jobData.companyName || '',
                 companyLogo: '',
-                location: parsedData.location || '',
+                location: jobData.location || '',
                 status: 'Active',
-                experience: parsedData.experience || '',
-                type: parsedData.type || 'Full-time',
-                salary: parsedData.salary || 'Competitive',
-                requiredSkills: parsedData.requiredSkills || [],
-                description: parsedData.description || '',
-                highlights: parsedData.highlights || [],
-                responsibilities: parsedData.responsibilities || [],
-                qualifications: parsedData.qualifications || [],
-                preferredQualifications: parsedData.preferredQualifications || [],
-                education: parsedData.education || '',
-                department: parsedData.department || '',
-                roleCategory: parsedData.roleCategory || '',
-                industry: parsedData.industry || '',
+                experience: jobData.experience || '',
+                type: jobData.type || 'Full-time',
+                salary: jobData.salary || 'Competitive',
+                requiredSkills: jobData.requiredSkills || [],
+                description: jobData.description || '',
+                highlights: jobData.highlights || [],
+                responsibilities: jobData.responsibilities || [],
+                qualifications: jobData.qualifications || [],
+                preferredQualifications: jobData.preferredQualifications || [],
+                education: jobData.education || '',
+                department: jobData.department || '',
+                roleCategory: jobData.roleCategory || '',
+                industry: jobData.industry || '',
                 ownerId: effectiveUser.id,
-                numberOfPositions: parsedData.numberOfPositions || 1,
+                numberOfPositions: jobData.numberOfPositions || 1,
+                aiFilled: true,
             };
 
             setJobToEdit(newJobData as JobDescription);
             setJobEditorModalOpen(true);
+            notifyInfo('AI JD generated. Please review and save.');
 
         } catch (error) {
             console.error("AI JD generation failed:", error);
-            alert(`Sorry, the AI failed to generate the job description.`);
+            notifyError('AI JD generation failed.');
         } finally {
             setIsGeneratingJD(false);
         }
@@ -830,8 +831,12 @@ const App = () => {
             if (currentJobState.analysisKeywords && currentJobState.analysisKeywords.length > 0) {
                 keywords = currentJobState.analysisKeywords;
             } else {
+                if (!GEMINI_API_KEY) {
+                    notifyError('AI analysis is not configured. Set VITE_GEMINI_API_KEY in .env and restart.');
+                    return { rankedCandidates: [], keywords: [] };
+                }
                 // Fix: Re-instantiate AI right before the call.
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
                 const keywordsSchema = {
                     type: Type.OBJECT,
                     properties: {
@@ -893,12 +898,16 @@ const App = () => {
         } finally {
             setIsAnalyzingJobId(null);
         }
-    }, [allCandidates, allJobDescriptions]);
+    }, [allCandidates, allJobDescriptions, notifyError]);
 
     const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
         try {
+            if (!GEMINI_API_KEY) {
+                notifyError('AI analysis is not configured. Set VITE_GEMINI_API_KEY in .env and restart.');
+                return null;
+            }
             // Fix: Re-instantiate AI right before the call.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
             const matchSchema = {
                 type: Type.OBJECT,
                 properties: {
@@ -943,11 +952,268 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             console.error("Failed to analyze fit:", error);
             return null;
         }
-    }, []);
+    }, [notifyError]);
     
+    const apiRequest = useCallback(async (path: string, options: RequestInit = {}) => {
+        const response = await fetch(`${API_BASE_URL}${path}`, options);
+        const contentType = response.headers.get('content-type') || '';
+        const data = contentType.includes('application/json') ? await response.json() : await response.text();
+        if (!response.ok) {
+            const message = typeof data === 'string' ? data : (data?.detail || 'Request failed');
+            throw new Error(message);
+        }
+        return data;
+    }, []);
+
+    const uploadResumeToVault = useCallback(async (file: File, email: string, uploadedBy: string) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('email', email);
+        formData.append('uploaded_by', uploadedBy);
+
+        const response = await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const contentType = response.headers.get('content-type') || '';
+            const data = contentType.includes('application/json') ? await response.json() : await response.text();
+            const message = typeof data === 'string' ? data : (data?.detail || 'Resume vault upload failed');
+            throw new Error(message);
+        }
+    }, []);
+
+    const safeArray = (value: unknown): string[] => {
+        if (Array.isArray(value)) return value.filter(Boolean).map(String);
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String);
+            } catch {
+                return value.split(',').map(v => v.trim()).filter(Boolean);
+            }
+        }
+        return [];
+    };
+
+    const safeObjectArray = <T extends object>(value: unknown): T[] => {
+        if (Array.isArray(value)) return value.filter(Boolean) as T[];
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? (parsed.filter(Boolean) as T[]) : [];
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    };
+
+    const normalizeCandidate = useCallback((raw: any): Candidate => {
+        const contact = raw.contact || {};
+        const email = raw.email || contact.email || '';
+        const phone = raw.phone || contact.phone || '';
+        const location = raw.location || contact.location || '';
+
+        const appliedDate = raw.applied_date || raw.appliedDate || raw.file_created || new Date().toISOString().split('T')[0];
+        const idSource = [
+            raw.id,
+            email,
+            raw.file_created,
+            raw.filenames,
+            raw.name,
+        ].filter(Boolean).join('|');
+        const derivedId = hashStringToInt(String(idSource));
+
+        return {
+            id: typeof raw.id === 'number' ? raw.id : derivedId,
+            name: raw.name || 'Unknown Candidate',
+            title: raw.title || 'N/A',
+            avatar: raw.avatar || getInitials(raw.name || 'Unknown'),
+            summary: raw.summary || '',
+            contact: { email, phone, location },
+            experience: safeObjectArray(raw.experience),
+            education: safeObjectArray(raw.education),
+            skills: safeArray(raw.skills),
+            softSkills: safeArray(raw.soft_skills || raw.softSkills),
+            languages: safeArray(raw.languages),
+            certifications: safeArray(raw.certifications),
+            links: safeObjectArray(raw.links),
+            status: raw.status || 'Applied',
+            appliedDate,
+            salaryExpectation: raw.salary_expectation ?? raw.salaryExpectation ?? null,
+            resumeContent: raw.resume_content || raw.resumeContent || '',
+            originalResumeFile: null,
+            applicationHistory: safeObjectArray(raw.application_history || raw.applicationHistory),
+            tasks: safeObjectArray(raw.tasks),
+            notes: safeObjectArray(raw.notes),
+            category: raw.category || 'Uncategorized',
+            tags: safeArray(raw.tags),
+            source: raw.source || raw.filename || raw.original_filename || '',
+            rejectionReason: raw.rejection_reason || raw.rejectionReason || null,
+            communicationHistory: safeObjectArray(raw.communication_history || raw.communicationHistory),
+            interviews: safeObjectArray(raw.interviews),
+            totalExperienceYears: raw.total_experience_years || raw.totalExperienceYears,
+        };
+    }, []);
+
+    const normalizeJobFromApi = useCallback((raw: any): JobDescription => {
+        const jobId = raw.job_id || raw.jobId || raw.id;
+        const projectId = raw.project_id || raw.projectId || 'unassigned';
+        const rawSkills = raw.job_skills || raw.jobSkills || raw.requiredSkills || [];
+        const requiredSkills = Array.isArray(rawSkills)
+            ? rawSkills.map((s: any) => String(s).trim()).filter(Boolean)
+            : String(rawSkills).split(',').map(s => s.trim()).filter(Boolean);
+        const expMin = raw.job_experience_min ?? raw.jobExperienceMin;
+        const expMax = raw.job_experience_max ?? raw.jobExperienceMax;
+        const experience = (expMin !== undefined || expMax !== undefined)
+            ? `${expMin ?? 0} - ${expMax ?? 0} Years`
+            : (raw.experience || 'N/A');
+        const statusRaw = (raw.status || raw.job_status || 'Active').toString().toLowerCase();
+        const status = statusRaw === 'inactive' || statusRaw === 'paused'
+            ? 'Paused'
+            : statusRaw === 'onhold'
+                ? 'Paused'
+                : statusRaw === 'closed'
+                    ? 'Closed'
+                    : 'Active';
+        const idSource = jobId || `${projectId}|${raw.job_title || raw.title || ''}|${raw.created_at || ''}`;
+
+        return {
+            id: hashStringToInt(String(idSource)),
+            jobId: jobId ? String(jobId) : undefined,
+            projectId: String(projectId),
+            title: raw.job_title || raw.title || 'Untitled Job',
+            companyName: raw.companyName || raw.company_name || '',
+            companyLogo: raw.companyLogo || raw.company_logo || '',
+            location: raw.job_location || raw.location || 'N/A',
+            status,
+            experience,
+            type: raw.type || 'Full-time',
+            salary: raw.salary || 'N/A',
+            postedDate: raw.postedDate || raw.created_at || new Date().toISOString().split('T')[0],
+            applicants: raw.applicants || 0,
+            matches: raw.matches || 0,
+            requiredSkills,
+            description: raw.job_description || raw.description || '',
+            highlights: raw.highlights || [],
+            responsibilities: raw.responsibilities || [],
+            qualifications: raw.qualifications || [],
+            preferredQualifications: raw.preferredQualifications || [],
+            education: raw.education || '',
+            department: raw.department || '',
+            roleCategory: raw.roleCategory || '',
+            industry: raw.industry || '',
+            ownerId: raw.ownerId || 0,
+            numberOfPositions: raw.numberOfPositions || 1,
+        };
+    }, []);
+
+    const parseExperienceRange = (experience?: string): { min: number; max: number } => {
+        if (!experience) return { min: 0, max: 0 };
+        const match = experience.match(/(\d+(\.\d+)?)\s*-\s*(\d+(\.\d+)?)/);
+        if (match) {
+            return { min: parseFloat(match[1]), max: parseFloat(match[3]) };
+        }
+        const single = parseFloat(experience);
+        if (!isNaN(single)) return { min: single, max: single };
+        return { min: 0, max: 0 };
+    };
+
+    const extractCandidate = (data: any): any | null => {
+        if (!data) return null;
+        if (data.candidate) return data.candidate;
+        if (data.updated_data) return data.updated_data;
+        if (data.data) return data.data;
+        if (data.result) return data.result;
+        return data;
+    };
+
+    const extractCandidates = (data: any): any[] => {
+        if (!data) return [];
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.candidates)) return data.candidates;
+        if (Array.isArray(data.data)) return data.data;
+        return [];
+    };
+
+    const extractProjects = (data: any): Project[] => {
+        if (!data) return [];
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.projects)) return data.projects;
+        if (Array.isArray(data.data)) return data.data;
+        return [];
+    };
+
+    const fetchCandidates = useCallback(async () => {
+        try {
+            const data = await apiRequest('/resume/list-candidates?limit=200&offset=0');
+            const candidates = extractCandidates(data).map(normalizeCandidate);
+            setAllCandidates(candidates);
+        } catch (error) {
+            console.error('Failed to load candidates:', error);
+        }
+    }, [apiRequest, normalizeCandidate]);
+
+    const fetchProjects = useCallback(async () => {
+        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        try {
+            const data = await apiRequest(`/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
+            const projects = extractProjects(data);
+            setAllProjects(projects);
+        } catch (error) {
+            console.error('Failed to load projects:', error);
+        }
+    }, [apiRequest, effectiveUser]);
+
+    const fetchJobs = useCallback(async () => {
+        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        try {
+            const data = await apiRequest(`/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
+            const jobs = (Array.isArray(data) ? data : data?.data || []).map(normalizeJobFromApi);
+            setAllJobDescriptions(jobs);
+        } catch (error) {
+            console.error('Failed to load jobs:', error);
+        }
+    }, [apiRequest, effectiveUser, normalizeJobFromApi]);
+
+    useEffect(() => {
+        if (!effectiveUser?.email) return;
+        if (initialDataFetchRef.current) return;
+        initialDataFetchRef.current = true;
+        fetchCandidates();
+        fetchProjects();
+        fetchJobs();
+    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs]);
+
     // --- RESUME & CANDIDATE HANDLERS ---
-    const handleUpdateCandidate = (updatedCandidate: Candidate) => {
+    const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
         const oldCandidate = allCandidates.find(c => c.id === updatedCandidate.id);
+        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const email = updatedCandidate.contact?.email;
+
+        if (email) {
+            try {
+                const payload = {
+                    email,
+                    name: updatedCandidate.name,
+                    phone: updatedCandidate.contact.phone,
+                    location: updatedCandidate.contact.location,
+                    skills: updatedCandidate.skills,
+                    experience: updatedCandidate.experience,
+                };
+                await apiRequest(`/resume/update?uploaded_by=${encodeURIComponent(uploadedBy)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+            } catch (error) {
+                console.error('Failed to update candidate:', error);
+                alert('Failed to update candidate.');
+            }
+        }
+
         setAllCandidates(prev => prev.map(c => c.id === updatedCandidate.id ? updatedCandidate : c));
         if (oldCandidate && oldCandidate.status !== updatedCandidate.status) {
             logAction(`Changed candidate status to ${updatedCandidate.status}`, { targetType: 'Candidate', targetName: updatedCandidate.name, targetId: updatedCandidate.id });
@@ -956,82 +1222,46 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
     const handleParseFileToCandidate = useCallback(async (file: File, source: string = 'Bulk Upload'): Promise<Candidate | null> => {
         try {
-            // Fix: Re-instantiate AI right before the call.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const resumeSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    name: { type: Type.STRING }, title: { type: Type.STRING }, summary: { type: Type.STRING },
-                    totalExperienceYears: { type: Type.NUMBER },
-                    contact: { type: Type.OBJECT, properties: { email: { type: Type.STRING }, phone: { type: Type.STRING }, location: { type: Type.STRING } } },
-                    experience: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, company: { type: Type.STRING }, duration: { type: Type.STRING }, description: { type: Type.STRING } } } },
-                    education: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { degree: { type: Type.STRING }, institution: { type: Type.STRING }, duration: { type: Type.STRING } } } },
-                    skills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    softSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    languages: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    certifications: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    links: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, url: { type: Type.STRING } } } },
-                    category: { type: Type.STRING },
-                },
-                required: ['name', 'contact', 'skills']
-            };
-    
-            const resumeText = await getTextFromFile(file, ai);
-            const prompt = `You are an expert resume parser. Extract structured information from: \n\n${resumeText}`;
+            const jobId = (selectedJob?.jobId || selectedJob?.id || selectedJobForDetail?.jobId || selectedJobForDetail?.id || selectedProject?.project_id || 'unassigned').toString();
+            const uploadedBy = effectiveUser?.email || defaultUser.email;
+            const formData = new FormData();
+            formData.append('file', file);
 
-            // Fix: Updated model name to 'gemini-3-flash-preview' for extraction tasks.
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { parts: [{ text: prompt }] },
-                config: { responseMimeType: 'application/json', responseSchema: resumeSchema }
+            const data = await apiRequest(`/resume/process-resume-file?job_id=${encodeURIComponent(jobId)}&uploaded_by=${encodeURIComponent(uploadedBy)}`, {
+                method: 'POST',
+                body: formData,
             });
 
-            let jsonString = response.text.trim();
-            if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
-            const parsedData = JSON.parse(jsonString);
+            const rawCandidate = extractCandidate(data);
+            let candidateEmail = uploadedBy;
+            if (rawCandidate) {
+                const newCandidate = normalizeCandidate(rawCandidate);
+                candidateEmail = newCandidate.contact?.email || uploadedBy;
+                setAllCandidates(prev => [newCandidate, ...prev]);
+                logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
+                try {
+                    await uploadResumeToVault(file, candidateEmail, uploadedBy);
+                } catch (vaultError) {
+                    console.error('Failed to upload resume to vault:', vaultError);
+                }
+                return newCandidate;
+            }
 
-            let totalExperience = parsedData.totalExperienceYears || calculateTotalExperience(parsedData.experience || []);
-            
-            const newCandidate: Candidate = {
-                id: Date.now(),
-                name: parsedData.name || 'Unknown Candidate',
-                title: parsedData.title || 'N/A',
-                avatar: getInitials(parsedData.name || 'Unknown'),
-                summary: parsedData.summary || '',
-                totalExperienceYears: totalExperience,
-                contact: parsedData.contact || { email: '', phone: '', location: '' },
-                experience: parsedData.experience || [],
-                education: parsedData.education || [],
-                skills: parsedData.skills || [],
-                softSkills: parsedData.softSkills || [],
-                languages: parsedData.languages || [],
-                certifications: parsedData.certifications || [],
-                links: parsedData.links || [],
-                status: 'Applied',
-                appliedDate: new Date().toISOString().split('T')[0],
-                salaryExpectation: null,
-                resumeContent: resumeText,
-                originalResumeFile: file,
-                applicationHistory: [{ stage: 'Applied', date: new Date().toISOString(), notes: `Parsed from ${source}: ${file.name}` }],
-                tasks: [],
-                notes: [],
-                category: parsedData.category || 'Uncategorized',
-                tags: ['ai-parsed'],
-                source: file.name,
-                rejectionReason: null,
-                communicationHistory: [],
-            };
-            
-            setAllCandidates(prev => [newCandidate, ...prev]);
-            logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
-            return newCandidate;
+            try {
+                await uploadResumeToVault(file, candidateEmail, uploadedBy);
+            } catch (vaultError) {
+                console.error('Failed to upload resume to vault:', vaultError);
+            }
+
+            await fetchCandidates();
+            return null;
 
         } catch (error) {
             console.error("Failed to parse resume:", error);
             alert(`Failed to parse resume.`);
             return null;
         }
-    }, [logAction]);
+    }, [apiRequest, effectiveUser, fetchCandidates, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault]);
 
     const handleClearStagedResumes = () => {
         if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
@@ -1049,15 +1279,45 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         const totalFiles = filesToProcess.length;
         let successCount = 0;
 
-        for (let i = 0; i < totalFiles; i++) {
-            if (!processingRef.current) return;
-            const file = filesToProcess[i];
-            setProcessingStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
+        if (totalFiles === 1) {
+            const file = filesToProcess[0];
+            setProcessingStatus(`Processing ${file.name} (1/1)...`);
             try {
                 const newCandidate = await handleParseFileToCandidate(file, 'Bulk Resume Upload');
                 if (newCandidate) successCount++;
             } catch (error) {
                 console.error(`Failed to process ${file.name}:`, error);
+            }
+        } else if (totalFiles > 1) {
+            const jobId = (selectedJob?.jobId || selectedJob?.id || selectedJobForDetail?.jobId || selectedJobForDetail?.id || selectedProject?.project_id || 'unassigned').toString();
+            const uploadedBy = effectiveUser?.email || defaultUser.email;
+            const formData = new FormData();
+            filesToProcess.forEach(file => formData.append('files', file));
+
+            setProcessingStatus(`Processing ${totalFiles} resumes...`);
+            try {
+                const data = await apiRequest(`/resume/process-resume-files-batch?job_id=${encodeURIComponent(jobId)}&uploaded_by=${encodeURIComponent(uploadedBy)}`, {
+                    method: 'POST',
+                    body: formData,
+                });
+                const newCandidates = extractCandidates(data).map(normalizeCandidate);
+                if (newCandidates.length > 0) {
+                    setAllCandidates(prev => [...newCandidates, ...prev]);
+                    successCount = newCandidates.length;
+                    await Promise.all(filesToProcess.map(async (file, index) => {
+                        const candidate = newCandidates[index];
+                        const candidateEmail = candidate?.contact?.email || uploadedBy;
+                        try {
+                            await uploadResumeToVault(file, candidateEmail, uploadedBy);
+                        } catch (vaultError) {
+                            console.error(`Failed to upload ${file.name} to vault:`, vaultError);
+                        }
+                    }));
+                } else {
+                    await fetchCandidates();
+                }
+            } catch (error) {
+                console.error('Failed to process batch resumes:', error);
             }
         }
         
@@ -1077,9 +1337,38 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
     const handleDeleteCandidates = (ids: number[]) => {
         const candidatesToDelete = allCandidates.filter(c => ids.includes(c.id));
-        setAllCandidates(prev => prev.filter(c => !ids.includes(c.id)));
-        candidatesToDelete.forEach(c => logAction('Deleted candidate', { targetType: 'Candidate', targetName: c.name, targetId: c.id }));
-        if (selectedCandidate && ids.includes(selectedCandidate.id)) setSelectedCandidate(null);
+        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const candidatesMissingEmail = candidatesToDelete.filter(c => !c.contact?.email || !c.contact.email.trim());
+
+        if (candidatesMissingEmail.length > 0) {
+            const names = candidatesMissingEmail.map(c => c.name).join(', ');
+            alert(`Cannot delete ${candidatesMissingEmail.length} candidate(s) because email is missing: ${names}`);
+        }
+
+        Promise.all(candidatesToDelete.map(async (candidate) => {
+            if (!candidate.contact?.email || !candidate.contact.email.trim()) {
+                return { id: candidate.id, ok: false };
+            }
+            try {
+                await apiRequest(`/resume/delete?uploaded_by=${encodeURIComponent(uploadedBy)}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: candidate.contact.email }),
+                });
+                return { id: candidate.id, ok: true };
+            } catch (error) {
+                alert(`Failed to delete ${candidate.name}: ${error instanceof Error ? error.message : String(error)}`);
+                console.error('Failed to delete candidate:', error);
+                return { id: candidate.id, ok: false };
+            }
+        })).then((results) => {
+            const deletedIds = results.filter(r => r.ok).map(r => r.id);
+            if (deletedIds.length === 0) return;
+            setAllCandidates(prev => prev.filter(c => !deletedIds.includes(c.id)));
+            candidatesToDelete.filter(c => deletedIds.includes(c.id))
+                .forEach(c => logAction('Deleted candidate', { targetType: 'Candidate', targetName: c.name, targetId: c.id }));
+            if (selectedCandidate && deletedIds.includes(selectedCandidate.id)) setSelectedCandidate(null);
+        });
     };
 
     const handleEmailSelected = (ids: number[]) => {
@@ -1156,9 +1445,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     }, [globalSearchTerm, allCandidates, allJobDescriptions]);
     
     const renderContent = () => {
-        if (!effectiveUser) return <div className="loading-indicator">Loading user...</div>;
-
         switch (currentPage) {
+            case 'Login':
+                return <LoginPage onLogin={(user) => { setCurrentUser(user); setCurrentPage('Dashboard'); }} error={null} />;
             case 'Dashboard':
                 const pendingCount = invitations.filter(i => i.inviterId === effectiveUser.id && i.status === 'Pending').length;
                 return <DashboardPage 
@@ -1172,13 +1461,14 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 />;
             case 'Job Matching':
                 if (selectedProject) {
-                     return <ProjectDetailPage 
-                        project={selectedProject} 
-                        jobsForProject={allJobDescriptions.filter(j => j.projectId === selectedProject.id)} 
-                        onBack={() => setSelectedProject(null)} 
+                     return <ProjectDetailPage
+                        project={selectedProject}
+                        jobsForProject={allJobDescriptions.filter(j => j.projectId === selectedProject.project_id)}
+                        onBack={() => setSelectedProject(null)}
                         onJobSelect={(j) => { setSelectedJobForDetail(j); }}
+                        onJobEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
+                        onJobChangeJd={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                         onJobCreateManually={() => { setJobToEdit(null); setJobEditorModalOpen(true); }}
-                        onJobStatusUpdate={handleJobStatusUpdate}
                         candidates={allCandidates}
                         onCandidateSelect={(c) => { setSelectedCandidate(c); setCurrentPage('Candidates'); }}
                         onUploadJds={() => setJdUploadModalOpen(true)}
@@ -1194,10 +1484,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         candidatesForAnalysis={candidatesForAnalysis}
                         onClearCandidatesForAnalysis={() => setCandidatesForAnalysis([])}
                         onAnalyzeJobFit={handleAnalyzeJobFit}
-                        isAnalyzingJobId={isAnalyzingJobId}
                         onOpenAIGenerateModal={() => setAIGenerateModalOpen(true)}
-                        onAddTeamMember={(project) => { setProjectForTeamAdd(project); setAddTeamMemberModalOpen(true); }}
-                        allUsers={users}
                     />;
                 }
                 if (selectedJobForDetail) {
@@ -1214,7 +1501,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onProjectSelect={(p) => setSelectedProject(p)} 
                     onProjectCreate={() => { setProjectToEdit(null); setProjectEditorModalOpen(true); }}
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
-                    onDeleteProject={handleDeleteProject}
                     effectiveUser={effectiveUser}
                 />;
             case 'Candidates':
@@ -1355,15 +1641,15 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
             </main>
             <Chatbot jobs={allJobDescriptions} candidates={allCandidates} currentUser={effectiveUser} />
+            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnFocusLoss draggable pauseOnHover />
             <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} />
             <JDUploadModal isOpen={isJdUploadModalOpen} onClose={() => setJdUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedJds(prev => [...prev, ...Array.from(files)])} />
-            <JobEditorModal isOpen={isJobEditorModalOpen} onClose={() => setJobEditorModalOpen(false)} onSave={(jobData) => handleSaveJob(jobData, selectedProject!.id)} jobToEdit={jobToEdit} />
+            <JobEditorModal isOpen={isJobEditorModalOpen} onClose={() => setJobEditorModalOpen(false)} onSave={(jobData) => handleSaveJob(jobData, selectedProject!.project_id)} jobToEdit={jobToEdit} />
             <MeetingSchedulerModal isOpen={isMeetingModalOpen} onClose={() => setMeetingModalOpen(false)} onSchedule={handleScheduleMeeting} candidate={candidateForMeeting} />
             <UserEditorModal isOpen={isUserEditorModalOpen} onClose={() => setUserEditorModalOpen(false)} onSave={handleSaveUser} userToEdit={userToEdit} />
             <ProjectEditorModal isOpen={isProjectEditorModalOpen} onClose={() => setProjectEditorModalOpen(false)} onSave={handleSaveProject} projectToEdit={projectToEdit} />
-            <AIGenerateJDModal isOpen={isAIGenerateModalOpen} onClose={() => setAIGenerateModalOpen(false)} onGenerate={(prompt) => handleGenerateJdWithAI(prompt, selectedProject!.id)} isGenerating={isGeneratingJD} />
+            <AIGenerateJDModal isOpen={isAIGenerateModalOpen} onClose={() => setAIGenerateModalOpen(false)} onGenerate={(prompt) => handleGenerateJdWithAI(prompt, selectedProject!.project_id)} isGenerating={isGeneratingJD} />
             <InviteMemberModal isOpen={isInviteModalOpen} onClose={() => setInviteModalOpen(false)} onInvite={handleInviteUser} />
-            <AddTeamMemberModal isOpen={isAddTeamMemberModalOpen} onClose={() => setAddTeamMemberModalOpen(false)} onAdd={handleAddTeamMemberToProject} />
         </div>
     );
 };

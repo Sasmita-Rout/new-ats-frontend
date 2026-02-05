@@ -1,11 +1,11 @@
 
 
 import React, { useMemo } from 'react';
-import { Candidate, JobDescription, User, Project } from '../types/types';
+import { Candidate, JobDescription, User } from '../types/types';
 
 const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, onNavigate }) => {
     const totalCandidates = candidates.length;
-    const activeProjects = projects.filter(p => p.status === 'Active').length;
+    const activeProjects = projects.length;
     const openPositions = jobs.length;
     
     const avgTimeToHire = useMemo(() => {
@@ -85,28 +85,8 @@ const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, on
 
 // FIX: Removed unused 'interviews' prop from component signature to resolve type error at the call site.
 const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => {
-    const { ownedProjects, sharedProjects } = useMemo(() => {
-        const owned: Project[] = [];
-        const shared: Project[] = [];
-
-        projects.forEach(p => {
-            // A user is the owner if they are in the team list with the 'Owner' role.
-            const isOwner = p.team?.some(member => member.userId === user.id && member.role === 'Owner');
-            // A user is a member if they are in the team list with the 'Member' role.
-            const isMember = p.team?.some(member => member.userId === user.id && member.role === 'Member');
-
-            if (isOwner) {
-                owned.push(p);
-            } else if (isMember) {
-                // This 'else if' ensures that if a user is somehow both Owner and Member, it only shows up in the Owned list.
-                shared.push(p);
-            }
-        });
-
-        return { ownedProjects: owned, sharedProjects: shared };
-    }, [projects, user.id]);
-
-    const myActiveProjectsCount = ownedProjects.filter(p => p.status === 'Active').length;
+    const myProjects = useMemo(() => projects, [projects]);
+    const myActiveProjectsCount = myProjects.length;
     
     const pendingReviews = candidates.filter(c => ['Applied', 'Screening'].includes(c.status)).length;
     const hired = candidates.filter(c => c.status === 'Hired').length;
@@ -137,7 +117,7 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
             <h4>{title} ({projectList.length})</h4>
             <div className="jobs-list-placeholder">
                 {projectList.length > 0 ? (
-                    projectList.map(p => <a href="#" key={p.id} onClick={(e) => {e.preventDefault(); onProjectSelect(p)}}>{p.name}</a>)
+                    projectList.map(p => <a href="#" key={p.project_id} onClick={(e) => {e.preventDefault(); onProjectSelect(p)}}>{p.project_name}</a>)
                 ) : (
                     <p className="placeholder-text">No projects in this category.</p>
                 )}
@@ -184,8 +164,7 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
                   </div>
                </div>
                <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr', gridTemplateRows: 'auto auto auto', gap: '24px' }}>
-                    <ProjectList title="My Owned Projects" projectList={ownedProjects} />
-                    <ProjectList title="Shared With Me" projectList={sharedProjects} />
+                    <ProjectList title="My Projects" projectList={myProjects} />
                      <div className="chart-card">
                         <h4>Upcoming Interviews</h4>
                         {upcomingInterviews.length > 0 ? (
@@ -219,8 +198,8 @@ const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSel
         if (isAdminView) {
             return projects; // Admins see all projects passed down.
         }
-        // Recruiters see only projects they are a member of.
-        return projects.filter(p => p.team?.some(member => member.userId === effectiveUser.id));
+        // Recruiters see only projects they created.
+        return projects.filter(p => p.uploaded_by === effectiveUser.email);
     }, [projects, effectiveUser, isAdminView]);
     
     return (

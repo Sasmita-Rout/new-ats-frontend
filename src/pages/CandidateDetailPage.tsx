@@ -1,59 +1,14 @@
-import React, { useState } from 'react';
-import { Candidate, Note } from '../types/types';
+import React from 'react';
+import { Candidate } from '../types/types';
 import SkillTag from '../components/common/SkillTag';
-import { getTagColor, getLinkIcon } from '../utils/helpers';
 import { downloadOriginalResume, downloadResumeText } from '../utils/fileUtils';
 
 
 const CandidateDetailPage = ({ candidate, onBack, onUpdateCandidate, onScheduleMeeting }) => {
     const statuses: Candidate['status'][] = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected'];
-    const [newTag, setNewTag] = useState('');
-    const [newTask, setNewTask] = useState('');
-    const [newNote, setNewNote] = useState('');
 
     const handleUpdate = (field, value) => {
         onUpdateCandidate({ ...candidate, [field]: value });
-    };
-
-    const handleAddTag = () => {
-        if (newTag && !candidate.tags.includes(newTag)) {
-            handleUpdate('tags', [...candidate.tags, newTag]);
-            setNewTag('');
-        }
-    };
-    
-    const handleRemoveTag = (tagToRemove) => {
-        handleUpdate('tags', candidate.tags.filter(tag => tag !== tagToRemove));
-    };
-
-    const handleAddTask = (e) => {
-        e.preventDefault();
-        if (newTask) {
-            const task = { id: Date.now(), text: newTask, completed: false };
-            handleUpdate('tasks', [...candidate.tasks, task]);
-            setNewTask('');
-        }
-    };
-
-    const handleToggleTask = (taskId) => {
-        const updatedTasks = candidate.tasks.map(task => 
-            task.id === taskId ? { ...task, completed: !task.completed } : task
-        );
-        handleUpdate('tasks', updatedTasks);
-    };
-    
-    const handleAddNote = (e) => {
-        e.preventDefault();
-        if (newNote) {
-            const note: Note = {
-                id: Date.now(),
-                text: newNote,
-                author: 'Sarah Johnson', // Hardcoded for now
-                date: new Date().toISOString()
-            };
-            handleUpdate('notes', [note, ...candidate.notes]);
-            setNewNote('');
-        }
     };
 
     return (
@@ -186,82 +141,6 @@ const CandidateDetailPage = ({ candidate, onBack, onUpdateCandidate, onScheduleM
                                 : <p className="placeholder-text" style={{fontSize: '12px'}}>No languages listed.</p>
                             }
                         </div>
-                    </div>
-                    <div className="info-card">
-                        <h4>Certifications</h4>
-                        {candidate.certifications && candidate.certifications.length > 0 ? (
-                            <ul className="certifications-list">
-                                {candidate.certifications.map((cert, index) => (
-                                    <li key={index}>
-                                        <span className="material-symbols-outlined">workspace_premium</span>
-                                        <span>{cert}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="placeholder-text" style={{fontSize: '12px'}}>No certifications listed.</p>
-                        )}
-                    </div>
-                    <div className="info-card">
-                        <h4>Links</h4>
-                        {candidate.links && candidate.links.length > 0 ? (
-                            <ul className="links-list">
-                                {candidate.links.map((link, index) => (
-                                    <li key={index}>
-                                        <a href={link.url} target="_blank" rel="noopener noreferrer">
-                                            <span className="material-symbols-outlined">{getLinkIcon(link.url)}</span>
-                                            <span>{link.name || link.url}</span>
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="placeholder-text" style={{fontSize: '12px'}}>No links provided.</p>
-                        )}
-                    </div>
-                     <div className="info-card interactive-card">
-                        <h4>Tags</h4>
-                        <div className="tags-container-detail">
-                             {candidate.tags.map(tag => {
-                                const color = getTagColor(tag);
-                                const style = { '--tag-shadow-color': color.shadow } as React.CSSProperties;
-                                return (<span key={tag} style={style} className={`skill-tag interactive ${color.bg} ${color.text} ${color.border}`}>{tag}<button onClick={() => handleRemoveTag(tag)}>&times;</button></span>);
-                             })}
-                        </div>
-                        <div className="add-item-form">
-                            <input type="text" value={newTag} onChange={e => setNewTag(e.target.value)} placeholder="Add a tag..." onKeyPress={e => e.key === 'Enter' && handleAddTag()}/>
-                            <button onClick={handleAddTag}>Add</button>
-                        </div>
-                    </div>
-                     <div className="info-card interactive-card">
-                        <h4>Tasks</h4>
-                         <ul className="task-list">
-                            {candidate.tasks.map(task => (
-                                <li key={task.id} className={task.completed ? 'completed' : ''}>
-                                    <input type="checkbox" checked={task.completed} onChange={() => handleToggleTask(task.id)} />
-                                    <span>{task.text}</span>
-                                </li>
-                            ))}
-                        </ul>
-                         <form className="add-item-form" onSubmit={handleAddTask}>
-                            <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Add a new task..." />
-                            <button type="submit">Add</button>
-                        </form>
-                    </div>
-                     <div className="info-card interactive-card">
-                        <h4>Notes</h4>
-                        <form className="add-item-form vertical" onSubmit={handleAddNote}>
-                            <textarea value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Add a note..."></textarea>
-                            <button type="submit">Save Note</button>
-                        </form>
-                        <ul className="notes-list">
-                            {candidate.notes.map(note => (
-                                <li key={note.id}>
-                                    <p className="note-text">{note.text}</p>
-                                    <small className="note-meta">by {note.author} on {new Date(note.date).toLocaleDateString()}</small>
-                                </li>
-                            ))}
-                        </ul>
                     </div>
                 </aside>
             </div>
