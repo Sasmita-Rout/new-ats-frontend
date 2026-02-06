@@ -22,7 +22,6 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
                 { name: 'History', icon: 'history', page: 'History' },
             ]
         },
-        ...(effectiveUser.role.includes('Admin') ? [{ name: 'Manage Users', icon: 'manage_accounts', page: 'Manage Users' }] : []),
         { name: 'Settings', icon: 'settings', page: 'Settings' },
     ], [effectiveUser.role]);
 

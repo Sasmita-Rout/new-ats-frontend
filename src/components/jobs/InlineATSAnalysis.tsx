@@ -72,6 +72,7 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
     };
 
     const allVisibleSelected = initialRankedCandidates.length > 0 && selectedIds.length === initialRankedCandidates.length;
+    const jdSkillsLower = new Set((job.requiredSkills || []).map(s => s.toLowerCase()));
 
     return (
         <div className="inline-ats-analysis">
@@ -159,15 +160,19 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                                         <td>{c.overallScore}</td>
                                         <td>
                                             <div className="skills-container">
-                                                {c.skills.map(skill => <span key={skill} className="skill-tag-simple">{skill}</span>)}
+                                                {c.skills
+                                                    .filter(skill => jdSkillsLower.has(skill.toLowerCase()))
+                                                    .map(skill => <span key={skill} className="skill-tag-simple">{skill}</span>)}
                                             </div>
                                         </td>
                                         <td>
                                             <div className="missing-skills-container">
-                                                {c.missingSkills && c.missingSkills.length > 0
-                                                    ? c.missingSkills.map(skill => <span key={skill} className="missing-skill-tag">{skill}</span>)
-                                                    : <span className="perfect-match-text">Perfect Match!</span>
-                                                }
+                                                {job.requiredSkills
+                                                    .filter(skill => !c.skills.some(s => s.toLowerCase() === skill.toLowerCase()))
+                                                    .map(skill => <span key={skill} className="missing-skill-tag">{skill}</span>)}
+                                                {job.requiredSkills.length === 0 && (
+                                                    <span className="perfect-match-text">No JD skills listed.</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td>

@@ -19,7 +19,6 @@ import CommunicationsPage from './pages/CommunicationsPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import CalendarPage from './pages/CalendarPage';
-import ManageUsersPage from './pages/ManageUsersPage';
 import HistoryPage from './pages/HistoryPage';
 import LoginPage from './pages/LoginPage';
 
@@ -228,28 +227,6 @@ const App = () => {
         window.location.reload();
     };
 
-    const handleImpersonate = (userToImpersonate: User) => {
-        if (currentUser?.role.includes('Admin')) {
-            setImpersonatedUser(userToImpersonate);
-            logAction(`Started impersonating`, { targetType: 'User', targetName: userToImpersonate.name, targetId: userToImpersonate.id });
-
-            const impersonationNoticeLog: HistoryEntry = {
-                id: Date.now() + 1,
-                timestamp: new Date().toISOString(),
-                userId: userToImpersonate.id,
-                userName: userToImpersonate.name,
-                userRole: userToImpersonate.role,
-                action: `Was impersonated by`,
-                targetType: 'User',
-                targetName: currentUser.name,
-                targetId: currentUser.id,
-            };
-            setHistoryLog(prev => [impersonationNoticeLog, ...prev]);
-
-            handleNavigate('Dashboard');
-        }
-    };
-
     const handleStopImpersonation = () => {
         if (!impersonatedUser || !currentUser) return;
 
@@ -427,15 +404,6 @@ const App = () => {
         logAction('Updated multiple user roles/permissions');
     };
 
-    const handleDeleteUser = (userId: number) => {
-        const userToDelete = users.find(u => u.id === userId);
-        if (!userToDelete) return;
-        if (window.confirm(`Are you sure you want to delete user "${userToDelete.name}"?`)) {
-            setUsers(prev => prev.filter(u => u.id !== userId));
-            logAction('Deleted user', { targetType: 'User', targetName: userToDelete.name, targetId: userId });
-        }
-    };
-    
     const handleInviteUser = (email: string) => {
         if (!effectiveUser) return;
         const newInvitation: Invitation = {
@@ -452,7 +420,7 @@ const App = () => {
         
         const admins = users.filter(u => u.role.includes('Admin'));
         admins.forEach(admin => {
-            addNotification(admin.id, `${effectiveUser.name} has invited a new member: ${email}`, { page: 'Manage Users' });
+            addNotification(admin.id, `${effectiveUser.name} has invited a new member: ${email}`, { page: 'Settings' });
         });
 
         setInviteModalOpen(false);
@@ -805,7 +773,7 @@ const App = () => {
                 department: jobData.department || '',
                 roleCategory: jobData.roleCategory || '',
                 industry: jobData.industry || '',
-                ownerId: effectiveUser.id,
+                ownerId: effectiveUser?.id ?? defaultUser.id,
                 numberOfPositions: jobData.numberOfPositions || 1,
                 aiFilled: true,
             };
@@ -822,74 +790,96 @@ const App = () => {
         }
     };
 
+    const apiRequest = useCallback(async (path: string, options: RequestInit = {}) => {
+        const response = await fetch(`${API_BASE_URL}${path}`, options);
+        const contentType = response.headers.get('content-type') || '';
+        const data = contentType.includes('application/json') ? await response.json() : await response.text();
+        if (!response.ok) {
+            const message = typeof data === 'string' ? data : (data?.detail || 'Request failed');
+            throw new Error(message);
+        }
+        return data;
+    }, []);
+
     const handleAnalyzeJobFit = useCallback(async (job: JobDescription) => {
         setIsAnalyzingJobId(job.id);
         try {
-            let keywords: string[] = [];
-            const currentJobState = allJobDescriptions.find(j => j.id === job.id) || job;
+            const uploadedBy = effectiveUser?.email || defaultUser.email;
+            const jobId = job.jobId || String(job.id);
 
-            if (currentJobState.analysisKeywords && currentJobState.analysisKeywords.length > 0) {
-                keywords = currentJobState.analysisKeywords;
-            } else {
-                if (!GEMINI_API_KEY) {
-                    notifyError('AI analysis is not configured. Set VITE_GEMINI_API_KEY in .env and restart.');
-                    return { rankedCandidates: [], keywords: [] };
+            const data = await apiRequest('/matching/search-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    job_id: jobId,
+                    uploaded_by: uploadedBy,
+                    limit: 200,
+                    offset: 0,
+                    use_ai: true,
+                }),
+            });
+
+            const results = Array.isArray(data?.results) ? data.results : [];
+            const byEmail = new Map<string, Candidate>();
+            allCandidates.forEach(c => {
+                const email = c.contact?.email?.toLowerCase();
+                if (email) byEmail.set(email, c);
+            });
+
+            const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
+                const email = String(r.email || '').toLowerCase();
+                const existing = byEmail.get(email);
+                const overallScore = typeof r.match_score === 'number'
+                    ? Math.round(r.match_score)
+                    : Math.round(Number(r.match_score) || 0);
+                const missingSkills = Array.isArray(r.missing_skills) ? r.missing_skills : [];
+
+                if (existing) {
+                    return {
+                        ...existing,
+                        overallScore,
+                        missingSkills,
+                        totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
+                    };
                 }
-                // Fix: Re-instantiate AI right before the call.
-                const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-                const keywordsSchema = {
-                    type: Type.OBJECT,
-                    properties: {
-                        keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
-                    },
-                    required: ['keywords']
+
+                const name = r.candidate_name || r.name || 'Unknown Candidate';
+                const idSource = email || name || `${jobId}|${Math.random()}`;
+                const derivedId = hashStringToInt(String(idSource));
+                return {
+                    id: derivedId,
+                    name,
+                    title: r.title || 'N/A',
+                    avatar: getInitials(name),
+                    summary: '',
+                    contact: { email: email || '', phone: '', location: '' },
+                    experience: [],
+                    education: [],
+                    skills: [],
+                    softSkills: [],
+                    languages: [],
+                    certifications: [],
+                    links: [],
+                    status: 'Applied',
+                    appliedDate: new Date().toISOString().split('T')[0],
+                    salaryExpectation: null,
+                    resumeContent: '',
+                    originalResumeFile: null,
+                    applicationHistory: [],
+                    tasks: [],
+                    notes: [],
+                    category: 'Uncategorized',
+                    tags: [],
+                    source: '',
+                    rejectionReason: null,
+                    communicationHistory: [],
+                    totalExperienceYears: r.experience_years,
+                    overallScore,
+                    missingSkills,
                 };
-    
-                const prompt = `You are an expert technical headhunter. Generate a JSON object with a "keywords" key containing highly specific keywords (titles and critical tech) to find strong candidate matches for: "${job.title}". Skills: ${(job.requiredSkills || []).join(', ')}`;
-    
-                // Fix: Updated model to 'gemini-3-pro-preview' as keyword analysis for matching is a complex task.
-                const response = await ai.models.generateContent({
-                    model: 'gemini-3-pro-preview',
-                    contents: { parts: [{ text: prompt }] },
-                    config: { responseMimeType: 'application/json', responseSchema: keywordsSchema }
-                });
-    
-                let jsonString = response.text.trim();
-                if (jsonString.startsWith('```json')) jsonString = jsonString.slice(7, -3).trim();
-                const { keywords: aiKeywords } = JSON.parse(jsonString);
-                keywords = aiKeywords;
-                setAllJobDescriptions(prevJobs => prevJobs.map(j => j.id === job.id ? { ...j, analysisKeywords: keywords } : j));
-            }
-            
-            const keywordsLower = keywords.map(k => k.toLowerCase());
-            const relevantCandidates = allCandidates.filter(c =>
-                keywordsLower.some(kw =>
-                    (c.title && c.title.toLowerCase().includes(kw)) ||
-                    (c.category && c.category.toLowerCase().includes(kw)) ||
-                    (c.summary && c.summary.toLowerCase().includes(kw)) ||
-                    (c.resumeContent && c.resumeContent.toLowerCase().includes(kw))
-                )
-            );
-    
-            const jobRequirements = parseJobRequirementsFromText(job);
-            const rankedCandidates = relevantCandidates.map(c => {
-                const candidateSkillsLower = new Set(c.skills.map(s => s.toLowerCase()));
-                const matchCount = job.requiredSkills.filter(skill => candidateSkillsLower.has(skill.toLowerCase())).length;
-                const skillScore = job.requiredSkills.length > 0 ? (matchCount / job.requiredSkills.length) * 100 : 100;
-                const candidateTotalExp = calculateTotalExperience(c.experience);
-                const expMatch = jobRequirements.minYearsExperience === null || candidateTotalExp >= jobRequirements.minYearsExperience;
-                const expScore = expMatch ? 100 : 0;
-                let eduMatch = true;
-                if (jobRequirements.requiredDegree) {
-                    const requiredLower = jobRequirements.requiredDegree.toLowerCase();
-                    eduMatch = c.education.some(edu => edu.degree.toLowerCase().includes(requiredLower) || requiredLower.includes(edu.degree.toLowerCase()));
-                }
-                const eduScore = eduMatch ? 100 : 0;
-                const overallScore = Math.round((skillScore * 0.6) + (expScore * 0.3) + (eduScore * 0.1));
-                const missingSkills = job.requiredSkills.filter(skill => !candidateSkillsLower.has(skill.toLowerCase()));
-                return { ...c, overallScore, skillScore, expMatch, eduMatch, missingSkills, candidateTotalExp };
-            }).sort((a, b) => b.overallScore - a.overallScore);
-    
+            });
+
+            const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
         } catch (error) {
             console.error("AI-powered analysis failed:", error);
@@ -898,7 +888,7 @@ const App = () => {
         } finally {
             setIsAnalyzingJobId(null);
         }
-    }, [allCandidates, allJobDescriptions, notifyError]);
+    }, [allCandidates, apiRequest, effectiveUser?.email]);
 
     const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
         try {
@@ -953,17 +943,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             return null;
         }
     }, [notifyError]);
-    
-    const apiRequest = useCallback(async (path: string, options: RequestInit = {}) => {
-        const response = await fetch(`${API_BASE_URL}${path}`, options);
-        const contentType = response.headers.get('content-type') || '';
-        const data = contentType.includes('application/json') ? await response.json() : await response.text();
-        if (!response.ok) {
-            const message = typeof data === 'string' ? data : (data?.detail || 'Request failed');
-            throw new Error(message);
-        }
-        return data;
-    }, []);
 
     const uploadResumeToVault = useCallback(async (file: File, email: string, uploadedBy: string) => {
         const formData = new FormData();
@@ -1546,17 +1525,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
                  return <CalendarPage candidates={allCandidates} interviews={allInterviews} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
-            case 'Manage Users':
-                 return <ManageUsersPage 
-                    users={users}
-                    currentUser={currentUser}
-                    onAddUser={() => { setUserToEdit(null); setUserEditorModalOpen(true); }}
-                    onEditUser={(u) => { setUserToEdit(u); setUserEditorModalOpen(true); }}
-                    onDeleteUser={handleDeleteUser}
-                    onImpersonateUser={handleImpersonate}
-                    invitations={invitations}
-                    onUpdateInvitationStatus={handleUpdateInvitationStatus}
-                />;
             case 'History':
                  return <HistoryPage 
                     historyLog={historyLog} 
@@ -1598,7 +1566,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             'Reports': 'Reports',
             'Settings': 'Settings',
             'History': 'History',
-            'Manage Users': 'Settings'
         };
         const requiredPermission = permissionMap[pageName];
         if (!requiredPermission) return true;
