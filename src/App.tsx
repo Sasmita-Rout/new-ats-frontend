@@ -105,6 +105,7 @@ async function getCurrentUserEmail(): Promise<string> {
 const App = () => {
     // --- MAIN DATA STATE ---
     const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
+    const [totalCandidatesCount, setTotalCandidatesCount] = useState(0);
     const [allJobDescriptions, setAllJobDescriptions] = useState<JobDescription[]>([]);
     const [allProjects, setAllProjects] = useState<Project[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -893,12 +894,33 @@ const App = () => {
                 const overallScore = typeof r.match_score === 'number'
                     ? Math.round(r.match_score)
                     : Math.round(Number(r.match_score) || 0);
+                const matchingSkills = Array.isArray(r.matching_skills) ? r.matching_skills : [];
                 const missingSkills = Array.isArray(r.missing_skills) ? r.missing_skills : [];
 
+                const apiSkills = Array.isArray(r.skills)
+                    ? r.skills
+                    : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+                const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
+                    ? existing.skills
+                    : apiSkills;
+                const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
+                const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
+                const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
+                const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
+
                 if (existing) {
+                    const mergedContact = {
+                        ...existing.contact,
+                        phone: existing.contact?.phone || r.phone || '',
+                        location: existing.contact?.location || r.location || '',
+                    };
+                    const mergedSkills = (existing.skills && existing.skills.length > 0) ? existing.skills : apiSkills;
                     return {
                         ...existing,
+                        contact: mergedContact,
+                        skills: mergedSkills,
                         overallScore,
+                        matchingSkills: finalMatchingSkills,
                         missingSkills,
                         totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
                     };
@@ -913,10 +935,12 @@ const App = () => {
                     title: r.title || 'N/A',
                     avatar: getInitials(name),
                     summary: '',
-                    contact: { email: email || '', phone: '', location: '' },
+                    contact: { email: email || '', phone: r.phone || '', location: r.location || '' },
                     experience: [],
                     education: [],
-                    skills: [],
+                    skills: Array.isArray(r.skills)
+                        ? r.skills
+                        : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean),
                     softSkills: [],
                     languages: [],
                     certifications: [],
@@ -936,6 +960,7 @@ const App = () => {
                     communicationHistory: [],
                     totalExperienceYears: r.experience_years,
                     overallScore,
+                    matchingSkills: finalMatchingSkills,
                     missingSkills,
                 };
             });
@@ -1004,6 +1029,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             return null;
         }
     }, [notifyError]);
+
+    const handleScoreSession = useCallback(async (jobId: string) => {
+        try {
+            const uploadedBy = await getUploadedBy();
+            const data = await apiRequest('/matching/score-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job_id: jobId, uploaded_by: uploadedBy }),
+            });
+            // Fix: Backend might return a list directly or an object with a results property
+            return Array.isArray(data) ? data : (data.results || []);
+        } catch (error) {
+            console.error("Failed to score session:", error);
+            notifyError("Failed to score candidates.");
+            return null;
+        }
+    }, [apiRequest, getUploadedBy, notifyError]);
 
     const uploadResumeToVault = useCallback(async (file: File, email: string, uploadedBy: string) => {
         const formData = new FormData();
@@ -1191,6 +1233,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const data = await apiRequest('/resume/list-candidates?limit=200&offset=0');
             const candidates = extractCandidates(data).map(normalizeCandidate);
             setAllCandidates(candidates);
+            const total = typeof data?.total === 'number' ? data.total : candidates.length;
+            setTotalCandidatesCount(total);
         } catch (error) {
             console.error('Failed to load candidates:', error);
         }
@@ -1493,6 +1537,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <DashboardPage 
                     effectiveUser={effectiveUser} 
                     candidates={allCandidates} 
+                    totalCandidatesCount={totalCandidatesCount}
                     jobs={allJobDescriptions} 
                     projects={allProjects} 
                     onProjectSelect={(p) => { setSelectedProject(p); setCurrentPage('Job Matching'); }}

@@ -74,12 +74,10 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
         const formattedData = dataToExport.map(c => ({
             'Name': c.name,
-            'Title': c.title,
             'Category': c.category,
             'Email': c.contact.email,
             'Phone': c.contact.phone,
             'Location': c.contact.location,
-            'Status': c.status,
             'Applied Date': c.appliedDate,
             'Salary Expectation': c.salaryExpectation,
             'Skills': c.skills.join('; '),
@@ -181,11 +179,10 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     />
                                 </th>
                                 <th>Candidate</th>
-                                <th>Contact & Location</th>
-                                <th>Current Role</th>
+                                <th>Contact</th>
+                                <th>Location</th>
                                 <th>Skills</th>
                                 {selectedJob && <th>Match Score</th>}
-                                <th>Status</th>
                                 <th>Applied</th>
                                 <th>Actions</th>
                             </tr>
@@ -212,9 +209,9 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     </td>
                                     <td>
                                         <p>{candidate.contact.email}</p>
-                                        <p>{candidate.contact.location}</p>
+                                        <p>{candidate.contact.phone}</p>
                                     </td>
-                                    <td><p><strong>{candidate.title}</strong></p></td>
+                                    <td>{candidate.contact.location}</td>
                                     <td>
                                         <div className="skills-container">
                                             {candidate.skills.slice(0, 3).map(skill => <SkillTag key={skill} tag={skill} />)}
@@ -228,7 +225,6 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     {selectedJob && (
                                         <td><span className={`match-score`}>{(candidate.jobSpecificMatchScore || 0)}%</span></td>
                                     )}
-                                    <td><span className={`status-pill ${candidate.status.toLowerCase()}`}>{candidate.status}</span></td>
                                     <td>{candidate.appliedDate}</td>
                                     <td>
                                         <div className="action-buttons">

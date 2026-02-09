@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Candidate, JobDescription, CandidateWithScore } from '../../types/types';
 import FilterBar from '../candidates/FilterBar';
 import { exportToCSV } from '../../utils/helpers';
+import CandidateProfileModal from '../../modals/CandidateProfileModal';
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
 
@@ -14,6 +15,7 @@ type AnalysisResult = {
 const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCandidates, onEmailSelected }: { job: JobDescription, analysisResult: AnalysisResult, onCandidateSelect: (c: Candidate) => void, onDeleteCandidates: (ids: number[]) => void, onEmailSelected: (ids: number[]) => void }) => {
     const [filters, setFilters] = useState(defaultFilters);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [viewingCandidate, setViewingCandidate] = useState<Candidate | null>(null);
 
     if (!analysisResult) return null;
     const { loading, candidates: initialRankedCandidates, keywords } = analysisResult;
@@ -137,7 +139,7 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                             </thead>
                             <tbody>
                                 {initialRankedCandidates.length > 0 ? initialRankedCandidates.map(c => (
-                                    <tr key={c.id}>
+                                    <tr key={`${c.id}-${c.contact?.email || ''}-${c.name}`}>
                                         <td>
                                             <input
                                                 type="checkbox"
@@ -176,7 +178,7 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                                             </div>
                                         </td>
                                         <td>
-                                            <button className="btn btn-secondary btn-small" onClick={() => onCandidateSelect(c)}>
+                                            <button className="btn btn-secondary btn-small" onClick={() => setViewingCandidate(c)}>
                                                 View
                                             </button>
                                             <button className="btn btn-danger btn-small" onClick={() => onDeleteCandidates([c.id])}>
@@ -192,6 +194,12 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                     </div>
                 </>
             )}
+
+            <CandidateProfileModal
+                isOpen={Boolean(viewingCandidate)}
+                onClose={() => setViewingCandidate(null)}
+                candidate={viewingCandidate}
+            />
         </div>
     );
 };

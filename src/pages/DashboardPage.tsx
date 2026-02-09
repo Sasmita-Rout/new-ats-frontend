@@ -3,8 +3,8 @@
 import React, { useMemo } from 'react';
 import { Candidate, JobDescription, User } from '../types/types';
 
-const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, onNavigate }) => {
-    const totalCandidates = candidates.length;
+const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pendingInvitationCount, onNavigate }) => {
+    const totalCandidates = typeof totalCandidatesCount === 'number' ? totalCandidatesCount : candidates.length;
     const activeProjects = projects.length;
     const openPositions = jobs.length;
     
@@ -84,7 +84,7 @@ const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, on
 };
 
 // FIX: Removed unused 'interviews' prop from component signature to resolve type error at the call site.
-const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => {
+const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, onProjectSelect, user }) => {
     const myProjects = useMemo(() => projects, [projects]);
     const myActiveProjectsCount = myProjects.length;
     
@@ -134,7 +134,7 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
              <div className="stats-grid">
                 <div className="stat-card">
                     <div className="icon"><span className="material-symbols-outlined">groups</span></div>
-                    <div className="stat-card-info"><h4>Total Candidates</h4><p>{candidates.length}</p></div>
+                    <div className="stat-card-info"><h4>Total Candidates</h4><p>{typeof totalCandidatesCount === 'number' ? totalCandidatesCount : candidates.length}</p></div>
                 </div>
                 <div className="stat-card">
                     <div className="icon"><span className="material-symbols-outlined">workspaces</span></div>
@@ -189,7 +189,7 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
     );
 }
 
-const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate }) => {
+const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate }) => {
     const isAdminView = effectiveUser.role.includes('Admin');
     
     // Centralized filtering logic for this page.
@@ -207,6 +207,7 @@ const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSel
             {isAdminView ? (
                 <AdminDashboard 
                     candidates={candidates} 
+                    totalCandidatesCount={totalCandidatesCount}
                     jobs={jobs} 
                     projects={myProjects}
                     pendingInvitationCount={pendingInvitationCount}
@@ -215,6 +216,7 @@ const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSel
             ) : (
                 <RecruiterDashboard 
                     candidates={candidates} 
+                    totalCandidatesCount={totalCandidatesCount}
                     projects={myProjects} 
                     onProjectSelect={onProjectSelect} 
                     user={effectiveUser} 
