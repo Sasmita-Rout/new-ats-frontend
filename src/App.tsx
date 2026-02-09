@@ -44,6 +44,7 @@ import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
 const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
@@ -59,21 +60,54 @@ const hashStringToInt = (value: string): number => {
     return Math.abs(hash) || 1;
 };
 
-const defaultUser: User = {
-    id: 1,
-    name: 'Default Admin',
-    email: 'admin@default.com',
-    role: 'Main Admin',
-    avatar: getInitials('Default Admin'),
-    permissions: allPermissions,
+const createUserFromEmail = (email: string): User => {
+    const safeEmail = email.trim().toLowerCase();
+    const namePart = safeEmail.split('@')[0] || 'User';
+    const displayName = namePart
+        .split(/[._-]+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+
+    return {
+        id: hashStringToInt(safeEmail),
+        name: displayName || safeEmail,
+        email: safeEmail,
+        role: 'Admin',
+        avatar: getInitials(displayName || safeEmail),
+        permissions: allPermissions,
+    };
 };
+
+async function getCurrentUserEmail(): Promise<string> {
+    try {
+        const response = await fetch(`${SSO_API_URL}/api/auth/session-status`, {
+            credentials: 'include',
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.authenticated && data.email) {
+                localStorage.setItem('userEmail', data.email);
+                return data.email;
+            }
+        }
+    } catch (error) {
+        console.warn('SSO session check failed; falling back to local storage.', error);
+    }
+
+    const localEmail = localStorage.getItem('userEmail');
+    if (localEmail) return localEmail;
+
+    throw new Error('User not identified. Please log in via Main SSO.');
+}
 
 const App = () => {
     // --- MAIN DATA STATE ---
     const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
     const [allJobDescriptions, setAllJobDescriptions] = useState<JobDescription[]>([]);
     const [allProjects, setAllProjects] = useState<Project[]>([]);
-    const [users, setUsers] = useState<User[]>([defaultUser]);
+    const [users, setUsers] = useState<User[]>([]);
     const [historyLog, setHistoryLog] = useState<HistoryEntry[]>([]);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -91,8 +125,9 @@ const App = () => {
     });
 
     // --- AUTH & IMPERSONATION STATE ---
-    const [currentUser, setCurrentUser] = useState<User | null>(defaultUser);
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
 
     // --- UI & MODAL STATE ---
     const [currentPage, setCurrentPage] = useState('Dashboard');
@@ -132,6 +167,35 @@ const App = () => {
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
 
+    const getUploadedBy = useCallback(async () => {
+        try {
+            return await getCurrentUserEmail();
+        } catch (error) {
+            console.warn('Using local user email for uploaded_by.', error);
+            if (effectiveUser?.email) return effectiveUser.email;
+            throw error;
+        }
+    }, [effectiveUser?.email]);
+
+    useEffect(() => {
+        let isMounted = true;
+        const initAuth = async () => {
+            try {
+                const email = await getCurrentUserEmail();
+                if (!isMounted) return;
+                const user = createUserFromEmail(email);
+                setCurrentUser(user);
+                setUsers(prev => (prev.some(u => u.email === user.email) ? prev : [user, ...prev]));
+            } catch (error) {
+                console.warn('SSO auth not available yet.', error);
+            } finally {
+                if (isMounted) setIsAuthLoading(false);
+            }
+        };
+        initAuth();
+        return () => { isMounted = false; };
+    }, []);
+
     // --- DATA PERSISTENCE ---
     // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
     
@@ -168,21 +232,21 @@ const App = () => {
 
     const notifySuccess = useCallback((message: string) => {
         toast.success(message);
-        const userId = effectiveUser?.id ?? defaultUser.id;
-        addNotification(userId, message);
-    }, [addNotification, effectiveUser]);
+        if (!effectiveUser?.id) return;
+        addNotification(effectiveUser.id, message);
+    }, [addNotification, effectiveUser?.id]);
 
     const notifyError = useCallback((message: string) => {
         toast.error(message);
-        const userId = effectiveUser?.id ?? defaultUser.id;
-        addNotification(userId, message);
-    }, [addNotification, effectiveUser]);
+        if (!effectiveUser?.id) return;
+        addNotification(effectiveUser.id, message);
+    }, [addNotification, effectiveUser?.id]);
 
     const notifyInfo = useCallback((message: string) => {
         toast.info(message);
-        const userId = effectiveUser?.id ?? defaultUser.id;
-        addNotification(userId, message);
-    }, [addNotification, effectiveUser]);
+        if (!effectiveUser?.id) return;
+        addNotification(effectiveUser.id, message);
+    }, [addNotification, effectiveUser?.id]);
 
     const handleMarkAsRead = (notificationId: number) => {
         setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
@@ -304,17 +368,13 @@ const App = () => {
     };
 
     const handleResetAllData = () => {
-        const mainAdmin = users.find(u => u.role === 'Main Admin');
-        if (mainAdmin) {
-            setAllCandidates([]);
-            setAllJobDescriptions([]);
-            setAllProjects([]);
-            setUsers([mainAdmin]);
-            setHistoryLog([]);
-            logAction('Reset all application data');
-        } else {
-            alert('Could not find Main Admin to preserve. Aborting reset.');
-        }
+        const userToKeep = users.find(u => u.role === 'Main Admin') || effectiveUser;
+        setAllCandidates([]);
+        setAllJobDescriptions([]);
+        setAllProjects([]);
+        setHistoryLog([]);
+        setUsers(userToKeep ? [userToKeep] : []);
+        logAction('Reset all application data');
     };
     
     const handleNavigate = (page: string) => {
@@ -514,9 +574,10 @@ const App = () => {
             const newProjectId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
                 ? crypto.randomUUID()
                 : Date.now().toString();
+            const uploadedBy = await getUploadedBy();
             const newProject: Project = {
                 project_id: newProjectId,
-                uploaded_by: effectiveUser?.email || defaultUser.email,
+                uploaded_by: uploadedBy,
                 project_name: projectData.project_name || 'Untitled Project',
                 project_description: projectData.project_description || '',
                 status: projectData.status || 'active',
@@ -544,7 +605,7 @@ const App = () => {
     };
     
     const handleSaveJob = async (jobData: Partial<JobDescription>, projectId: string) => {
-        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const uploadedBy = await getUploadedBy();
         const existing = jobData.jobId
             ? jobData
             : allJobDescriptions.find(j => j.id === jobData.id);
@@ -651,7 +712,7 @@ const App = () => {
         setIsProcessingJds(true);
         const totalFiles = stagedJds.length;
         let successCount = 0;
-        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const uploadedBy = await getUploadedBy();
         
         for (let i = 0; i < totalFiles; i++) {
             const file = stagedJds[i];
@@ -773,7 +834,7 @@ const App = () => {
                 department: jobData.department || '',
                 roleCategory: jobData.roleCategory || '',
                 industry: jobData.industry || '',
-                ownerId: effectiveUser?.id ?? defaultUser.id,
+                ownerId: effectiveUser?.id ?? 0,
                 numberOfPositions: jobData.numberOfPositions || 1,
                 aiFilled: true,
             };
@@ -804,7 +865,7 @@ const App = () => {
     const handleAnalyzeJobFit = useCallback(async (job: JobDescription) => {
         setIsAnalyzingJobId(job.id);
         try {
-            const uploadedBy = effectiveUser?.email || defaultUser.email;
+            const uploadedBy = await getUploadedBy();
             const jobId = job.jobId || String(job.id);
 
             const data = await apiRequest('/matching/search-db', {
@@ -888,7 +949,7 @@ const App = () => {
         } finally {
             setIsAnalyzingJobId(null);
         }
-    }, [allCandidates, apiRequest, effectiveUser?.email]);
+    }, [allCandidates, apiRequest, getUploadedBy]);
 
     const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
         try {
@@ -1136,7 +1197,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     }, [apiRequest, normalizeCandidate]);
 
     const fetchProjects = useCallback(async () => {
-        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const uploadedBy = await getUploadedBy();
         try {
             const data = await apiRequest(`/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
             const projects = extractProjects(data);
@@ -1144,10 +1205,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         } catch (error) {
             console.error('Failed to load projects:', error);
         }
-    }, [apiRequest, effectiveUser]);
+    }, [apiRequest, getUploadedBy]);
 
     const fetchJobs = useCallback(async () => {
-        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const uploadedBy = await getUploadedBy();
         try {
             const data = await apiRequest(`/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
             const jobs = (Array.isArray(data) ? data : data?.data || []).map(normalizeJobFromApi);
@@ -1155,7 +1216,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         } catch (error) {
             console.error('Failed to load jobs:', error);
         }
-    }, [apiRequest, effectiveUser, normalizeJobFromApi]);
+    }, [apiRequest, getUploadedBy, normalizeJobFromApi]);
 
     useEffect(() => {
         if (!effectiveUser?.email) return;
@@ -1169,7 +1230,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
         const oldCandidate = allCandidates.find(c => c.id === updatedCandidate.id);
-        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const uploadedBy = await getUploadedBy();
         const email = updatedCandidate.contact?.email;
 
         if (email) {
@@ -1202,7 +1263,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const handleParseFileToCandidate = useCallback(async (file: File, source: string = 'Bulk Upload'): Promise<Candidate | null> => {
         try {
             const jobId = (selectedJob?.jobId || selectedJob?.id || selectedJobForDetail?.jobId || selectedJobForDetail?.id || selectedProject?.project_id || 'unassigned').toString();
-            const uploadedBy = effectiveUser?.email || defaultUser.email;
+            const uploadedBy = await getUploadedBy();
             const formData = new FormData();
             formData.append('file', file);
 
@@ -1240,7 +1301,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             alert(`Failed to parse resume.`);
             return null;
         }
-    }, [apiRequest, effectiveUser, fetchCandidates, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault]);
+    }, [apiRequest, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault]);
 
     const handleClearStagedResumes = () => {
         if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
@@ -1269,7 +1330,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             }
         } else if (totalFiles > 1) {
             const jobId = (selectedJob?.jobId || selectedJob?.id || selectedJobForDetail?.jobId || selectedJobForDetail?.id || selectedProject?.project_id || 'unassigned').toString();
-            const uploadedBy = effectiveUser?.email || defaultUser.email;
+            const uploadedBy = await getUploadedBy();
             const formData = new FormData();
             filesToProcess.forEach(file => formData.append('files', file));
 
@@ -1314,9 +1375,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     };
 
-    const handleDeleteCandidates = (ids: number[]) => {
+    const handleDeleteCandidates = async (ids: number[]) => {
         const candidatesToDelete = allCandidates.filter(c => ids.includes(c.id));
-        const uploadedBy = effectiveUser?.email || defaultUser.email;
+        const uploadedBy = await getUploadedBy();
         const candidatesMissingEmail = candidatesToDelete.filter(c => !c.contact?.email || !c.contact.email.trim());
 
         if (candidatesMissingEmail.length > 0) {
@@ -1554,7 +1615,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     };
     
-    if (!effectiveUser) return <div className="loading-indicator">Initializing user session...</div>;
+    if (isAuthLoading) return <div className="loading-indicator">Checking SSO session...</div>;
+    if (!effectiveUser) return <div className="loading-indicator">Please log in via the intranet application.</div>;
 
     const isPageAccessible = (pageName: string): boolean => {
         const permissionMap: { [key: string]: UserPermission } = {
