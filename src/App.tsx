@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
@@ -43,8 +43,8 @@ import InviteMemberModal from './modals/InviteMemberModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
+const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8000';
 const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
@@ -154,7 +154,7 @@ const App = () => {
     const [mainFilters, setMainFilters] = useState(defaultFilters);
     const [isMeetingModalOpen, setMeetingModalOpen] = useState(false);
     const [candidateForMeeting, setCandidateForMeeting] = useState<Candidate | null>(null);
-    const [initialEmailDraft, setInitialEmailDraft] = useState<{subject: string, body: string, cc?: string} | null>(null);
+    const [initialEmailDraft, setInitialEmailDraft] = useState<{ subject: string, body: string, cc?: string } | null>(null);
     const [candidatesForAnalysis, setCandidatesForAnalysis] = useState<Candidate[]>([]);
     const [isUserEditorModalOpen, setUserEditorModalOpen] = useState(false);
     const [userToEdit, setUserToEdit] = useState<Partial<User> | null>(null);
@@ -164,7 +164,7 @@ const App = () => {
     const [isAIGenerateModalOpen, setAIGenerateModalOpen] = useState(false);
     const [isGeneratingJD, setIsGeneratingJD] = useState(false);
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
-    
+
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
 
@@ -199,12 +199,12 @@ const App = () => {
 
     // --- DATA PERSISTENCE ---
     // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
-    
+
     // --- CORE HANDLERS ---
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
         const userContext = directUser || effectiveUser;
         if (!userContext) return;
-    
+
         const newLog: HistoryEntry = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
@@ -256,7 +256,7 @@ const App = () => {
     const handleMarkAllAsRead = () => {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     };
-    
+
     const handleNotificationNavigate = (notification: Notification) => {
         handleMarkAsRead(notification.id);
         if (notification.linkTo) {
@@ -283,9 +283,9 @@ const App = () => {
             newLog.targetName = impersonatedUser.name;
             newLog.targetId = impersonatedUser.id;
         }
-        
+
         setHistoryLog(prev => [newLog, ...prev]);
-        
+
         setCurrentUser(null);
         setImpersonatedUser(null);
         // TODO: Logout functionality will interact with an authentication API.
@@ -307,7 +307,7 @@ const App = () => {
             targetName: impersonatedUser.name,
             targetId: impersonatedUser.id,
         };
-        
+
         const userNoticeLog: HistoryEntry = {
             id: Date.now() + 1,
             timestamp: new Date().toISOString(),
@@ -319,13 +319,13 @@ const App = () => {
             targetName: currentUser.name,
             targetId: currentUser.id,
         };
-        
+
         setHistoryLog(prev => [userNoticeLog, adminLog, ...prev]);
-        
+
         setImpersonatedUser(null);
         handleNavigate('Dashboard');
     };
-    
+
     const handleOpenMeetingModal = (candidate: Candidate) => {
         setCandidateForMeeting(candidate);
         setMeetingModalOpen(true);
@@ -333,7 +333,7 @@ const App = () => {
 
     const handleScheduleMeeting = (details: { title: string, type: Interview['type'], dateTime: string, duration: number, interviewer: string, meetingLink: string, description: string }) => {
         if (!candidateForMeeting || !effectiveUser) return;
-        
+
         const newInterview: Interview = {
             id: Date.now(),
             type: details.type,
@@ -345,7 +345,7 @@ const App = () => {
             notes: details.description,
             schedulerId: effectiveUser.id,
         };
-        
+
         const updatedCandidate = {
             ...candidateForMeeting,
             interviews: [...(candidateForMeeting.interviews || []), newInterview],
@@ -356,7 +356,7 @@ const App = () => {
         logAction(`Scheduled ${details.type} interview for candidate`, { targetType: 'Candidate', targetName: candidateForMeeting.name, targetId: candidateForMeeting.id });
 
         const emailBody = `Hi ${candidateForMeeting.name},\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.interviewer}\nMeeting Link: ${details.meetingLink}\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
-        
+
         setInitialEmailDraft({
             subject: `Invitation: ${details.type} Interview for ${selectedJob?.title || 'a relevant position'}`,
             body: emailBody,
@@ -377,7 +377,7 @@ const App = () => {
         setUsers(userToKeep ? [userToKeep] : []);
         logAction('Reset all application data');
     };
-    
+
     const handleNavigate = (page: string) => {
         setSelectedCandidate(null);
         setSelectedJob(null);
@@ -387,7 +387,7 @@ const App = () => {
         if (page !== 'Communications') setEmailTargets([]);
         setCurrentPage(page);
     };
-    
+
     const handleNavigateTo = (type: HistoryEntry['targetType'], id: number) => {
         if (type === 'Candidate') {
             const candidate = allCandidates.find(c => c.id === id);
@@ -397,7 +397,7 @@ const App = () => {
             }
         } else if (type === 'Job') {
             const job = allJobDescriptions.find(j => j.id === id);
-             if (job) {
+            if (job) {
                 setSelectedJobForDetail(job);
                 setCurrentPage('Job Matching');
             }
@@ -409,7 +409,7 @@ const App = () => {
             }
         }
     };
-    
+
     // --- USER MANAGEMENT ---
     const handleSaveUser = (userData: Partial<User> & { invitationId?: number }, userId?: number) => {
         if (userId) {
@@ -421,14 +421,14 @@ const App = () => {
             setUsers(users.map(u => u.id === userId ? { ...u, ...userData, password: userData.password || u.password } : u));
             logAction('Updated user', { targetType: 'User', targetName: userData.name, targetId: userId });
         } else {
-             const newUser: User = { 
-                id: Date.now(), 
+            const newUser: User = {
+                id: Date.now(),
                 avatar: getInitials(userData.name),
                 permissions: userData.role === 'Admin' ? allPermissions : [],
-                ...userData 
+                ...userData
             } as User;
             setUsers(prev => [newUser, ...prev]);
-            
+
             const invitation = invitations.find(i => i.id === userData.invitationId);
             if (invitation) {
                 handleUpdateInvitationStatus(invitation.id, 'Approved');
@@ -453,13 +453,13 @@ const App = () => {
         }
 
         const updatedUser = { ...currentUser, ...updatedData, avatar: newAvatar };
-        
+
         setCurrentUser(updatedUser);
         // TODO: User session persistence will be handled via API calls.
         setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
         logAction('Updated own profile');
     };
-    
+
     const handleUpdateAllUsers = (updatedUsers: User[]) => {
         setUsers(updatedUsers);
         logAction('Updated multiple user roles/permissions');
@@ -478,7 +478,7 @@ const App = () => {
         };
         setInvitations(prev => [newInvitation, ...prev]);
         logAction(`Sent invitation to ${email}`);
-        
+
         const admins = users.filter(u => u.role.includes('Admin'));
         admins.forEach(admin => {
             addNotification(admin.id, `${effectiveUser.name} has invited a new member: ${email}`, { page: 'Settings' });
@@ -516,10 +516,10 @@ const App = () => {
         URL.revokeObjectURL(url);
         logAction('Exported workspace data');
     };
-    
+
     const handleImportData = (file: File) => {
         if (!window.confirm("Are you sure you want to import data? This will overwrite all existing jobs, candidates, users, and settings.")) return;
-        
+
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
@@ -604,7 +604,7 @@ const App = () => {
             }
         }
     };
-    
+
     const handleSaveJob = async (jobData: Partial<JobDescription>, projectId: string) => {
         const uploadedBy = await getUploadedBy();
         const existing = jobData.jobId
@@ -709,16 +709,16 @@ const App = () => {
             alert("No project selected. Cannot process JDs.");
             return;
         }
-        
+
         setIsProcessingJds(true);
         const totalFiles = stagedJds.length;
         let successCount = 0;
         const uploadedBy = await getUploadedBy();
-        
+
         for (let i = 0; i < totalFiles; i++) {
             const file = stagedJds[i];
             setProcessingJdsStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
-            
+
             try {
                 const formData = new FormData();
                 const jobId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -740,13 +740,13 @@ const App = () => {
                     body: formData,
                 });
                 successCount++;
-    
+
             } catch (error) {
                 console.error(`Failed to process ${file.name}:`, error);
                 notifyError(`JD upload failed: ${file.name}`);
             }
         }
-        
+
         await fetchJobs();
         setProcessingJdsStatus(`Processing complete. ${successCount}/${totalFiles} JDs added successfully.`);
         if (successCount > 0) notifySuccess(`JD upload complete: ${successCount}/${totalFiles}`);
@@ -759,17 +759,17 @@ const App = () => {
     const handleDeleteJobs = async (ids: number[]) => {
         const jobsToDelete = allJobDescriptions.filter(j => ids.includes(j.id));
         if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? This action cannot be undone.`)) {
-        const results = await Promise.all(jobsToDelete.map(async (job) => {
-            if (!job.jobId) return { id: job.id, ok: false };
-            try {
-                console.info('[Job Delete]', { job_id: job.jobId });
-                await apiRequest(`/job/${encodeURIComponent(job.jobId)}`, { method: 'DELETE' });
-                return { id: job.id, ok: true };
-            } catch (error) {
-                console.error('Failed to delete job:', error);
-                return { id: job.id, ok: false };
-            }
-        }));
+            const results = await Promise.all(jobsToDelete.map(async (job) => {
+                if (!job.jobId) return { id: job.id, ok: false };
+                try {
+                    console.info('[Job Delete]', { job_id: job.jobId });
+                    await apiRequest(`/job/${encodeURIComponent(job.jobId)}`, { method: 'DELETE' });
+                    return { id: job.id, ok: true };
+                } catch (error) {
+                    console.error('Failed to delete job:', error);
+                    return { id: job.id, ok: false };
+                }
+            }));
             const deletedIds = results.filter(r => r.ok).map(r => r.id);
             if (deletedIds.length > 0) {
                 setAllJobDescriptions(prev => prev.filter(j => !deletedIds.includes(j.id)));
@@ -797,7 +797,7 @@ const App = () => {
                 console.error('Failed to update job status:', error);
             }
         }
-        if(jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
+        if (jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
     };
 
     const handleGenerateJdWithAI = async (prompt: string, projectId: string) => {
@@ -965,101 +965,101 @@ const App = () => {
                 };
             });*/
             const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
-    const email = String(r.email || '').toLowerCase();
-    const existing = byEmail.get(email);
-    const overallScore = typeof r.match_score === 'number'
-        ? Math.round(r.match_score)
-        : Math.round(Number(r.match_score) || 0);
-    
-    // FIX: Properly handle matching_skills and missing_skills arrays
-    const matchingSkills = Array.isArray(r.matching_skills) 
-        ? r.matching_skills 
-        : (typeof r.matching_skills === 'string' && r.matching_skills)
-            ? r.matching_skills.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
-    
-    const missingSkills = Array.isArray(r.missing_skills)
-        ? r.missing_skills
-        : (typeof r.missing_skills === 'string' && r.missing_skills)
-            ? r.missing_skills.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
+                const email = String(r.email || '').toLowerCase();
+                const existing = byEmail.get(email);
+                const overallScore = typeof r.match_score === 'number'
+                    ? Math.round(r.match_score)
+                    : Math.round(Number(r.match_score) || 0);
 
-    const apiSkills = Array.isArray(r.skills)
-        ? r.skills
-        : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
-    
-    const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
-        ? existing.skills
-        : apiSkills;
-    
-    const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
-    const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
-    const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
-    
-    // FIX: Use API matching skills if available, otherwise use fallback
-    const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
+                // FIX: Properly handle matching_skills and missing_skills arrays
+                const matchingSkills = Array.isArray(r.matching_skills)
+                    ? r.matching_skills
+                    : (typeof r.matching_skills === 'string' && r.matching_skills)
+                        ? r.matching_skills.split(',').map(s => s.trim()).filter(Boolean)
+                        : [];
 
-    if (existing) {
-        const mergedContact = {
-            ...existing.contact,
-            phone: existing.contact?.phone || r.phone || '',
-            location: existing.contact?.location || r.location || '',
-        };
-        const mergedSkills = (existing.skills && existing.skills.length > 0) ? existing.skills : apiSkills;
-        return {
-            ...existing,
-            contact: mergedContact,
-            skills: mergedSkills,
-            overallScore,
-            matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
-            missingSkills,                         // FIX: Use the fixed array
-            totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
-             // ✅ ADD THIS LINE:
-            location: mergedContact.location,
-            location_matched: r.location_matched ?? false,
-        };
-    }
+                const missingSkills = Array.isArray(r.missing_skills)
+                    ? r.missing_skills
+                    : (typeof r.missing_skills === 'string' && r.missing_skills)
+                        ? r.missing_skills.split(',').map(s => s.trim()).filter(Boolean)
+                        : [];
 
-    const name = r.candidate_name || r.name || 'Unknown Candidate';
-    const idSource = email || name || `${jobId}|${Math.random()}`;
-    const derivedId = hashStringToInt(String(idSource));
-    
-    return {
-        id: derivedId,
-        name,
-        title: r.title || 'N/A',
-        avatar: getInitials(name),
-        summary: '',
-        contact: { email: email || '', phone: r.phone || '', location: r.location || '' },
-        experience: [],
-        education: [],
-        skills: apiSkills,
-        softSkills: [],
-        languages: [],
-        certifications: [],
-        links: [],
-        status: 'Applied',
-        appliedDate: new Date().toISOString().split('T')[0],
-        salaryExpectation: null,
-        resumeContent: '',
-        originalResumeFile: null,
-        applicationHistory: [],
-        tasks: [],
-        notes: [],
-        category: 'Uncategorized',
-        tags: [],
-        source: '',
-        rejectionReason: null,
-        communicationHistory: [],
-        totalExperienceYears: r.experience_years,
-        overallScore,
-        matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
-        missingSkills,   
-        // ✅ ADD THESE TWO LINES:
-        location: r.location || '',
-        location_matched: r.location_matched ?? false,                      // FIX: Use the fixed array
-    };
-});
+                const apiSkills = Array.isArray(r.skills)
+                    ? r.skills
+                    : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+
+                const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
+                    ? existing.skills
+                    : apiSkills;
+
+                const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
+                const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
+                const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
+
+                // FIX: Use API matching skills if available, otherwise use fallback
+                const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
+
+                if (existing) {
+                    const mergedContact = {
+                        ...existing.contact,
+                        phone: existing.contact?.phone || r.phone || '',
+                        location: existing.contact?.location || r.location || '',
+                    };
+                    const mergedSkills = (existing.skills && existing.skills.length > 0) ? existing.skills : apiSkills;
+                    return {
+                        ...existing,
+                        contact: mergedContact,
+                        skills: mergedSkills,
+                        overallScore,
+                        matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
+                        missingSkills,                         // FIX: Use the fixed array
+                        totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
+                        // ✅ ADD THIS LINE:
+                        location: mergedContact.location,
+                        location_matched: r.location_matched ?? false,
+                    };
+                }
+
+                const name = r.candidate_name || r.name || 'Unknown Candidate';
+                const idSource = email || name || `${jobId}|${Math.random()}`;
+                const derivedId = hashStringToInt(String(idSource));
+
+                return {
+                    id: derivedId,
+                    name,
+                    title: r.title || 'N/A',
+                    avatar: getInitials(name),
+                    summary: '',
+                    contact: { email: email || '', phone: r.phone || '', location: r.location || '' },
+                    experience: [],
+                    education: [],
+                    skills: apiSkills,
+                    softSkills: [],
+                    languages: [],
+                    certifications: [],
+                    links: [],
+                    status: 'Applied',
+                    appliedDate: new Date().toISOString().split('T')[0],
+                    salaryExpectation: null,
+                    resumeContent: '',
+                    originalResumeFile: null,
+                    applicationHistory: [],
+                    tasks: [],
+                    notes: [],
+                    category: 'Uncategorized',
+                    tags: [],
+                    source: '',
+                    rejectionReason: null,
+                    communicationHistory: [],
+                    totalExperienceYears: r.experience_years,
+                    overallScore,
+                    matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
+                    missingSkills,
+                    // ✅ ADD THESE TWO LINES:
+                    location: r.location || '',
+                    location_matched: r.location_matched ?? false,                      // FIX: Use the fixed array
+                };
+            });
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
         } catch (error) {
@@ -1427,7 +1427,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
     const handleClearStagedResumes = () => {
         if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
-            processingRef.current = false; 
+            processingRef.current = false;
             setStagedResumes([]);
             setIsProcessing(false);
             setProcessingStatus('');
@@ -1482,7 +1482,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 console.error('Failed to process batch resumes:', error);
             }
         }
-        
+
         if (processingRef.current) {
             setProcessingStatus(`Processing complete. ${successCount}/${totalFiles} resumes added.`);
             logAction(`Bulk processed ${totalFiles} resumes, added ${successCount} new candidates`);
@@ -1538,7 +1538,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         setEmailTargets(targets);
         setCurrentPage('Communications');
     };
-    
+
     const handleAnalyzeSelected = (ids: number[]) => {
         const targets = allCandidates.filter(c => ids.includes(c.id));
         setCandidatesForAnalysis(targets);
@@ -1568,21 +1568,21 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const skillsMatch = !mainFilters.skills || mainFilters.skills.toLowerCase().split(',').every(skill => c.skills.some(cs => cs.toLowerCase().includes(skill.trim())));
             const locationMatch = !mainFilters.location || c.contact.location.toLowerCase().includes(mainFilters.location.toLowerCase());
             const categoryMatch = !mainFilters.roleCategory || c.category.toLowerCase().includes(mainFilters.roleCategory.toLowerCase());
-            const educationMatch = !mainFilters.education || (c.education && c.education.some(edu => 
-                edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) || 
+            const educationMatch = !mainFilters.education || (c.education && c.education.some(edu =>
+                edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) ||
                 edu.institution.toLowerCase().includes(mainFilters.education.toLowerCase())
             ));
             const salaryMin = parseFloat(mainFilters.salaryMin);
             const salaryMax = parseFloat(mainFilters.salaryMax);
             const salaryMatch = (!mainFilters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
-                                (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
+                (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
             const tagsMatch = !mainFilters.tags || mainFilters.tags.toLowerCase().split(',').every(tag => c.tags.some(ct => ct.toLowerCase().includes(tag.trim())));
-            const experienceMatch = !mainFilters.experience || mainFilters.experience.toLowerCase().split(',').every(expTerm => 
-                c.experience.some(exp => 
+            const experienceMatch = !mainFilters.experience || mainFilters.experience.toLowerCase().split(',').every(expTerm =>
+                c.experience.some(exp =>
                     `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(expTerm.trim())
                 )
             );
-            
+
             return searchMatch && statusMatch && skillsMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
         });
     }, [allCandidates, selectedJob, searchTerm, mainFilters]);
@@ -1590,41 +1590,41 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const globalSearchResults = useMemo(() => {
         if (!globalSearchTerm) return { candidates: [], jobs: [] };
         const lowerTerm = globalSearchTerm.toLowerCase();
-        
+
         const candidates = allCandidates.filter(c =>
             c.name.toLowerCase().includes(lowerTerm) ||
             c.title.toLowerCase().includes(lowerTerm) ||
             c.skills.some(s => s.toLowerCase().includes(lowerTerm))
         ).slice(0, 5);
-        
+
         const jobs = allJobDescriptions.filter(j =>
             j.title.toLowerCase().includes(lowerTerm) ||
             j.companyName.toLowerCase().includes(lowerTerm) ||
             j.requiredSkills.some(s => s.toLowerCase().includes(lowerTerm))
         ).slice(0, 5);
-        
+
         return { candidates, jobs };
     }, [globalSearchTerm, allCandidates, allJobDescriptions]);
-    
+
     const renderContent = () => {
         switch (currentPage) {
             case 'Login':
                 return <LoginPage onLogin={(user) => { setCurrentUser(user); setCurrentPage('Dashboard'); }} error={null} />;
             case 'Dashboard':
                 const pendingCount = invitations.filter(i => i.inviterId === effectiveUser.id && i.status === 'Pending').length;
-                return <DashboardPage 
-                    effectiveUser={effectiveUser} 
-                    candidates={allCandidates} 
+                return <DashboardPage
+                    effectiveUser={effectiveUser}
+                    candidates={allCandidates}
                     totalCandidatesCount={totalCandidatesCount}
-                    jobs={allJobDescriptions} 
-                    projects={allProjects} 
+                    jobs={allJobDescriptions}
+                    projects={allProjects}
                     onProjectSelect={(p) => { setSelectedProject(p); setCurrentPage('Job Matching'); }}
                     pendingInvitationCount={pendingCount}
                     onNavigate={handleNavigate}
                 />;
             case 'Job Matching':
                 if (selectedProject) {
-                     return <ProjectDetailPage
+                    return <ProjectDetailPage
                         project={selectedProject}
                         jobsForProject={allJobDescriptions.filter(j => j.projectId === selectedProject.project_id)}
                         onBack={() => setSelectedProject(null)}
@@ -1651,17 +1651,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     />;
                 }
                 if (selectedJobForDetail) {
-                    return <JobDetailPage 
-                        job={selectedJobForDetail} 
+                    return <JobDetailPage
+                        job={selectedJobForDetail}
                         onBack={() => setSelectedJobForDetail(null)}
                         onMatch={(j) => { setSelectedJob(j); setCurrentPage('Candidates'); }}
                         onEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                     />;
                 }
-                 return <ProjectsPage 
-                    projects={allProjects} 
-                    jobs={allJobDescriptions} 
-                    onProjectSelect={(p) => setSelectedProject(p)} 
+                return <ProjectsPage
+                    projects={allProjects}
+                    jobs={allJobDescriptions}
+                    onProjectSelect={(p) => setSelectedProject(p)}
                     onProjectCreate={() => { setProjectToEdit(null); setProjectEditorModalOpen(true); }}
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
                     effectiveUser={effectiveUser}
@@ -1693,10 +1693,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onDeleteCandidates={handleDeleteCandidates}
                     onEmailSelected={handleEmailSelected}
                     onAnalyzeSelected={handleAnalyzeSelected}
-                 />;
+                />;
             case 'Communications':
-                return <CommunicationsPage 
-                    emailTargets={emailTargets} 
+                return <CommunicationsPage
+                    emailTargets={emailTargets}
                     onClearTargets={() => setEmailTargets([])}
                     onUpdateTargets={setEmailTargets}
                     onSendEmail={(ids, subject) => logAction(`Sent email with subject "${subject}" to ${ids.length} candidate(s)`)}
@@ -1707,20 +1707,20 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Reports':
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
             case 'Calendar':
-                 const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
+                const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
+                return <CalendarPage candidates={allCandidates} interviews={allInterviews} onCandidateSelect={(c) => { setSelectedCandidate(c); setCurrentPage('Candidates'); }} />;
             case 'History':
-                 return <HistoryPage 
-                    historyLog={historyLog} 
-                    effectiveUser={effectiveUser} 
-                    onNavigateTo={handleNavigateTo} 
+                return <HistoryPage
+                    historyLog={historyLog}
+                    effectiveUser={effectiveUser}
+                    onNavigateTo={handleNavigateTo}
                     currentUser={currentUser}
                     impersonatedUser={impersonatedUser}
                     allUsers={users}
                 />;
             case 'Settings':
-                return <SettingsPage 
-                    effectiveUser={effectiveUser} 
+                return <SettingsPage
+                    effectiveUser={effectiveUser}
                     onUpdateUser={handleSaveUser}
                     onResetAllData={handleResetAllData}
                     companyProfile={companyProfile}
@@ -1737,7 +1737,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <div>Page not found</div>;
         }
     };
-    
+
     if (isAuthLoading) return <div className="loading-indicator">Checking SSO session...</div>;
     if (!effectiveUser) return <div className="loading-indicator">Please log in via the intranet application.</div>;
 
@@ -1761,7 +1761,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const renderAccessDenied = () => (
         <div className="page-content">
             <div className="empty-state large">
-                <span className="material-symbols-outlined" style={{fontSize: '64px', color: '#EF4444'}}>lock</span>
+                <span className="material-symbols-outlined" style={{ fontSize: '64px', color: '#EF4444' }}>lock</span>
                 <h3>Access Denied</h3>
                 <p>You do not have permission to view this page.</p>
             </div>
@@ -1772,10 +1772,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         <div className="app-container">
             <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} onLogout={handleLogout} />
             <main className="main-content">
-                <Header 
+                <Header
                     user={effectiveUser}
-                    impersonatedUser={impersonatedUser} 
-                    onStopImpersonation={handleStopImpersonation} 
+                    impersonatedUser={impersonatedUser}
+                    onStopImpersonation={handleStopImpersonation}
                     globalSearchTerm={globalSearchTerm}
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}
@@ -1792,7 +1792,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 />
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
             </main>
-            <Chatbot jobs={allJobDescriptions} candidates={allCandidates} currentUser={effectiveUser} />
+            <Chatbot currentUser={effectiveUser} />
             <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnFocusLoss draggable pauseOnHover />
             <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} />
             <JDUploadModal isOpen={isJdUploadModalOpen} onClose={() => setJdUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedJds(prev => [...prev, ...Array.from(files)])} />
