@@ -888,7 +888,7 @@ const App = () => {
                 if (email) byEmail.set(email, c);
             });
 
-            const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
+            /*const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
                 const email = String(r.email || '').toLowerCase();
                 const existing = byEmail.get(email);
                 const overallScore = typeof r.match_score === 'number'
@@ -963,8 +963,103 @@ const App = () => {
                     matchingSkills: finalMatchingSkills,
                     missingSkills,
                 };
-            });
+            });*/
+            const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
+    const email = String(r.email || '').toLowerCase();
+    const existing = byEmail.get(email);
+    const overallScore = typeof r.match_score === 'number'
+        ? Math.round(r.match_score)
+        : Math.round(Number(r.match_score) || 0);
+    
+    // FIX: Properly handle matching_skills and missing_skills arrays
+    const matchingSkills = Array.isArray(r.matching_skills) 
+        ? r.matching_skills 
+        : (typeof r.matching_skills === 'string' && r.matching_skills)
+            ? r.matching_skills.split(',').map(s => s.trim()).filter(Boolean)
+            : [];
+    
+    const missingSkills = Array.isArray(r.missing_skills)
+        ? r.missing_skills
+        : (typeof r.missing_skills === 'string' && r.missing_skills)
+            ? r.missing_skills.split(',').map(s => s.trim()).filter(Boolean)
+            : [];
 
+    const apiSkills = Array.isArray(r.skills)
+        ? r.skills
+        : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+    
+    const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
+        ? existing.skills
+        : apiSkills;
+    
+    const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
+    const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
+    const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
+    
+    // FIX: Use API matching skills if available, otherwise use fallback
+    const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
+
+    if (existing) {
+        const mergedContact = {
+            ...existing.contact,
+            phone: existing.contact?.phone || r.phone || '',
+            location: existing.contact?.location || r.location || '',
+        };
+        const mergedSkills = (existing.skills && existing.skills.length > 0) ? existing.skills : apiSkills;
+        return {
+            ...existing,
+            contact: mergedContact,
+            skills: mergedSkills,
+            overallScore,
+            matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
+            missingSkills,                         // FIX: Use the fixed array
+            totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
+             // ✅ ADD THIS LINE:
+            location: mergedContact.location,
+            location_matched: r.location_matched ?? false,
+        };
+    }
+
+    const name = r.candidate_name || r.name || 'Unknown Candidate';
+    const idSource = email || name || `${jobId}|${Math.random()}`;
+    const derivedId = hashStringToInt(String(idSource));
+    
+    return {
+        id: derivedId,
+        name,
+        title: r.title || 'N/A',
+        avatar: getInitials(name),
+        summary: '',
+        contact: { email: email || '', phone: r.phone || '', location: r.location || '' },
+        experience: [],
+        education: [],
+        skills: apiSkills,
+        softSkills: [],
+        languages: [],
+        certifications: [],
+        links: [],
+        status: 'Applied',
+        appliedDate: new Date().toISOString().split('T')[0],
+        salaryExpectation: null,
+        resumeContent: '',
+        originalResumeFile: null,
+        applicationHistory: [],
+        tasks: [],
+        notes: [],
+        category: 'Uncategorized',
+        tags: [],
+        source: '',
+        rejectionReason: null,
+        communicationHistory: [],
+        totalExperienceYears: r.experience_years,
+        overallScore,
+        matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
+        missingSkills,   
+        // ✅ ADD THESE TWO LINES:
+        location: r.location || '',
+        location_matched: r.location_matched ?? false,                      // FIX: Use the fixed array
+    };
+});
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
         } catch (error) {
@@ -1029,23 +1124,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             return null;
         }
     }, [notifyError]);
-
-    const handleScoreSession = useCallback(async (jobId: string) => {
-        try {
-            const uploadedBy = await getUploadedBy();
-            const data = await apiRequest('/matching/score-session', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ job_id: jobId, uploaded_by: uploadedBy }),
-            });
-            // Fix: Backend might return a list directly or an object with a results property
-            return Array.isArray(data) ? data : (data.results || []);
-        } catch (error) {
-            console.error("Failed to score session:", error);
-            notifyError("Failed to score candidates.");
-            return null;
-        }
-    }, [apiRequest, getUploadedBy, notifyError]);
 
     const uploadResumeToVault = useCallback(async (file: File, email: string, uploadedBy: string) => {
         const formData = new FormData();

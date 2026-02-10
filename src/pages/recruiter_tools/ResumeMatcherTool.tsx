@@ -12,7 +12,7 @@ import { parseJobRequirementsFromText, calculateTotalExperience } from '../../ut
 interface ResumeMatcherToolProps {
     onParseCandidate: (file: File) => Promise<Candidate | null>;
     onParseJd: (file: File) => Promise<Partial<JobDescription> | null>;
-    onScoreSession: (jobId: string) => Promise<any[] | null>;
+    onAnalyzeFit: (candidate: Candidate, jd: Partial<JobDescription>) => Promise<MatchResult | null>;
     onManualCandidateCreate: (candidateData: Partial<Candidate>) => Candidate;
     onViewCandidateProfile: (candidate: Candidate) => void;
 }
@@ -194,66 +194,84 @@ const ResumeMatcherTool: React.FC<ResumeMatcherToolProps> = ({ onParseCandidate,
         }
     };
 
-    const parseExperienceRequirement = (expString: string | undefined): number | null => {
-        if (!expString) return null;
-        const matches = expString.match(/(\d+)/);
-        return matches ? parseInt(matches[0], 10) : null;
-    };
-
     const handleAnalyze = async () => {
         const parsedCandidates = resumeStatuses
             .filter(rs => rs.status === 'parsed' && rs.candidate)
             .map(rs => rs.candidate!);
 
-        if (parsedCandidates.length === 0 || !parsedJd?.id) return;
+        if (parsedCandidates.length === 0 || !parsedJd) return;
 
         setIsAnalyzing(true);
         setAnalysisResults(null);
         
-        setProgress(10);
-        setProgressMessage('Scoring candidates...');
+        setProgress(40);
+        setProgressMessage('🟨 40% completed – Analyzing resumes and JD');
 
         const allResults: AnalysisResultItem[] = [];
 
         try {
-            const scoreResults = await onScoreSession(parsedJd.id.toString());
+            await new Promise(res => setTimeout(res, 500)); // Artificial delay for UX
+
+            setProgress(70);
+            setProgressMessage('🟧 70% completed – Generating match results');
             
-            if (!scoreResults) {
-                throw new Error("Scoring session failed to return results.");
+            // Ensure safe access to JD properties for utils
+            const safeJd = {
+                ...parsedJd,
+                title: parsedJd.title || '',
+                description: parsedJd.description || '',
+                experience: parsedJd.experience || '',
+                qualifications: parsedJd.qualifications || [],
+                preferredQualifications: parsedJd.preferredQualifications || [],
+                education: parsedJd.education || '',
+                requiredSkills: parsedJd.requiredSkills || [],
+            } as JobDescription;
+
+            let jobRequirements;
+            try {
+                jobRequirements = parseJobRequirementsFromText(safeJd);
+            } catch (e) {
+                console.warn("Error parsing JD requirements:", e);
+                jobRequirements = { minYearsExperience: 0, requiredDegree: '', requiredSkills: [] };
             }
 
-            setProgress(90);
-            setProgressMessage('Generating match results...');
+            for (const candidate of parsedCandidates) {
+                try {
+                    const result = await onAnalyzeFit(candidate, parsedJd);
+                    if (result) {
+                        const candidateTotalExp = calculateTotalExperience(candidate.experience || []);
+                        const expMatch = jobRequirements.minYearsExperience === null || candidateTotalExp >= jobRequirements.minYearsExperience;
+                        
+                        let eduMatch = true;
+                        if (jobRequirements.requiredDegree) {
+                            const requiredLower = jobRequirements.requiredDegree.toLowerCase();
+                            eduMatch = candidate.education.some(edu => edu.degree.toLowerCase().includes(requiredLower) || requiredLower.includes(edu.degree.toLowerCase()));
+                        }
 
-            const resultsMap = new Map(scoreResults.map(r => [r.email, r]));
-            const requiredExperience = parseExperienceRequirement(parsedJd.experience);
+                        // Calculate matched skills locally if not provided by the analyzer
+                        const candidateSkillsLower = new Set((candidate.skills || []).map(s => s.toLowerCase()));
+                        const matchingSkills = (parsedJd.requiredSkills || []).filter(skill => candidateSkillsLower.has(skill.toLowerCase()));
+                        const resultWithSkills = { ...result, matchingSkills: result.matchingSkills || matchingSkills };
 
-            const allResults: AnalysisResultItem[] = parsedCandidates.map(candidate => {
-                const scoreResult = resultsMap.get(candidate.contact.email);
-                if (!scoreResult) {
-                    console.warn(`No score found for candidate: ${candidate.name}`);
-                    return null;
+                        const candidateWithScore: CandidateWithScore = {
+                            ...candidate,
+                            overallScore: result.matchScore,
+                            expMatch,
+                            eduMatch,
+                            missingSkills: result.missingSkills,
+                            totalExperienceYears: candidateTotalExp // Ensure this is set for the table
+                        };
+                        
+                        allResults.push({ result: resultWithSkills, candidate: candidateWithScore });
+                    }
+                } catch (err) {
+                    console.error(`Skipping candidate ${candidate.name} due to analysis error`, err);
+                    // Continue to next candidate instead of failing completely
                 }
-
-                const matchResult: MatchResult = {
-                    matchScore: scoreResult.match_score,
-                    summary: scoreResult.details,
-                    matchingSkills: scoreResult.matching_skills || [],
-                    missingSkills: scoreResult.missing_skills || [],
-                    experienceMatch: scoreResult.experience_matched,
-                    locationMatch: scoreResult.location_matched
-                };
-
-                const finalCandidateWithScore: CandidateWithScore = {
-                    ...candidate,
-                    overallScore: scoreResult.match_score,
-                    missingSkills: scoreResult.missing_skills,
-                    totalExperienceYears: scoreResult.experience_years
-                };
-
-                return { result: matchResult, candidate: finalCandidateWithScore };
-            }).filter((item): item is AnalysisResultItem => item !== null);
+            }
             
+            await new Promise(res => setTimeout(res, 500));
+
             allResults.sort((a, b) => b.result!.matchScore - a.result!.matchScore);
             setAnalysisResults(allResults);
             
@@ -263,7 +281,7 @@ const ResumeMatcherTool: React.FC<ResumeMatcherToolProps> = ({ onParseCandidate,
         } catch (error) {
             console.error("Analysis failed for batch:", error);
             // Fallback to show any results collected or empty list to prevent error state
-            setAnalysisResults([]);
+            setAnalysisResults(allResults);
             setProgress(0);
             setProgressMessage('');
         } finally {
@@ -614,19 +632,7 @@ const ResumeMatcherTool: React.FC<ResumeMatcherToolProps> = ({ onParseCandidate,
                                             </div>
                                         </td>
                                         <td>{candidate.totalExperienceYears || 0} Years</td>
-                                        <td>
-                                            {/* @ts-ignore */}
-                                            {result.locationMatch ? (
-                                                <span className="match-badge" style={{color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px'}}>
-                                                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>check</span> Match
-                                                </span>
-                                            ) : (
-                                                <span className="mismatch-badge" style={{color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px'}}>
-                                                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span> Mismatch
-                                                </span>
-                                            )}
-                                            <div style={{fontSize: '12px', color: '#666'}}>{candidate.contact?.location || 'Unknown'}</div>
-                                        </td>
+                                        <td>{candidate.contact?.location || 'N/A'}</td>
                                         <td><span className={`ats-score-pill ${getScoreColor(result.matchScore)}`}>{result.matchScore}%</span></td>
                                         <td>
                                             <div className="missing-skills-container">

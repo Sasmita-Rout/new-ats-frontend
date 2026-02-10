@@ -112,6 +112,9 @@ export type Candidate = {
     phone: string;
     location: string;
   };
+  /*email: string;
+  phone: string;
+  location: string;*/
   experience: Experience[];
   education: Education[];
   skills: string[];
@@ -175,7 +178,10 @@ export type CandidateWithScore = Candidate & {
     overallScore?: number;
     expMatch?: boolean;
     eduMatch?: boolean;
+    matchingSkills?: string[];
     missingSkills?: string[];
+    location_matched?: boolean;
+     location?: string;   
 };
 
 export type JobRequirements = {
@@ -212,4 +218,5 @@ export type MatchResult = {
   summary: string;
   matchingSkills: string[];
   missingSkills: string[];
+  location_matched?: boolean;
 };

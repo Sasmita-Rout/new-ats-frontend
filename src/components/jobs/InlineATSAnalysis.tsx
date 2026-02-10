@@ -1,10 +1,20 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Candidate, JobDescription, CandidateWithScore } from '../../types/types';
 import FilterBar from '../candidates/FilterBar';
 import { exportToCSV } from '../../utils/helpers';
 import CandidateProfileModal from '../../modals/CandidateProfileModal';
 
-const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
+const defaultFilters = {
+    status: [] as Candidate['status'][],
+    skills: '',
+    location: '',
+    roleCategory: '',
+    education: '',
+    salaryMin: '',
+    salaryMax: '',
+    tags: '',
+    experience: ''
+};
 
 type AnalysisResult = {
     loading: boolean;
@@ -12,14 +22,28 @@ type AnalysisResult = {
     keywords: string[];
 };
 
-const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCandidates, onEmailSelected }: { job: JobDescription, analysisResult: AnalysisResult, onCandidateSelect: (c: Candidate) => void, onDeleteCandidates: (ids: number[]) => void, onEmailSelected: (ids: number[]) => void }) => {
+const InlineATSAnalysis = ({
+    job,
+    analysisResult,
+    onCandidateSelect,
+    onDeleteCandidates,
+    onEmailSelected
+}: {
+    job: JobDescription;
+    analysisResult: AnalysisResult;
+    onCandidateSelect: (c: Candidate) => void;
+    onDeleteCandidates: (ids: number[]) => void;
+    onEmailSelected: (ids: number[]) => void;
+}) => {
+
     const [filters, setFilters] = useState(defaultFilters);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [viewingCandidate, setViewingCandidate] = useState<Candidate | null>(null);
 
     if (!analysisResult) return null;
+
     const { loading, candidates: initialRankedCandidates, keywords } = analysisResult;
-    
+
     useEffect(() => {
         setSelectedIds([]);
     }, [filters, initialRankedCandidates]);
@@ -34,12 +58,14 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
 
     const handleSelectOne = (id: number) => {
         setSelectedIds(prev =>
-            prev.includes(id) ? prev.filter(selectedId => selectedId !== id) : [...prev, id]
+            prev.includes(id)
+                ? prev.filter(x => x !== id)
+                : [...prev, id]
         );
     };
 
     const handleDeleteSelected = () => {
-        if (window.confirm(`Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`)) {
+        if (window.confirm(`Delete ${selectedIds.length} candidates?`)) {
             onDeleteCandidates(selectedIds);
             setSelectedIds([]);
         }
@@ -51,16 +77,13 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
     };
 
     const handleExportCSV = () => {
-        const dataToExport = selectedIds.length > 0
+        const data = selectedIds.length > 0
             ? initialRankedCandidates.filter(c => selectedIds.includes(c.id))
             : initialRankedCandidates;
 
-        if (dataToExport.length === 0) {
-            alert("No candidates to export.");
-            return;
-        }
+        if (!data.length) return alert("No candidates");
 
-        const formattedData = dataToExport.map(c => ({
+        const formatted = data.map(c => ({
             'Candidate Name': c.name,
             'Title': c.title,
             'Overall Match (%)': c.overallScore ?? 0,
@@ -68,130 +91,159 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
             'Education Match': c.eduMatch ? 'Yes' : 'No',
             'Missing Skills': c.missingSkills?.join('; ') ?? 'N/A',
         }));
-        
-        const filename = `${job.title.replace(/\s+/g, '_')}_candidates_${new Date().toISOString().split('T')[0]}.csv`;
-        exportToCSV(formattedData, filename);
+
+        const filename = `${job.title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+        exportToCSV(formatted, filename);
     };
 
-    const allVisibleSelected = initialRankedCandidates.length > 0 && selectedIds.length === initialRankedCandidates.length;
-    const jdSkillsLower = new Set((job.requiredSkills || []).map(s => s.toLowerCase()));
+    const allVisibleSelected =
+        initialRankedCandidates.length > 0 &&
+        selectedIds.length === initialRankedCandidates.length;
 
     return (
         <div className="inline-ats-analysis">
+
             {loading ? (
                 <div className="loading-indicator">
                     <span className="material-symbols-outlined spin">auto_awesome</span>
-                    <span>AI is finding and ranking relevant candidates...</span>
+                    <span>AI is ranking candidates...</span>
                 </div>
             ) : (
                 <>
                     <div className="analysis-keywords-header">
                         <strong>Filtered using keywords:</strong>
                         <div className="skills-container">
-                            {keywords.map(kw => <span key={kw} className="skill-tag-simple">{kw}</span>)}
+                            {keywords.map(k => (
+                                <span key={k} className="skill-tag-simple">{k}</span>
+                            ))}
                         </div>
                     </div>
 
                     <div className="inline-ats-toolbar">
                         {selectedIds.length > 0 ? (
                             <div className="selection-actions">
-                                <span className="selection-count">{selectedIds.length} candidate(s) selected</span>
+                                <span>{selectedIds.length} selected</span>
+
                                 <button className="btn btn-secondary btn-small" onClick={handleEmailClick}>
-                                    <span className="material-symbols-outlined">mail</span> Email Selected
+                                    Email
                                 </button>
+
                                 <button className="btn btn-secondary btn-small" onClick={handleExportCSV}>
-                                    <span className="material-symbols-outlined">download</span> Export Selected
+                                    Export
                                 </button>
+
                                 <button className="btn btn-danger btn-small" onClick={handleDeleteSelected}>
-                                    <span className="material-symbols-outlined">delete_sweep</span> Delete Selected
+                                    Delete
                                 </button>
                             </div>
                         ) : (
                             <>
                                 <FilterBar filters={filters} onFilterChange={setFilters} onClear={() => setFilters(defaultFilters)} context="inline" />
-                                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                                    <span className="material-symbols-outlined">download</span> Export All
+
+                                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ marginLeft: 'auto' }}>
+                                    Export All
                                 </button>
                             </>
                         )}
                     </div>
-                    <div className="ats-table-container inline">
-                        <table className="ats-table">
-                            <thead>
-                                <tr>
-                                    <th>
+
+                    <table className="ats-table">
+
+                        <thead>
+                            <tr>
+                                <th>
+                                    <input type="checkbox"
+                                        onChange={handleSelectAll}
+                                        checked={allVisibleSelected}
+                                    />
+                                </th>
+                                <th>Name</th>
+                                <th>Experience</th>
+                                <th>Location</th>
+                                <th>Score</th>
+                                <th>Matched Skills</th>
+                                <th>Missing Skills</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {initialRankedCandidates.length ? initialRankedCandidates.map(c => (
+
+                                <tr key={c.id}>
+                                    <td>
                                         <input
                                             type="checkbox"
-                                            onChange={handleSelectAll}
-                                            checked={allVisibleSelected}
-                                            ref={el => { if (el) { el.indeterminate = selectedIds.length > 0 && !allVisibleSelected; }}}
-                                            aria-label="Select all candidates in this view"
+                                            checked={selectedIds.includes(c.id)}
+                                            onChange={() => handleSelectOne(c.id)}
                                         />
-                                    </th>
-                                    <th>Candidate Name</th>
-                                    <th>Experience</th>
-                                    <th>Location</th>
-                                    <th>Score</th>
-                                    <th>Matched Skills</th>
-                                    <th>Missing Skills</th>
-                                    <th>Actions</th>
+                                    </td>
+
+                                    <td>
+                                        <a href="#" onClick={(e) => {
+                                            e.preventDefault();
+                                            onCandidateSelect(c);
+                                        }}>{c.name}</a>
+                                    </td>
+
+                                    <td>{c.totalExperienceYears || 'N/A'}</td>
+
+                                    {/* LOCATION */}
+                        {/* ✅ LOCATION - Fixed */}
+<td>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span>{c.contact?.location || c.location }</span>
+        {c.location_matched === true && (
+            <span style={{ color: '#10B981', fontSize: '16px' }} title="Location matches">✓</span>
+        )}
+        {c.location_matched === false && (
+            <span style={{ color: '#EF4444', fontSize: '16px' }} title="Location does not match">✗</span>
+        )}
+    </div>
+</td>
+
+                                    <td>{c.overallScore}</td>
+
+                                    {/* MATCHED */}
+                                    <td>
+                                        {c.matchingSkills?.length
+                                            ? c.matchingSkills.map(s => (
+                                                <span key={s} className="skill-tag-simple">{s}</span>
+                                            ))
+                                            : <span style={{ color: '#9CA3AF' }}>None</span>
+                                        }
+                                    </td>
+
+                                    {/* MISSING */}
+                                    <td>
+                                        {c.missingSkills?.length
+                                            ? c.missingSkills.slice(0, 5).map(s => (
+                                                <span key={s} className="missing-skill-tag">{s}</span>
+                                            ))
+                                            : <span style={{ color: '#10B981' }}>✓ All matched</span>
+                                        }
+
+                                        {c.missingSkills && c.missingSkills.length > 5 &&
+                                            <span style={{ color: '#9CA3AF' }}>
+                                                +{c.missingSkills.length - 5} more
+                                            </span>
+                                        }
+                                    </td>
+
+                                    <td>
+                                        <button onClick={() => setViewingCandidate(c)}>View</button>
+                                        <button onClick={() => onDeleteCandidates([c.id])}>Delete</button>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {initialRankedCandidates.length > 0 ? initialRankedCandidates.map(c => (
-                                    <tr key={`${c.id}-${c.contact?.email || ''}-${c.name}`}>
-                                        <td>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.includes(c.id)}
-                                                onChange={() => handleSelectOne(c.id)}
-                                                aria-label={`Select ${c.name}`}
-                                            />
-                                        </td>
-                                        <td>
-                                            <div className="candidate-cell">
-                                                <div className="user-avatar small">{c.avatar}</div>
-                                                <div>
-                                                    <a href="#" className="candidate-name" onClick={(e) => { e.preventDefault(); onCandidateSelect(c); }}>{c.name}</a>
-                                                    <p className="candidate-title">{c.title}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>{c.totalExperienceYears}</td>
-                                        <td>{c.contact.location}</td>
-                                        <td>{c.overallScore}</td>
-                                        <td>
-                                            <div className="skills-container">
-                                                {c.skills
-                                                    .filter(skill => jdSkillsLower.has(skill.toLowerCase()))
-                                                    .map(skill => <span key={skill} className="skill-tag-simple">{skill}</span>)}
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div className="missing-skills-container">
-                                                {job.requiredSkills
-                                                    .filter(skill => !c.skills.some(s => s.toLowerCase() === skill.toLowerCase()))
-                                                    .map(skill => <span key={skill} className="missing-skill-tag">{skill}</span>)}
-                                                {job.requiredSkills.length === 0 && (
-                                                    <span className="perfect-match-text">No JD skills listed.</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <button className="btn btn-secondary btn-small" onClick={() => setViewingCandidate(c)}>
-                                                View
-                                            </button>
-                                            <button className="btn btn-danger btn-small" onClick={() => onDeleteCandidates([c.id])}>
-                                                Delete
-                                            </button>
-                                        </td>
-                                    </tr>
-                                )) : (
-                                    <tr><td colSpan={8} style={{textAlign: 'center', padding: '32px', color: '#666'}}>No candidates match the current filters.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+
+                            )) : (
+                                <tr>
+                                    <td colSpan={8} style={{ textAlign: 'center' }}>No candidates</td>
+                                </tr>
+                            )}
+                        </tbody>
+
+                    </table>
                 </>
             )}
 
@@ -200,6 +252,7 @@ const InlineATSAnalysis = ({ job, analysisResult, onCandidateSelect, onDeleteCan
                 onClose={() => setViewingCandidate(null)}
                 candidate={viewingCandidate}
             />
+
         </div>
     );
 };
