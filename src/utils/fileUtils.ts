@@ -1,5 +1,7 @@
+import { toast } from 'react-toastify';
 import { Candidate } from '../types/types';
 import { GoogleGenAI } from "@google/genai";
+import { RESUME_VAULT_BASE_URL } from '../App';
 
 declare var mammoth: any;
 declare var pdfjsLib: any;
@@ -10,27 +12,87 @@ if (typeof pdfjsLib !== 'undefined') {
 }
 
 export const downloadResumeText = (candidate: Candidate) => {
-  const blob = new Blob([candidate.resumeContent], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${candidate.name.replace(' ', '_')}_Resume.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
-
-export const downloadOriginalResume = (candidate: Candidate) => {
-    if (!candidate.originalResumeFile) return;
-    const url = URL.createObjectURL(candidate.originalResumeFile);
+    const blob = new Blob([candidate.resumeContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = candidate.originalResumeFile.name;
+    a.download = `${candidate.name.replace(' ', '_')}_Resume.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+};
+
+export const downloadOriginalResume = async (candidate: Candidate) => {
+    const email = candidate.contact?.email;
+
+    if (email) {
+        const toastId = toast.loading("Fetching resume from vault...");
+        const vaultUrl = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/download/${encodeURIComponent(email)}`;
+
+        try {
+            console.log(`🚀 Fetching resume: ${vaultUrl}`);
+            const response = await fetch(vaultUrl);
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: "File not found" }));
+                throw new Error(errorData.detail || "Download failed");
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+
+            // Try to get filename from content-disposition or use candidate name
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let fileName = `${candidate.name.replace(/\s+/g, '_')}_Resume.pdf`;
+            if (contentDisposition && contentDisposition.includes('filename=')) {
+                fileName = contentDisposition.split('filename=')[1].replace(/"/g, '');
+            }
+
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.update(toastId, { render: "Resume downloaded successfully!", type: "success", isLoading: false, autoClose: 3000 });
+        } catch (error: any) {
+            console.error("Vault download failed:", error);
+
+            // Fallback to in-memory if fetch fails and we have a local file
+            if (candidate.originalResumeFile) {
+                toast.update(toastId, { render: "Download failed from vault, using local fallback...", type: "info", isLoading: false, autoClose: 3000 });
+                const url = URL.createObjectURL(candidate.originalResumeFile);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = candidate.originalResumeFile.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                toast.update(toastId, { render: `Download Failed: ${error.message}`, type: "error", isLoading: false, autoClose: 3000 });
+            }
+        }
+    } else if (candidate.originalResumeFile) {
+        console.log("📎 Using in-memory file fallback");
+        const url = URL.createObjectURL(candidate.originalResumeFile);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = candidate.originalResumeFile.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("Resume downloaded (from memory)");
+    } else {
+        toast.error("No email or file found for this candidate.");
+    }
 };
 
 export const getTextFromFile = async (file: File, ai?: GoogleGenAI): Promise<string> => {
@@ -72,7 +134,7 @@ export const getTextFromFile = async (file: File, ai?: GoogleGenAI): Promise<str
             if (!ai) {
                 return reject(new Error("AI instance is required to parse images."));
             }
-             reader.onload = async (event) => {
+            reader.onload = async (event) => {
                 try {
                     const base64Data = (event.target.result as string).split(',')[1];
                     const imagePart = {

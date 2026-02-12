@@ -45,7 +45,8 @@ import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8000';
-const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
+//export const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://intranet.accionlabs.com/resume_vault';
+export const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
@@ -1125,11 +1126,16 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [notifyError]);
 
-    const uploadResumeToVault = useCallback(async (file: File, email: string, uploadedBy: string) => {
+    const uploadResumeToVault = useCallback(async (file: File, email: string, name: string, uploadedBy: string) => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('email', email);
-        formData.append('uploaded_by', uploadedBy);
+        formData.append('name', name);
+        // Ensure we never use the uploader's email as the primary candidate key in the vault
+        if (email === uploadedBy) {
+            console.warn(`[Vault] Warning: Using uploader email ${email} as candidate key. This might be a parsing failure.`);
+        }
+        formData.append('custom_fields', JSON.stringify({ uploaded_by: uploadedBy }));
 
         const response = await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`, {
             method: 'POST',
@@ -1142,7 +1148,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const message = typeof data === 'string' ? data : (data?.detail || 'Resume vault upload failed');
             throw new Error(message);
         }
-    }, []);
+    }, [RESUME_VAULT_BASE_URL]);
 
     const safeArray = (value: unknown): string[] => {
         if (Array.isArray(value)) return value.filter(Boolean).map(String);
@@ -1284,6 +1290,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const extractCandidate = (data: any): any | null => {
         if (!data) return null;
         if (data.candidate) return data.candidate;
+        if (data.parsed_data) return data.parsed_data; // Added for new-ats-backend compatibility
         if (data.updated_data) return data.updated_data;
         if (data.data) return data.data;
         if (data.result) return data.result;
@@ -1293,8 +1300,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const extractCandidates = (data: any): any[] => {
         if (!data) return [];
         if (Array.isArray(data)) return data;
-        if (Array.isArray(data.candidates)) return data.candidates;
-        if (Array.isArray(data.data)) return data.data;
+        if (data.candidates && Array.isArray(data.candidates)) return data.candidates;
+        if (data.parsed_candidates && Array.isArray(data.parsed_candidates)) return data.parsed_candidates; // Added
+        if (data.data && Array.isArray(data.data)) return data.data;
         return [];
     };
 
@@ -1396,24 +1404,29 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
             const rawCandidate = extractCandidate(data);
             let candidateEmail = uploadedBy;
+            let candidateName = 'Unknown Candidate';
             if (rawCandidate) {
                 const newCandidate = normalizeCandidate(rawCandidate);
-                candidateEmail = newCandidate.contact?.email || uploadedBy;
+                candidateEmail = newCandidate.contact?.email || '';
+                candidateName = newCandidate.name || 'Unknown Candidate';
+
+                if (!candidateEmail) {
+                    console.error("Candidate email missing after parsing. Skipping vault upload.");
+                } else {
+                    try {
+                        await uploadResumeToVault(file, candidateEmail, candidateName, uploadedBy);
+                    } catch (vaultError) {
+                        console.error('Failed to upload resume to vault:', vaultError);
+                    }
+                }
+
                 setAllCandidates(prev => [newCandidate, ...prev]);
                 logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
-                try {
-                    await uploadResumeToVault(file, candidateEmail, uploadedBy);
-                } catch (vaultError) {
-                    console.error('Failed to upload resume to vault:', vaultError);
-                }
                 return newCandidate;
             }
 
-            try {
-                await uploadResumeToVault(file, candidateEmail, uploadedBy);
-            } catch (vaultError) {
-                console.error('Failed to upload resume to vault:', vaultError);
-            }
+            // If we reach here, rawCandidate was null
+            return null;
 
             await fetchCandidates();
             return null;
@@ -1468,9 +1481,16 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     successCount = newCandidates.length;
                     await Promise.all(filesToProcess.map(async (file, index) => {
                         const candidate = newCandidates[index];
-                        const candidateEmail = candidate?.contact?.email || uploadedBy;
+                        const candidateEmail = candidate?.contact?.email;
+                        const candidateName = candidate?.name || 'Unknown Candidate';
+
+                        if (!candidateEmail) {
+                            console.warn(`[Bulk] Skipping vault upload for ${file.name} as no email was extracted.`);
+                            return;
+                        }
+
                         try {
-                            await uploadResumeToVault(file, candidateEmail, uploadedBy);
+                            await uploadResumeToVault(file, candidateEmail, candidateName, uploadedBy);
                         } catch (vaultError) {
                             console.error(`Failed to upload ${file.name} to vault:`, vaultError);
                         }
