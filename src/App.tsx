@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
 // Import types
-import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification } from './types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification, Experience, Education, Link, Task, Note } from './types/types';
 
 // Import pages
 import DashboardPage from './pages/DashboardPage';
@@ -33,10 +33,12 @@ import ResumeUploadModal from './modals/ResumeUploadModal';
 import JDUploadModal from './modals/JDUploadModal';
 import JobEditorModal from './modals/JobEditorModal';
 import MeetingSchedulerModal from './modals/MeetingSchedulerModal';
+import BulkMeetingSchedulerModal from './modals/BulkMeetingSchedulerModal';
 import UserEditorModal from './modals/UserEditorModal';
 import ProjectEditorModal from './modals/ProjectEditorModal';
 import AIGenerateJDModal from './modals/AIGenerateJDModal';
 import InviteMemberModal from './modals/InviteMemberModal';
+import CandidateProfileModal from './modals/CandidateProfileModal';
 
 
 // Import utils
@@ -45,7 +47,8 @@ import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
-const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
+//const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
+const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
@@ -154,6 +157,11 @@ const App = () => {
     const [mainFilters, setMainFilters] = useState(defaultFilters);
     const [isMeetingModalOpen, setMeetingModalOpen] = useState(false);
     const [candidateForMeeting, setCandidateForMeeting] = useState<Candidate | null>(null);
+    const [meetingJobId, setMeetingJobId] = useState<string | null>(null);
+    const [isBulkMeetingModalOpen, setBulkMeetingModalOpen] = useState(false);
+    const [candidatesForBulkMeeting, setCandidatesForBulkMeeting] = useState<Candidate[]>([]);
+    const [bulkMeetingJobId, setBulkMeetingJobId] = useState<string | null>(null);
+    const [isBulkMeetingSubmitting, setBulkMeetingSubmitting] = useState(false);
     const [initialEmailDraft, setInitialEmailDraft] = useState<{subject: string, body: string, cc?: string} | null>(null);
     const [candidatesForAnalysis, setCandidatesForAnalysis] = useState<Candidate[]>([]);
     const [isUserEditorModalOpen, setUserEditorModalOpen] = useState(false);
@@ -164,6 +172,8 @@ const App = () => {
     const [isAIGenerateModalOpen, setAIGenerateModalOpen] = useState(false);
     const [isGeneratingJD, setIsGeneratingJD] = useState(false);
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
+    const [previewCandidate, setPreviewCandidate] = useState<Candidate | null>(null);
+    const [candidateBackPage, setCandidateBackPage] = useState<string | null>(null);
     
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
@@ -177,6 +187,28 @@ const App = () => {
             throw error;
         }
     }, [effectiveUser?.email]);
+
+    const resolveJobId = useCallback((preferred?: string | null) => {
+        const fallback =
+            preferred ||
+            selectedJob?.jobId ||
+            selectedJob?.id ||
+            selectedJobForDetail?.jobId ||
+            selectedJobForDetail?.id ||
+            selectedProject?.project_id ||
+            'unassigned';
+        return String(fallback);
+    }, [selectedJob, selectedJobForDetail, selectedProject]);
+
+    const applyEmailTemplate = useCallback((template: string, candidate: Candidate, jobTitle?: string) => {
+        const safeTemplate = template || '';
+        const latestInterview = (candidate.interviews || []).slice().reverse().find(i => i.status === 'Scheduled');
+        const meetingLink = latestInterview?.meetingLink || '';
+        return safeTemplate
+            .replace(/\[Candidate Name\]/gi, candidate.name)
+            .replace(/\[Job Title\]/gi, jobTitle || '')
+            .replace(/\[Meeting Link\]/gi, meetingLink);
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -326,46 +358,202 @@ const App = () => {
         handleNavigate('Dashboard');
     };
     
-    const handleOpenMeetingModal = (candidate: Candidate) => {
+    const handleOpenMeetingModal = (candidate: Candidate, jobId?: string) => {
         setCandidateForMeeting(candidate);
+        setMeetingJobId(jobId || null);
         setMeetingModalOpen(true);
     };
 
-    const handleScheduleMeeting = (details: { title: string, type: Interview['type'], dateTime: string, duration: number, interviewer: string, meetingLink: string, description: string }) => {
+    const handleOpenBulkMeetingModal = (candidates: Candidate[], jobId?: string) => {
+        if (!candidates.length) return;
+        const withEmail = candidates.filter(c => !!c.email);
+        if (withEmail.length === 0) {
+            notifyError('No selected candidates have an email address.');
+            return;
+        }
+        if (withEmail.length < candidates.length) {
+            notifyInfo(`${candidates.length - withEmail.length} candidate(s) were skipped due to missing email.`);
+        }
+        setCandidatesForBulkMeeting(withEmail);
+        setBulkMeetingJobId(jobId || null);
+        setBulkMeetingModalOpen(true);
+    };
+
+    const handleScheduleMeeting = async (details: { title: string, type: Interview['type'], dateTime: string, duration: number, interviewer: string, description: string }) => {
         if (!candidateForMeeting || !effectiveUser) return;
-        
-        const newInterview: Interview = {
-            id: Date.now(),
-            type: details.type,
-            date: new Date(details.dateTime).toISOString(),
-            duration: details.duration,
-            interviewer: details.interviewer,
-            status: 'Scheduled',
-            meetingLink: details.meetingLink,
-            notes: details.description,
-            schedulerId: effectiveUser.id,
-        };
-        
-        const updatedCandidate = {
-            ...candidateForMeeting,
-            interviews: [...(candidateForMeeting.interviews || []), newInterview],
-            status: 'Interview' as const,
-        };
+        if (!candidateForMeeting.email) {
+            notifyError('Candidate email is missing. Cannot schedule interview.');
+            return;
+        }
 
-        handleUpdateCandidate(updatedCandidate);
-        logAction(`Scheduled ${details.type} interview for candidate`, { targetType: 'Candidate', targetName: candidateForMeeting.name, targetId: candidateForMeeting.id });
+        try {
+            const uploadedBy = await getUploadedBy();
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+            const jobId = resolveJobId(meetingJobId);
+            const payload = {
+                job_id: jobId,
+                candidate_id: candidateForMeeting.id,
+                uploaded_by: uploadedBy,
+                organizer_email: uploadedBy.trim().toLowerCase(),
+                candidate_email: candidateForMeeting.email.trim().toLowerCase(),
+                candidate_name: candidateForMeeting.name,
+                title: details.title,
+                interview_type: details.type,
+                date_time: details.dateTime,
+                duration: details.duration,
+                interviewer: details.interviewer,
+                description: details.description,
+                timezone,
+            };
 
-        const emailBody = `Hi ${candidateForMeeting.name},\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.interviewer}\nMeeting Link: ${details.meetingLink}\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
-        
-        setInitialEmailDraft({
-            subject: `Invitation: ${details.type} Interview for ${selectedJob?.title || 'a relevant position'}`,
-            body: emailBody,
-        });
+            const data = await apiRequest('/communications/interview/schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
 
-        setEmailTargets([candidateForMeeting]);
-        setMeetingModalOpen(false);
-        setCandidateForMeeting(null);
-        setCurrentPage('Communications');
+            const meetingLink = data?.meeting_link || '';
+
+            const newInterview: Interview = {
+                id: Date.now(),
+                type: details.type,
+                date: new Date(details.dateTime).toISOString(),
+                duration: details.duration,
+                interviewer: details.interviewer,
+                status: 'Scheduled',
+                meetingLink,
+                notes: details.description,
+                schedulerId: effectiveUser.id,
+            };
+
+            const updatedCandidate = {
+                ...candidateForMeeting,
+                interviews: [...(candidateForMeeting.interviews || []), newInterview],
+                status: 'Interview' as const,
+            };
+
+            handleUpdateCandidate(updatedCandidate);
+            logAction(`Scheduled ${details.type} interview for candidate`, { targetType: 'Candidate', targetName: candidateForMeeting.name, targetId: candidateForMeeting.id });
+
+            const meetingLine = meetingLink ? `Meeting Link: ${meetingLink}` : 'Meeting Link: TBD (will be shared)';
+            const emailBody = `Hi ${candidateForMeeting.name},\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.interviewer}\n${meetingLine}\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+
+            setInitialEmailDraft({
+                subject: `Invitation: ${details.type} Interview for ${selectedJob?.title || 'a relevant position'}`,
+                body: emailBody,
+            });
+
+            setEmailTargets([candidateForMeeting]);
+            setMeetingModalOpen(false);
+            setCandidateForMeeting(null);
+            setMeetingJobId(null);
+            setCurrentPage('Communications');
+            notifySuccess('Interview scheduled and meeting link generated.');
+        } catch (error) {
+            console.error('Failed to schedule interview:', error);
+            notifyError(error instanceof Error ? error.message : 'Failed to schedule interview.');
+        }
+    };
+
+    const handleScheduleBulkMeetings = async (details: { title: string, type: Interview['type'], dateTime: string, duration: number, description: string, interviewerById: Record<number, string>, defaultInterviewer: string, sendEmailAfter: boolean }) => {
+        if (!candidatesForBulkMeeting.length || !effectiveUser) return;
+        if (isBulkMeetingSubmitting) return;
+
+        const jobId = resolveJobId(bulkMeetingJobId);
+        try {
+            setBulkMeetingSubmitting(true);
+            const uploadedBy = await getUploadedBy();
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+
+            const results = await Promise.allSettled(
+                candidatesForBulkMeeting.map(async candidate => {
+                    if (!candidate.email) {
+                        throw new Error(`Missing email for ${candidate.name}`);
+                    }
+                    const interviewer = (details.interviewerById[candidate.id] || details.defaultInterviewer || '').trim();
+                    if (!interviewer) {
+                        throw new Error(`Missing interviewer for ${candidate.name}`);
+                    }
+                    const payload = {
+                        job_id: jobId,
+                        candidate_id: candidate.id,
+                        uploaded_by: uploadedBy,
+                        organizer_email: uploadedBy.trim().toLowerCase(),
+                        candidate_email: candidate.email.trim().toLowerCase(),
+                        candidate_name: candidate.name,
+                        title: details.title,
+                        interview_type: details.type,
+                        date_time: details.dateTime,
+                        duration: details.duration,
+                        interviewer,
+                        description: details.description,
+                        timezone,
+                    };
+                    const data = await apiRequest('/communications/interview/schedule', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    return { candidate, meetingLink: data?.meeting_link || '' };
+                })
+            );
+
+            const successful = results
+                .filter(r => r.status === 'fulfilled')
+                .map(r => (r as PromiseFulfilledResult<{ candidate: Candidate; meetingLink: string }>).value);
+
+            if (successful.length) {
+                setAllCandidates(prev => prev.map(c => {
+                    const match = successful.find(s => s.candidate.id === c.id);
+                    if (!match) return c;
+                    const newInterview: Interview = {
+                        id: Date.now() + Math.floor(Math.random() * 10000),
+                        type: details.type,
+                        date: new Date(details.dateTime).toISOString(),
+                        duration: details.duration,
+                        interviewer: (details.interviewerById[c.id] || details.defaultInterviewer || '').trim(),
+                        status: 'Scheduled',
+                        meetingLink: match.meetingLink,
+                        notes: details.description,
+                        schedulerId: effectiveUser.id,
+                    };
+                    return {
+                        ...c,
+                        interviews: [...(c.interviews || []), newInterview],
+                        status: 'Interview' as const,
+                    };
+                }));
+            }
+
+            const failed = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[];
+            if (failed.length) {
+                notifyError(`Scheduled ${successful.length} interview(s), ${failed.length} failed.`);
+            } else {
+                notifySuccess(`Scheduled ${successful.length} interview(s).`);
+            }
+
+            if (details.sendEmailAfter && successful.length > 0) {
+                const jobTitle = selectedJob?.title || selectedJobForDetail?.title || 'a relevant position';
+                const meetingDate = new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
+                const emailBodyTemplate = `Hi [Candidate Name],\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${meetingDate}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.defaultInterviewer || '[Interviewer]'}\nMeeting Link: [Meeting Link]\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+
+                setInitialEmailDraft({
+                    subject: `Invitation: ${details.type} Interview for ${jobTitle}`,
+                    body: emailBodyTemplate,
+                });
+                setEmailTargets(successful.map(s => s.candidate));
+                setCurrentPage('Communications');
+            }
+
+            setBulkMeetingModalOpen(false);
+            setCandidatesForBulkMeeting([]);
+            setBulkMeetingJobId(null);
+        } catch (error) {
+            console.error('Failed to schedule bulk interviews:', error);
+            notifyError(error instanceof Error ? error.message : 'Failed to schedule interviews.');
+        } finally {
+            setBulkMeetingSubmitting(false);
+        }
     };
 
     const handleResetAllData = () => {
@@ -884,7 +1072,7 @@ const App = () => {
             const results = Array.isArray(data?.results) ? data.results : [];
             const byEmail = new Map<string, Candidate>();
             allCandidates.forEach(c => {
-                const email = c.contact?.email?.toLowerCase();
+                const email = c.email?.toLowerCase();
                 if (email) byEmail.set(email, c);
             });
 
@@ -945,7 +1133,7 @@ const App = () => {
                     languages: [],
                     certifications: [],
                     links: [],
-                    status: 'Applied',
+                    status: 'Screening',
                     appliedDate: new Date().toISOString().split('T')[0],
                     salaryExpectation: null,
                     resumeContent: '',
@@ -965,8 +1153,28 @@ const App = () => {
                 };
             });*/
             const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
-    const email = String(r.email || '').toLowerCase();
-    const existing = byEmail.get(email);
+    const apiDataNormalized = normalizeCandidate(r);
+    const email = (apiDataNormalized.email || String(r.email || '')).toLowerCase();
+    let existing = email ? byEmail.get(email) : undefined;
+
+    if (!existing && apiDataNormalized.name) {
+        const nameLower = apiDataNormalized.name.toLowerCase();
+        const nameMatches = allCandidates.filter(c => c.name?.toLowerCase() === nameLower);
+        if (nameMatches.length === 1) {
+            existing = nameMatches[0];
+        } else if (nameMatches.length > 1) {
+            const apiPhone = (apiDataNormalized.phone || '').replace(/\D/g, '');
+            if (apiPhone.length >= 5) {
+                const phoneMatch = nameMatches.find(c => (c.phone || '').replace(/\D/g, '') === apiPhone);
+                if (phoneMatch) existing = phoneMatch;
+            }
+            if (!existing && apiDataNormalized.location) {
+                const locLower = apiDataNormalized.location.toLowerCase();
+                const locMatch = nameMatches.find(c => (c.location || '').toLowerCase() === locLower);
+                if (locMatch) existing = locMatch;
+            }
+        }
+    }
     const overallScore = typeof r.match_score === 'number'
         ? Math.round(r.match_score)
         : Math.round(Number(r.match_score) || 0);
@@ -995,74 +1203,39 @@ const App = () => {
     const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
     const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
     const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
-    
-    // FIX: Use API matching skills if available, otherwise use fallback
     const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
 
     if (existing) {
-        const mergedContact = {
-            ...existing.contact,
-            phone: existing.contact?.phone || r.phone || '',
-            location: existing.contact?.location || r.location || '',
-        };
-        const mergedSkills = (existing.skills && existing.skills.length > 0) ? existing.skills : apiSkills;
         return {
             ...existing,
-            contact: mergedContact,
-            skills: mergedSkills,
+            // Only update fields on the existing candidate if they are empty or 'N/A'
+            phone: existing.phone || apiDataNormalized.phone,
+            location: existing.location || apiDataNormalized.location,
+            dob: (existing.dob && existing.dob !== 'N/A') ? existing.dob : apiDataNormalized.dob,
+            skills: (existing.skills && existing.skills.length > 0) ? existing.skills : apiDataNormalized.skills,
+            totalExperienceYears: existing.totalExperienceYears || apiDataNormalized.totalExperienceYears,
+            // Add scoring info
             overallScore,
-            matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
-            missingSkills,                         // FIX: Use the fixed array
-            totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
-             // ✅ ADD THIS LINE:
-            location: mergedContact.location,
+            matchingSkills: finalMatchingSkills,
+            missingSkills,
             location_matched: r.location_matched ?? false,
         };
     }
 
-    const name = r.candidate_name || r.name || 'Unknown Candidate';
-    const idSource = email || name || `${jobId}|${Math.random()}`;
-    const derivedId = hashStringToInt(String(idSource));
-    
+    // For a new candidate, just use the normalized API result and add scores
+    const newCandidate = apiDataNormalized;
     return {
-        id: derivedId,
-        name,
-        title: r.title || 'N/A',
-        avatar: getInitials(name),
-        summary: '',
-        contact: { email: email || '', phone: r.phone || '', location: r.location || '' },
-        experience: [],
-        education: [],
-        skills: apiSkills,
-        softSkills: [],
-        languages: [],
-        certifications: [],
-        links: [],
-        status: 'Applied',
-        appliedDate: new Date().toISOString().split('T')[0],
-        salaryExpectation: null,
-        resumeContent: '',
-        originalResumeFile: null,
-        applicationHistory: [],
-        tasks: [],
-        notes: [],
-        category: 'Uncategorized',
-        tags: [],
-        source: '',
-        rejectionReason: null,
-        communicationHistory: [],
-        totalExperienceYears: r.experience_years,
+        ...newCandidate,
         overallScore,
-        matchingSkills: finalMatchingSkills,  // FIX: Use the fixed array
-        missingSkills,   
-        // ✅ ADD THESE TWO LINES:
-        location: r.location || '',
-        location_matched: r.location_matched ?? false,                      // FIX: Use the fixed array
+        matchingSkills: finalMatchingSkills,
+        missingSkills,
+        location_matched: r.location_matched ?? false,
     };
 });
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
         } catch (error) {
+            console.error("AI-powered analysis failed:", error);
             console.error("AI-powered analysis failed:", error);
             alert(`An error occurred during AI analysis.`);
             return { rankedCandidates: [], keywords: [] };
@@ -1125,10 +1298,20 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [notifyError]);
 
-    const uploadResumeToVault = useCallback(async (file: File, email: string, uploadedBy: string) => {
+    const uploadResumeToVault = useCallback(async (
+        file: File,
+        email: string,
+        uploadedBy: string,
+        name?: string,
+        phone?: string
+    ) => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('email', email);
+        formData.append('name', name || email.split('@')[0] || 'Unknown Candidate');
+        if (phone) {
+            formData.append('phone', phone);
+        }
         formData.append('uploaded_by', uploadedBy);
 
         const response = await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`, {
@@ -1171,50 +1354,72 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     };
 
     const normalizeCandidate = useCallback((raw: any): Candidate => {
-        const contact = raw.contact || {};
-        const email = raw.email || contact.email || '';
-        const phone = raw.phone || contact.phone || '';
-        const location = raw.location || contact.location || '';
+        const email = raw.email || '';
+
+        // Standardize contact info from different API response shapes
+        // `list-candidates` uses `contact` for phone. `search-db` uses `phone`.
+        // Relaxed validation: Accept if it has at least 5 digits, even if it has text
+        const phone = raw.phone 
+            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '') 
+            || raw.contact_no 
+            || raw.mobile 
+            || '';
+        const location = raw.location || raw.address || '';
 
         const appliedDate = raw.applied_date || raw.appliedDate || raw.file_created || new Date().toISOString().split('T')[0];
-        const idSource = [
-            raw.id,
-            email,
-            raw.file_created,
+        
+        // Use email as the primary source for a stable ID. Fallback to other fields if email is missing.
+        const idSource = email.toLowerCase() || [
+            raw.name || raw.candidate_name,
             raw.filenames,
-            raw.name,
-        ].filter(Boolean).join('|');
+            raw.file_created
+        ].filter(Boolean).join('|') || Date.now().toString();
+
         const derivedId = hashStringToInt(String(idSource));
+
+        const experience = safeObjectArray<Experience>(raw.experience);
+        // Handle experience from `search-db` (experience_years) or `list-candidates` (experience: "2.0")
+        let totalExperienceYears = raw.total_experience_years || raw.totalExperienceYears || raw.experience_years || raw.experience;
+        if (typeof totalExperienceYears === 'string') {
+            const parsed = parseFloat(totalExperienceYears);
+            totalExperienceYears = isNaN(parsed) ? 0 : parsed;
+        }
+        if (!totalExperienceYears && experience.length > 0) {
+            totalExperienceYears = calculateTotalExperience(experience);
+        }
 
         return {
             id: typeof raw.id === 'number' ? raw.id : derivedId,
-            name: raw.name || 'Unknown Candidate',
-            title: raw.title || 'N/A',
-            avatar: raw.avatar || getInitials(raw.name || 'Unknown'),
+            name: raw.name || raw.candidate_name || 'Unknown Candidate',
+            title: raw.title || raw.candidate_title || 'N/A',
+            avatar: raw.avatar || getInitials(raw.name || raw.candidate_name || 'Unknown Candidate'),
             summary: raw.summary || '',
-            contact: { email, phone, location },
-            experience: safeObjectArray(raw.experience),
-            education: safeObjectArray(raw.education),
+            email,
+            phone,
+            location,
+            dob: raw.dob || raw.date_of_birth || raw.dateOfBirth || 'N/A',
+            experience: experience,
+            education: safeObjectArray<Education>(raw.education),
             skills: safeArray(raw.skills),
             softSkills: safeArray(raw.soft_skills || raw.softSkills),
             languages: safeArray(raw.languages),
             certifications: safeArray(raw.certifications),
-            links: safeObjectArray(raw.links),
-            status: raw.status || 'Applied',
+            links: safeObjectArray<Link>(raw.links),
+            status: raw.status || 'Screening',
             appliedDate,
             salaryExpectation: raw.salary_expectation ?? raw.salaryExpectation ?? null,
             resumeContent: raw.resume_content || raw.resumeContent || '',
             originalResumeFile: null,
-            applicationHistory: safeObjectArray(raw.application_history || raw.applicationHistory),
-            tasks: safeObjectArray(raw.tasks),
-            notes: safeObjectArray(raw.notes),
+            applicationHistory: safeObjectArray<{ stage: string; date: string; notes: string }>(raw.application_history || raw.applicationHistory),
+            tasks: safeObjectArray<Task>(raw.tasks),
+            notes: safeObjectArray<Note>(raw.notes),
             category: raw.category || 'Uncategorized',
             tags: safeArray(raw.tags),
             source: raw.source || raw.filename || raw.original_filename || '',
             rejectionReason: raw.rejection_reason || raw.rejectionReason || null,
-            communicationHistory: safeObjectArray(raw.communication_history || raw.communicationHistory),
-            interviews: safeObjectArray(raw.interviews),
-            totalExperienceYears: raw.total_experience_years || raw.totalExperienceYears,
+            communicationHistory: safeObjectArray<{ type: 'email' | 'call'; date: string; subject: string }>(raw.communication_history || raw.communicationHistory),
+            interviews: safeObjectArray<Interview>(raw.interviews),
+            totalExperienceYears: totalExperienceYears || 0,
         };
     }, []);
 
@@ -1284,6 +1489,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const extractCandidate = (data: any): any | null => {
         if (!data) return null;
         if (data.candidate) return data.candidate;
+        if (data.parsed_data) return data.parsed_data;
         if (data.updated_data) return data.updated_data;
         if (data.data) return data.data;
         if (data.result) return data.result;
@@ -1294,6 +1500,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         if (!data) return [];
         if (Array.isArray(data)) return data;
         if (Array.isArray(data.candidates)) return data.candidates;
+        if (Array.isArray(data.parsed_candidates)) return data.parsed_candidates;
         if (Array.isArray(data.data)) return data.data;
         return [];
     };
@@ -1340,6 +1547,103 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [apiRequest, getUploadedBy, normalizeJobFromApi]);
 
+    // --- SMART VIEW HANDLER ---
+    // This ensures we show the FULL candidate profile (from allCandidates) 
+    // even if the current view (like Analyze Fit) only has partial data.
+    const isProfileComplete = (c: Candidate) => {
+        const hasPhone = !!c.phone && c.phone !== 'No Phone';
+        const hasLocation = !!c.location && c.location !== 'No Location';
+        const hasDob = !!c.dob && c.dob !== 'N/A';
+        const hasSkills = Array.isArray(c.skills) && c.skills.length > 0;
+        return hasPhone && hasLocation && hasDob && hasSkills;
+    };
+
+    const fetchCandidateByEmail = useCallback(async (email: string): Promise<Candidate | null> => {
+        try {
+            const data = await apiRequest(`/resume/by-email?email=${encodeURIComponent(email)}`);
+            return normalizeCandidate(data);
+        } catch (error) {
+            console.error('Failed to fetch candidate by email:', error);
+            return null;
+        }
+    }, [apiRequest, normalizeCandidate]);
+
+    const handleSelectCandidateFromAnalysis = async (candidate: Candidate) => {
+        // Prefer full record for detail view (Analyze Fit often has partial data)
+        const fullCandidate = allCandidates.find(c =>
+            (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
+            c.id === candidate.id
+        );
+
+        if (fullCandidate && isProfileComplete(fullCandidate)) {
+            setSelectedCandidate(fullCandidate);
+            setCandidateBackPage('Job Matching');
+            setCurrentPage('Candidates');
+            return;
+        }
+
+        if (candidate.email) {
+            const freshCandidate = await fetchCandidateByEmail(candidate.email);
+            if (freshCandidate) {
+                setAllCandidates(prev => {
+                    const idx = prev.findIndex(c => c.email?.toLowerCase() === freshCandidate.email?.toLowerCase());
+                    if (idx === -1) return [freshCandidate, ...prev];
+                    const next = [...prev];
+                    next[idx] = { ...next[idx], ...freshCandidate };
+                    return next;
+                });
+                setSelectedCandidate(freshCandidate);
+                setCandidateBackPage('Job Matching');
+                setCurrentPage('Candidates');
+                return;
+            }
+        }
+
+        setSelectedCandidate(fullCandidate || candidate);
+        setCandidateBackPage('Job Matching');
+        setCurrentPage('Candidates');
+    };
+
+    const handleViewCandidate = async (candidate: Candidate) => {
+        // Try to find the full record in our main list by email or ID
+        const fullCandidate = allCandidates.find(c => 
+            (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) || 
+            c.id === candidate.id
+        );
+
+        if (fullCandidate && isProfileComplete(fullCandidate)) {
+            setPreviewCandidate(fullCandidate);
+            return;
+        }
+
+        if (candidate.email) {
+            const freshCandidate = await fetchCandidateByEmail(candidate.email);
+            if (freshCandidate) {
+                setAllCandidates(prev => {
+                    const idx = prev.findIndex(c => c.email?.toLowerCase() === freshCandidate.email?.toLowerCase());
+                    if (idx === -1) return [freshCandidate, ...prev];
+                    const next = [...prev];
+                    next[idx] = { ...next[idx], ...freshCandidate };
+                    return next;
+                });
+                setPreviewCandidate(freshCandidate);
+                return;
+            }
+        }
+
+        setPreviewCandidate(fullCandidate || candidate);
+    };
+
+    const handleCandidateBack = () => {
+        if (candidateBackPage === 'Job Matching') {
+            setSelectedCandidate(null);
+            setCandidateBackPage(null);
+            setCurrentPage('Job Matching');
+            return;
+        }
+        setSelectedCandidate(null);
+    };
+
     useEffect(() => {
         if (!effectiveUser?.email) return;
         if (initialDataFetchRef.current) return;
@@ -1353,15 +1657,15 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
         const oldCandidate = allCandidates.find(c => c.id === updatedCandidate.id);
         const uploadedBy = await getUploadedBy();
-        const email = updatedCandidate.contact?.email;
+        const email = updatedCandidate.email;
 
         if (email) {
             try {
                 const payload = {
                     email,
                     name: updatedCandidate.name,
-                    phone: updatedCandidate.contact.phone,
-                    location: updatedCandidate.contact.location,
+                    phone: updatedCandidate.phone,
+                    location: updatedCandidate.location,
                     skills: updatedCandidate.skills,
                     experience: updatedCandidate.experience,
                 };
@@ -1398,11 +1702,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             let candidateEmail = uploadedBy;
             if (rawCandidate) {
                 const newCandidate = normalizeCandidate(rawCandidate);
-                candidateEmail = newCandidate.contact?.email || uploadedBy;
+                candidateEmail = newCandidate.email || uploadedBy;
                 setAllCandidates(prev => [newCandidate, ...prev]);
                 logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
                 try {
-                    await uploadResumeToVault(file, candidateEmail, uploadedBy);
+                    await uploadResumeToVault(file, candidateEmail, uploadedBy, newCandidate.name, newCandidate.phone);
                 } catch (vaultError) {
                     console.error('Failed to upload resume to vault:', vaultError);
                 }
@@ -1468,9 +1772,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     successCount = newCandidates.length;
                     await Promise.all(filesToProcess.map(async (file, index) => {
                         const candidate = newCandidates[index];
-                        const candidateEmail = candidate?.contact?.email || uploadedBy;
+                        const candidateEmail = candidate?.email || uploadedBy;
                         try {
-                            await uploadResumeToVault(file, candidateEmail, uploadedBy);
+                            await uploadResumeToVault(file, candidateEmail, uploadedBy, candidate?.name, candidate?.phone);
                         } catch (vaultError) {
                             console.error(`Failed to upload ${file.name} to vault:`, vaultError);
                         }
@@ -1500,7 +1804,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const handleDeleteCandidates = async (ids: number[]) => {
         const candidatesToDelete = allCandidates.filter(c => ids.includes(c.id));
         const uploadedBy = await getUploadedBy();
-        const candidatesMissingEmail = candidatesToDelete.filter(c => !c.contact?.email || !c.contact.email.trim());
+        const candidatesMissingEmail = candidatesToDelete.filter(c => !c.email || !c.email.trim());
 
         if (candidatesMissingEmail.length > 0) {
             const names = candidatesMissingEmail.map(c => c.name).join(', ');
@@ -1508,14 +1812,14 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
 
         Promise.all(candidatesToDelete.map(async (candidate) => {
-            if (!candidate.contact?.email || !candidate.contact.email.trim()) {
+            if (!candidate.email || !candidate.email.trim()) {
                 return { id: candidate.id, ok: false };
             }
             try {
                 await apiRequest(`/resume/delete?uploaded_by=${encodeURIComponent(uploadedBy)}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: candidate.contact.email }),
+                    body: JSON.stringify({ email: candidate.email }),
                 });
                 return { id: candidate.id, ok: true };
             } catch (error) {
@@ -1538,6 +1842,67 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         setEmailTargets(targets);
         setCurrentPage('Communications');
     };
+
+    const handleEmailSelectedCandidates = (candidates: Candidate[]) => {
+        const targets = candidates.filter(c => c.email && c.email.trim());
+        setEmailTargets(targets);
+        setCurrentPage('Communications');
+    };
+
+    const clearEmailTargets = useCallback(() => {
+        setEmailTargets([]);
+    }, []);
+
+    const handleSendEmail = async (options: { candidates: Candidate[]; subject: string; body: string; fromEmail: string; cc: string; bcc: string; contentType: 'Text' | 'HTML'; saveToSentItems: boolean; }) => {
+        if (!options.candidates.length) return;
+        const uploadedBy = await getUploadedBy();
+        const jobId = resolveJobId(null);
+        const jobTitle = selectedJob?.title || selectedJobForDetail?.title || '';
+        const ccList = options.cc ? options.cc.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) : [];
+        const bccList = options.bcc ? options.bcc.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) : [];
+
+        const fromEmail = options.fromEmail.trim().toLowerCase();
+        const results = await Promise.allSettled(
+            options.candidates.map(async candidate => {
+                if (!candidate.email) {
+                    throw new Error(`Missing email for ${candidate.name}`);
+                }
+                const personalizedBody = applyEmailTemplate(options.body, candidate, jobTitle);
+                const payload = {
+                    job_id: jobId,
+                    candidate_id: candidate.id,
+                    uploaded_by: uploadedBy,
+                    from_email: fromEmail,
+                    to: [candidate.email.trim().toLowerCase()],
+                    subject: options.subject,
+                    body: personalizedBody,
+                    cc: ccList,
+                    bcc: bccList,
+                    content_type: options.contentType,
+                    save_to_sent_items: options.saveToSentItems,
+                };
+                await apiRequest('/communications/email/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                return candidate.id;
+            })
+        );
+
+        const successCount = results.filter(r => r.status === 'fulfilled').length;
+        const failureCount = results.filter(r => r.status === 'rejected').length;
+
+        if (failureCount > 0) {
+            notifyError(`Email sent to ${successCount} candidate(s). ${failureCount} failed.`);
+        } else {
+            notifySuccess(`Email sent to ${successCount} candidate(s).`);
+        }
+
+        if (successCount > 0) {
+            logAction(`Sent email with subject "${options.subject}" to ${successCount} candidate(s)`);
+        }
+    };
     
     const handleAnalyzeSelected = (ids: number[]) => {
         const targets = allCandidates.filter(c => ids.includes(c.id));
@@ -1559,16 +1924,29 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
 
         return candidates.filter(c => {
+            const locationValue = (c.location && c.location !== 'No Location' ? c.location : '') || c.originalLocation || '';
+            const skillsValue = Array.isArray(c.skills) ? c.skills : [];
+            const tagsValue = Array.isArray(c.tags) ? c.tags : [];
+            const educationValue = Array.isArray(c.education) ? c.education : [];
+            const experienceValue = Array.isArray(c.experience) ? c.experience : [];
+            const originalSkillsValue = c.originalSkills || '';
+            const originalExperienceValue = c.originalExperience || '';
+
             const searchMatch = !searchTerm ||
                 c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                c.contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                c.skills.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()));
+                c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                skillsValue.some(s => s.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                originalSkillsValue.toLowerCase().includes(searchTerm.toLowerCase());
 
             const statusMatch = mainFilters.status.length === 0 || mainFilters.status.includes(c.status);
-            const skillsMatch = !mainFilters.skills || mainFilters.skills.toLowerCase().split(',').every(skill => c.skills.some(cs => cs.toLowerCase().includes(skill.trim())));
-            const locationMatch = !mainFilters.location || c.contact.location.toLowerCase().includes(mainFilters.location.toLowerCase());
+            const skillsMatch = !mainFilters.skills || mainFilters.skills.toLowerCase().split(',').every(skill => {
+                const term = skill.trim();
+                if (!term) return true;
+                return skillsValue.some(cs => cs.toLowerCase().includes(term)) || originalSkillsValue.toLowerCase().includes(term);
+            });
+            const locationMatch = !mainFilters.location || locationValue.toLowerCase().includes(mainFilters.location.toLowerCase());
             const categoryMatch = !mainFilters.roleCategory || c.category.toLowerCase().includes(mainFilters.roleCategory.toLowerCase());
-            const educationMatch = !mainFilters.education || (c.education && c.education.some(edu => 
+            const educationMatch = !mainFilters.education || (educationValue.length > 0 && educationValue.some(edu => 
                 edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) || 
                 edu.institution.toLowerCase().includes(mainFilters.education.toLowerCase())
             ));
@@ -1576,12 +1954,18 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const salaryMax = parseFloat(mainFilters.salaryMax);
             const salaryMatch = (!mainFilters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
                                 (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
-            const tagsMatch = !mainFilters.tags || mainFilters.tags.toLowerCase().split(',').every(tag => c.tags.some(ct => ct.toLowerCase().includes(tag.trim())));
-            const experienceMatch = !mainFilters.experience || mainFilters.experience.toLowerCase().split(',').every(expTerm => 
-                c.experience.some(exp => 
-                    `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(expTerm.trim())
-                )
-            );
+            const tagsMatch = !mainFilters.tags || mainFilters.tags.toLowerCase().split(',').every(tag => {
+                const term = tag.trim();
+                if (!term) return true;
+                return tagsValue.some(ct => ct.toLowerCase().includes(term));
+            });
+            const experienceMatch = !mainFilters.experience || mainFilters.experience.toLowerCase().split(',').every(expTerm => {
+                const term = expTerm.trim();
+                if (!term) return true;
+                return experienceValue.some(exp => 
+                    `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(term)
+                ) || originalExperienceValue.toLowerCase().includes(term);
+            });
             
             return searchMatch && statusMatch && skillsMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
         });
@@ -1624,16 +2008,16 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 />;
             case 'Job Matching':
                 if (selectedProject) {
-                     return <ProjectDetailPage
+                    return <ProjectDetailPage
                         project={selectedProject}
-                        jobsForProject={allJobDescriptions.filter(j => j.projectId === selectedProject.project_id)}
+                        jobsForProject={allJobDescriptions.filter(j => String(j.projectId) === String(selectedProject.project_id))}
                         onBack={() => setSelectedProject(null)}
                         onJobSelect={(j) => { setSelectedJobForDetail(j); }}
                         onJobEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                         onJobChangeJd={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                         onJobCreateManually={() => { setJobToEdit(null); setJobEditorModalOpen(true); }}
                         candidates={allCandidates}
-                        onCandidateSelect={(c) => { setSelectedCandidate(c); setCurrentPage('Candidates'); }}
+                        onCandidateSelect={handleSelectCandidateFromAnalysis}
                         onUploadJds={() => setJdUploadModalOpen(true)}
                         stagedJds={stagedJds}
                         isProcessingJds={isProcessingJds}
@@ -1648,6 +2032,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         onClearCandidatesForAnalysis={() => setCandidatesForAnalysis([])}
                         onAnalyzeJobFit={handleAnalyzeJobFit}
                         onOpenAIGenerateModal={() => setAIGenerateModalOpen(true)}
+                        onViewCandidate={handleViewCandidate}
+                        onScheduleMeeting={handleOpenMeetingModal}
+                        onScheduleBulk={handleOpenBulkMeetingModal}
+                        onEmailSelectedCandidates={handleEmailSelectedCandidates}
                     />;
                 }
                 if (selectedJobForDetail) {
@@ -1669,13 +2057,13 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Candidates':
                 if (selectedCandidate) {
                     if (selectedJob) {
-                        return <CandidateMatchDetailPage candidate={selectedCandidate} job={selectedJob} onBack={() => setSelectedCandidate(null)} onUpdateCandidate={handleUpdateCandidate} />;
+                        return <CandidateMatchDetailPage candidate={selectedCandidate} job={selectedJob} onBack={handleCandidateBack} onUpdateCandidate={handleUpdateCandidate} />;
                     }
-                    return <CandidateDetailPage candidate={selectedCandidate} onBack={() => setSelectedCandidate(null)} onUpdateCandidate={handleUpdateCandidate} onScheduleMeeting={handleOpenMeetingModal} />;
+                    return <CandidateDetailPage candidate={selectedCandidate} onBack={handleCandidateBack} onUpdateCandidate={handleUpdateCandidate} onScheduleMeeting={handleOpenMeetingModal} />;
                 }
                 return <CandidatesPage
                     candidates={filteredCandidates}
-                    onCandidateSelect={setSelectedCandidate}
+                    onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); }}
                     selectedJob={selectedJob}
                     onBack={() => setSelectedJob(null)}
                     filters={mainFilters}
@@ -1693,22 +2081,32 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onDeleteCandidates={handleDeleteCandidates}
                     onEmailSelected={handleEmailSelected}
                     onAnalyzeSelected={handleAnalyzeSelected}
+                    onViewCandidate={handleViewCandidate}
+                    onScheduleSelected={handleOpenBulkMeetingModal}
                  />;
             case 'Communications':
                 return <CommunicationsPage 
                     emailTargets={emailTargets} 
-                    onClearTargets={() => setEmailTargets([])}
+                    onClearTargets={clearEmailTargets}
                     onUpdateTargets={setEmailTargets}
-                    onSendEmail={(ids, subject) => logAction(`Sent email with subject "${subject}" to ${ids.length} candidate(s)`)}
+                    onSendEmail={handleSendEmail}
                     initialDraft={initialEmailDraft}
                     onClearDraft={() => setInitialEmailDraft(null)}
-                    onScheduleMeeting={(c) => c && handleOpenMeetingModal(c)}
+                    senderEmail={effectiveUser?.email || ''}
+                    onGenerateEmail={async (prompt: string) => {
+                        const data = await apiRequest('/communications/email/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ prompt }),
+                        });
+                        return data;
+                    }}
                 />;
             case 'Reports':
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
+                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={effectiveUser?.email || ''} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
             case 'History':
                  return <HistoryPage 
                     historyLog={historyLog} 
@@ -1780,7 +2178,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}
                     jobs={globalSearchResults.jobs}
-                    onCandidateSelect={(c) => { setSelectedCandidate(c); setCurrentPage('Candidates'); setGlobalSearchTerm(''); }}
+                    onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); setCurrentPage('Candidates'); setGlobalSearchTerm(''); }}
                     onJobSelect={(j) => { setSelectedJobForDetail(j); setCurrentPage('Job Matching'); setGlobalSearchTerm(''); }}
                     onUpdateCurrentUser={handleUpdateCurrentUser}
                     onLogout={handleLogout}
@@ -1792,16 +2190,25 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 />
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
             </main>
-            <Chatbot jobs={allJobDescriptions} candidates={allCandidates} currentUser={effectiveUser} />
+            <Chatbot currentUser={effectiveUser} />
             <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnFocusLoss draggable pauseOnHover />
             <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} />
             <JDUploadModal isOpen={isJdUploadModalOpen} onClose={() => setJdUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedJds(prev => [...prev, ...Array.from(files)])} />
             <JobEditorModal isOpen={isJobEditorModalOpen} onClose={() => setJobEditorModalOpen(false)} onSave={(jobData) => handleSaveJob(jobData, selectedProject!.project_id)} jobToEdit={jobToEdit} />
             <MeetingSchedulerModal isOpen={isMeetingModalOpen} onClose={() => setMeetingModalOpen(false)} onSchedule={handleScheduleMeeting} candidate={candidateForMeeting} />
+            <BulkMeetingSchedulerModal
+                isOpen={isBulkMeetingModalOpen}
+                onClose={() => setBulkMeetingModalOpen(false)}
+                onSchedule={handleScheduleBulkMeetings}
+                candidates={candidatesForBulkMeeting}
+                defaultInterviewer={effectiveUser?.name || effectiveUser?.email || ''}
+                isSubmitting={isBulkMeetingSubmitting}
+            />
             <UserEditorModal isOpen={isUserEditorModalOpen} onClose={() => setUserEditorModalOpen(false)} onSave={handleSaveUser} userToEdit={userToEdit} />
             <ProjectEditorModal isOpen={isProjectEditorModalOpen} onClose={() => setProjectEditorModalOpen(false)} onSave={handleSaveProject} projectToEdit={projectToEdit} />
             <AIGenerateJDModal isOpen={isAIGenerateModalOpen} onClose={() => setAIGenerateModalOpen(false)} onGenerate={(prompt) => handleGenerateJdWithAI(prompt, selectedProject!.project_id)} isGenerating={isGeneratingJD} />
             <InviteMemberModal isOpen={isInviteModalOpen} onClose={() => setInviteModalOpen(false)} onInvite={handleInviteUser} />
+            <CandidateProfileModal isOpen={!!previewCandidate} onClose={() => setPreviewCandidate(null)} candidate={previewCandidate} />
         </div>
     );
 };

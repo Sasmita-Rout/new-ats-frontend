@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
-import { Candidate } from '../types/types';
 import { getInitials } from '../utils/helpers';
 
-const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onSendEmail, initialDraft, onClearDraft, onScheduleMeeting }) => {
-    const [fromEmail, setFromEmail] = useState('sarah.johnson@acciontalent.com');
+const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onSendEmail, initialDraft, onClearDraft, senderEmail, onGenerateEmail }) => {
+    const [fromEmail, setFromEmail] = useState(senderEmail || '');
     const [subject, setSubject] = useState('');
     const [body, setBody] = useState('');
     const [cc, setCc] = useState('');
@@ -16,7 +14,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     const [showSendConfirm, setShowSendConfirm] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
-    const [bulkSendProgress, setBulkSendProgress] = useState({ active: false, index: 0 });
+    const [isSending, setIsSending] = useState(false);
     
     useEffect(() => {
         if (initialDraft) {
@@ -28,7 +26,13 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
             }
             onClearDraft(); 
         }
-    }, [initialDraft, onClearDraft]);
+    }, [initialDraft]);
+
+    useEffect(() => {
+        if (senderEmail && senderEmail !== fromEmail) {
+            setFromEmail(senderEmail);
+        }
+    }, [senderEmail, fromEmail]);
 
     useEffect(() => {
         return () => {
@@ -53,38 +57,8 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         setIsGenerating(true);
         setShowAIPrompt(false);
         try {
-            // Fix: Re-instantiate AI right before the call to ensure up-to-date config if necessary.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const emailSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    subject: { type: Type.STRING, description: "A concise and professional subject line for the email." },
-                    body: { type: Type.STRING, description: "The full body of the email. Use placeholders like '[Candidate Name]' and '[Job Title]' where appropriate. Use line breaks (\\n) for paragraphs." }
-                },
-                required: ['subject', 'body']
-            };
-
-            const fullPrompt = `You are an expert recruitment coordinator. Generate a professional email to a job candidate based on this prompt: "${aiPrompt}". 
-- Use placeholders like [Candidate Name] and [Job Title] where appropriate. 
-- Format the body with paragraphs separated by newlines (\\n).
-- Ensure the tone is professional and engaging.`;
-            
-            // Fix: Updated model name to 'gemini-3-flash-preview' for basic text tasks.
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { parts: [{ text: fullPrompt }] },
-                config: { responseMimeType: 'application/json', responseSchema: emailSchema },
-            });
-            
-            let jsonString = response.text.trim();
-            if (jsonString.startsWith('```json')) {
-                jsonString = jsonString.substring(7).trim();
-            }
-            if (jsonString.endsWith('```')) {
-                jsonString = jsonString.slice(0, -3).trim();
-            }
-            
-            const emailData = JSON.parse(jsonString);
+            if (!onGenerateEmail) throw new Error('AI generation is not configured.');
+            const emailData = await onGenerateEmail(aiPrompt);
             setSubject(emailData.subject || '');
             setBody(emailData.body || '');
         } catch (error) {
@@ -118,7 +92,12 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
             alert("Please provide a subject and a message body before sending.");
             return;
         }
-        const hasInvalidEmails = emailTargets.some(c => !isValidEmail(c.contact.email));
+        if (attachments.length > 0) {
+            alert("File attachments are not supported for API sending yet. Please remove attachments before sending.");
+            return;
+        }
+       
+        const hasInvalidEmails = emailTargets.some(c => !isValidEmail(c.email));
         if (hasInvalidEmails) {
             alert("You have invalid or missing email addresses in your recipient list. Please remove them before sending.");
             return;
@@ -126,58 +105,29 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         setShowSendConfirm(true);
     };
     
-    const handleSendIndividualEmail = (candidate: Candidate) => {
-        if (!isValidEmail(candidate.contact.email)) return;
-    
-        let mailBody = body;
-        if (attachments.length > 0) {
-            const attachmentNote = `--- \nPlease manually attach the following files:\n${attachments.map(f => `- ${f.name}`).join('\n')}\n---\n\n`;
-            mailBody = attachmentNote + body;
-        }
-    
-        const personalizedBody = mailBody.replace(/\[Candidate Name\]/gi, candidate.name);
-        
-        const to = candidate.contact.email;
-        const mailtoLink = `mailto:${to}` +
-                         `?cc=${encodeURIComponent(cc)}` +
-                         `&bcc=${encodeURIComponent(bcc)}` +
-                         `&subject=${encodeURIComponent(subject)}` +
-                         `&body=${encodeURIComponent(personalizedBody)}`;
-    
-        window.open(mailtoLink, '_blank');
-    };
-    
-    const handleSingleSend = () => {
-        onSendEmail(emailTargets.map(c => c.id), subject);
-        setShowSendConfirm(false);
-        handleSendIndividualEmail(emailTargets[0]);
-        setTimeout(() => {
+    const handleConfirmSend = async () => {
+        if (!onSendEmail) return;
+        setIsSending(true);
+        try {
+            await onSendEmail({
+                candidates: emailTargets,
+                subject,
+                body,
+                fromEmail,
+                cc,
+                bcc,
+                contentType: 'Text',
+                saveToSentItems: true,
+            });
+            setShowSendConfirm(false);
             handleClear();
             onClearTargets();
-        }, 500);
-    };
-    
-    const handleStartBulkSend = () => {
-        onSendEmail(emailTargets.map(c => c.id), subject);
-        setBulkSendProgress({ active: true, index: 0 });
-        handleSendIndividualEmail(emailTargets[0]);
-    };
-    
-    const handleBulkSendNext = () => {
-        const nextIndex = bulkSendProgress.index + 1;
-        if (nextIndex < emailTargets.length) {
-            setBulkSendProgress(prev => ({ ...prev, index: nextIndex }));
-            handleSendIndividualEmail(emailTargets[nextIndex]);
+        } catch (error) {
+            console.error('Failed to send email:', error);
+            alert(error instanceof Error ? error.message : 'Failed to send email.');
+        } finally {
+            setIsSending(false);
         }
-    };
-    
-    const handleBulkSendFinish = () => {
-        setShowSendConfirm(false);
-        setBulkSendProgress({ active: false, index: 0 });
-        setTimeout(() => {
-            handleClear();
-            onClearTargets();
-        }, 500);
     };
 
 
@@ -221,7 +171,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         <div className="page-content">
             <div className="page-header">
                 <h1>Communications</h1>
-                <p>Compose and send emails to your candidates. Emails are sent via your default mail client.</p>
+                <p>Compose and send emails to your candidates. Emails are sent from your connected account.</p>
             </div>
             <div className="email-composer-container">
                 <div className="composer-sidebar">
@@ -239,7 +189,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                 <div className="candidate-avatar small">{getInitials(candidate.name)}</div>
                                 <div>
                                     <p className="recipient-name">{candidate.name}</p>
-                                    <p className="recipient-email">{candidate.contact.email}</p>
+                                    <p className="recipient-email">{candidate.email}</p>
                                 </div>
                             </div>
                         ))}
@@ -264,9 +214,9 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                 <div id="to" className="recipient-pills-container">
                                     {emailTargets.length > 0 ? (
                                         emailTargets.map(candidate => (
-                                            <div key={candidate.id} className={`recipient-pill ${!isValidEmail(candidate.contact.email) ? 'invalid' : ''}`}>
+                                            <div key={candidate.id} className={`recipient-pill ${!isValidEmail(candidate.email) ? 'invalid' : ''}`}>
                                                 <span className="pill-name">{candidate.name}</span>
-                                                <span className="pill-email">&lt;{candidate.contact.email || 'No Email'}&gt;</span>
+                                                <span className="pill-email">&lt;{candidate.email || 'No Email'}&gt;</span>
                                                 <button onClick={() => handleRemoveTarget(candidate.id)} className="remove-recipient-btn" title={`Remove ${candidate.name}`}>&times;</button>
                                             </div>
                                         ))
@@ -310,14 +260,6 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                     <button title="Bulleted List" onClick={() => applyFormat('list')}><span className="material-symbols-outlined">format_list_bulleted</span></button>
                                 </div>
                                 <div className="actions-toolbar">
-                                     <button 
-                                        className="btn btn-secondary btn-small" 
-                                        onClick={() => onScheduleMeeting(emailTargets[0])} 
-                                        disabled={emailTargets.length !== 1}
-                                        title={emailTargets.length !== 1 ? "Select exactly one recipient to schedule a meeting" : "Schedule a meeting"}
-                                    >
-                                        <span className="material-symbols-outlined">event</span> Schedule Interview
-                                    </button>
                                     <button className="btn btn-secondary btn-small" onClick={() => setShowAIPrompt(true)} disabled={isGenerating}>
                                         <span className="material-symbols-outlined">auto_awesome</span> {isGenerating ? 'Generating...' : 'Generate with AI'}
                                     </button>
@@ -388,41 +330,33 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                 </div>
             )}
             {showSendConfirm && (
-                <div className="modal-overlay" onClick={() => { if(!bulkSendProgress.active) setShowSendConfirm(false); }}>
+                <div className="modal-overlay" onClick={() => { if(!isSending) setShowSendConfirm(false); }}>
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
                          <div className="modal-header">
-                            <h3>{bulkSendProgress.active ? 'Sending In Progress' : 'Confirm Email'}</h3>
-                             <button onClick={() => setShowSendConfirm(false)} className="close-btn" disabled={bulkSendProgress.active}>&times;</button>
+                            <h3>{isSending ? 'Sending...' : 'Confirm Email'}</h3>
+                             <button onClick={() => setShowSendConfirm(false)} className="close-btn" disabled={isSending}>&times;</button>
                         </div>
-                        {!bulkSendProgress.active ? (
+                        {!isSending ? (
                             <>
                                 <div className="modal-body confirmation-modal">
                                     <span className="material-symbols-outlined confirmation-icon">forward_to_inbox</span>
                                     {emailTargets.length > 1 ? (
                                         <>
-                                            <h3>Send Personalized Emails</h3>
-                                            <p>You are about to generate <strong>{emailTargets.length} individual emails</strong>, one for each recipient.</p>
-                                            <p>Your email client will open a new draft for each person. You must review and send each one manually.</p>
+                                            <h3>Send Emails</h3>
+                                            <p>You are about to send <strong>{emailTargets.length} emails</strong>, one for each recipient.</p>
                                         </>
                                     ) : (
                                         <>
-                                            <h3>Open Email Client</h3>
-                                            <p>This will open your default email application with the email pre-filled.</p>
+                                            <h3>Send Email</h3>
+                                            <p>This will send the email immediately.</p>
                                         </>
-                                    )}
-                                     {attachments.length > 0 && (
-                                        <p className="attachment-reminder">
-                                            <strong>Don't forget to manually attach your {attachments.length} file(s)!</strong>
-                                        </p>
                                     )}
                                 </div>
                                 <div className="modal-footer">
                                     <button type="button" className="btn btn-secondary" onClick={() => setShowSendConfirm(false)}>Cancel</button>
-                                    {emailTargets.length > 1 ? (
-                                        <button type="button" className="btn btn-primary" onClick={handleStartBulkSend}>Start Sending</button>
-                                    ) : (
-                                        <button type="button" className="btn btn-primary" onClick={handleSingleSend}>Continue to Email</button>
-                                    )}
+                                    <button type="button" className="btn btn-primary" onClick={handleConfirmSend} disabled={isSending}>
+                                        Send
+                                    </button>
                                 </div>
                             </>
                         ) : (
@@ -431,31 +365,16 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                     <div className="bulk-send-progress">
                                         <span className="material-symbols-outlined">outgoing_mail</span>
                                         <h4>Sending in Progress...</h4>
-                                        <p className="progress-text">
-                                            Email {bulkSendProgress.index + 1} of {emailTargets.length}
-                                        </p>
+                                        <p className="progress-text">Please wait while emails are sent.</p>
                                         <div className="progress-bar-modal">
-                                            <div className="progress-bar-inner-modal" style={{ width: `${((bulkSendProgress.index + 1) / emailTargets.length) * 100}%` }}></div>
+                                            <div className="progress-bar-inner-modal" style={{ width: '100%' }}></div>
                                         </div>
-                                        <p>
-                                            A draft for <strong>{emailTargets[bulkSendProgress.index].name}</strong> should be open.
-                                            <br/>
-                                            Please review and send it from your email client.
-                                        </p>
                                     </div>
                                 </div>
                                 <div className="modal-footer">
-                                    {bulkSendProgress.index < emailTargets.length - 1 ? (
-                                        <button type="button" className="btn btn-primary" onClick={handleBulkSendNext}>
-                                            Next: Email {emailTargets[bulkSendProgress.index + 1].name}
-                                            <span className="material-symbols-outlined">arrow_forward</span>
-                                        </button>
-                                    ) : (
-                                        <button type="button" className="btn btn-primary" onClick={handleBulkSendFinish}>
-                                            <span className="material-symbols-outlined">done_all</span>
-                                            Finish Sending
-                                        </button>
-                                    )}
+                                    <button type="button" className="btn btn-secondary" disabled>
+                                        Sending...
+                                    </button>
                                 </div>
                             </>
                         )}

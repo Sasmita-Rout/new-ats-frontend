@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Candidate, Interview } from '../types/types';
 import InterviewDetailModal from '../modals/InterviewDetailModal';
 
@@ -70,13 +70,19 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
 };
 
 
-const CalendarPage = ({ candidates, interviews, onCandidateSelect }) => {
+const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmail }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+    const [backendEvents, setBackendEvents] = useState<CalendarEvent[]>([]);
+
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
     const allEvents: CalendarEvent[] = useMemo(() => {
         const events: CalendarEvent[] = [];
-        const candidateMap = new Map(candidates.map(c => [c.id, c]));
+
+        if (backendEvents.length > 0) {
+            return backendEvents;
+        }
 
         interviews.forEach(interview => {
             // Find which candidate this interview belongs to
@@ -91,7 +97,88 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect }) => {
             }
         });
         return events;
-    }, [candidates, interviews]);
+    }, [candidates, interviews, backendEvents]);
+
+    useEffect(() => {
+        if (!organizerEmail) return;
+        const fetchEvents = async () => {
+            
+            try {
+                const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                endOfMonth.setHours(23, 59, 59, 0);
+                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                const response = await fetch(`${API_BASE_URL}/communications/calendar/events`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        organizer_email: organizerEmail.trim().toLowerCase(),
+                        start_date_time: startOfMonth.toISOString(),
+                        end_date_time: endOfMonth.toISOString(),
+                        timezone,
+                        top: 500,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data?.detail || 'Failed to fetch calendar events');
+                }
+
+                const toInterviewType = (subject: string | undefined): Interview['type'] => {
+                    const lowered = (subject || '').toLowerCase();
+                    if (lowered.includes('technical')) return 'Technical';
+                    if (lowered.includes('hr')) return 'HR';
+                    if (lowered.includes('final')) return 'Final';
+                    return 'Screening';
+                };
+
+                const parseAttendeeEmails = (event: any) => {
+                    const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
+                    return attendees
+                        .map((a: any) => a?.emailAddress?.address || a?.address || a?.email)
+                        .filter((email: string) => !!email)
+                        .map((email: string) => email.toLowerCase());
+                };
+
+                const derived: CalendarEvent[] = [];
+                for (const event of data?.events || []) {
+                    const attendeeEmails = parseAttendeeEmails(event);
+                    const candidate = candidates.find(c => attendeeEmails.includes((c.email || '').toLowerCase()));
+                    if (!candidate) continue;
+
+                    const start = event?.start?.dateTime || event?.start?.date_time || event?.start;
+                    const end = event?.end?.dateTime || event?.end?.date_time || event?.end;
+                    const startDate = start ? new Date(start) : null;
+                    const endDate = end ? new Date(end) : null;
+                    const duration = startDate && endDate ? Math.max(10, Math.round((endDate.getTime() - startDate.getTime()) / 60000)) : 30;
+
+                    const interview: Interview = {
+                        id: Math.abs((event?.id || '').split('').reduce((acc: number, ch: string) => acc + ch.charCodeAt(0), 0)) || Date.now(),
+                        type: toInterviewType(event?.subject),
+                        date: (startDate || new Date()).toISOString(),
+                        duration,
+                        interviewer: event?.organizer?.emailAddress?.address || organizerEmail,
+                        status: 'Scheduled',
+                        meetingLink: event?.meeting_link || event?.meetingLink || event?.onlineMeeting?.joinUrl,
+                        notes: event?.subject || '',
+                        schedulerId: candidate.id,
+                    };
+
+                    derived.push({
+                        date: startDate || new Date(),
+                        title: `${candidate.name}`,
+                        interview,
+                        candidate,
+                    });
+                }
+
+                setBackendEvents(derived);
+            } catch (error) {
+                console.error('Calendar fetch failed:', error);
+            }
+        };
+        fetchEvents();
+    }, [API_BASE_URL, organizerEmail, currentDate, candidates]);
     
     const changeMonth = (offset: number) => {
         setCurrentDate(prev => {

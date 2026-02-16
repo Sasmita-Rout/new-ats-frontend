@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Candidate, JobDescription } from '../types/types';
+import { Candidate } from '../types/types';
 import FilterBar from '../components/candidates/FilterBar';
 import ProcessingQueue from '../components/common/ProcessingQueue';
 import SkillTag from '../components/common/SkillTag';
@@ -7,11 +7,12 @@ import { exportToCSV } from '../utils/helpers';
 
 const BATCH_SIZE = 10;
 
-const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected }) => {
+const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected, onViewCandidate, onScheduleSelected }) => {
     const [displayLimit, setDisplayLimit] = useState(10);
     const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
     const [isFiltersVisible, setIsFiltersVisible] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [expandedSkillIds, setExpandedSkillIds] = useState<number[]>([]);
 
     useEffect(() => {
         setVisibleCount(BATCH_SIZE);
@@ -46,6 +47,12 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         );
     };
 
+    const toggleSkillsExpanded = (id: number) => {
+        setExpandedSkillIds(prev =>
+            prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
+        );
+    };
+
     const handleDeleteSelected = () => {
         if (window.confirm(`Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`)) {
             onDeleteCandidates(selectedIds);
@@ -55,6 +62,13 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
     const handleEmailClick = () => {
         onEmailSelected(selectedIds);
+        setSelectedIds([]);
+    };
+
+    const handleScheduleSelected = () => {
+        if (!onScheduleSelected) return;
+        const selectedCandidates = candidates.filter(c => selectedIds.includes(c.id));
+        onScheduleSelected(selectedCandidates);
         setSelectedIds([]);
     };
     
@@ -75,9 +89,9 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         const formattedData = dataToExport.map(c => ({
             'Name': c.name,
             'Category': c.category,
-            'Email': c.contact.email,
-            'Phone': c.contact.phone,
-            'Location': c.contact.location,
+            'Email': c.email,
+            'Phone': c.phone,
+            'Location': c.location,
             'Applied Date': c.appliedDate,
             'Salary Expectation': c.salaryExpectation,
             'Skills': c.skills.join('; '),
@@ -122,6 +136,9 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             </button>
                              <button className="btn btn-secondary" onClick={handleEmailClick}>
                                 <span className="material-symbols-outlined">mail</span> Email Selected
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleScheduleSelected} disabled={!onScheduleSelected}>
+                                <span className="material-symbols-outlined">event_available</span> Schedule Interview
                             </button>
                             <button className="btn btn-secondary" onClick={handleExportCSV}>
                                 <span className="material-symbols-outlined">download</span> Export Selected
@@ -179,6 +196,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     />
                                 </th>
                                 <th>Candidate</th>
+                                <th>Email</th>
                                 <th>Contact</th>
                                 <th>Location</th>
                                 <th>Skills</th>
@@ -207,18 +225,22 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                             </div>
                                         </div>
                                     </td>
-                                    <td>
-                                        <p>{candidate.contact.email}</p>
-                                        <p>{candidate.contact.phone}</p>
-                                    </td>
-                                    <td>{candidate.contact.location}</td>
+                                    <td>{candidate.email}</td>
+                                    <td>{candidate.phone}</td>
+                                    <td>{candidate.location}</td>
                                     <td>
                                         <div className="skills-container">
-                                            {candidate.skills.slice(0, 3).map(skill => <SkillTag key={skill} tag={skill} />)}
+                                            {(expandedSkillIds.includes(candidate.id) ? candidate.skills : candidate.skills.slice(0, 3))
+                                                .map(skill => <SkillTag key={skill} tag={skill} />)}
                                             {candidate.skills.length > 3 && (
-                                                <span className="skill-tag bg-gray-200 text-gray-800 border-gray-300">
-                                                    +{candidate.skills.length - 3}
-                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="skill-tag bg-gray-200 text-gray-800 border-gray-300"
+                                                    onClick={() => toggleSkillsExpanded(candidate.id)}
+                                                    aria-label={expandedSkillIds.includes(candidate.id) ? "Show fewer skills" : "Show all skills"}
+                                                >
+                                                    {expandedSkillIds.includes(candidate.id) ? "Show less" : `+${candidate.skills.length - 3} more`}
+                                                </button>
                                             )}
                                         </div>
                                     </td>
@@ -228,7 +250,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     <td>{candidate.appliedDate}</td>
                                     <td>
                                         <div className="action-buttons">
-                                            <button className="icon-btn" title="View Details" onClick={() => onCandidateSelect(candidate)}>
+                                            <button className="icon-btn" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
                                                 <span className="material-symbols-outlined">visibility</span>
                                             </button>
                                             <button 

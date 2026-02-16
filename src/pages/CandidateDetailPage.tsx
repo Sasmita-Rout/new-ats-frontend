@@ -5,8 +5,6 @@ import { downloadOriginalResume, downloadResumeText } from '../utils/fileUtils';
 
 
 const CandidateDetailPage = ({ candidate, onBack, onUpdateCandidate, onScheduleMeeting }) => {
-    const statuses: Candidate['status'][] = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected'];
-
     const handleUpdate = (field, value) => {
         onUpdateCandidate({ ...candidate, [field]: value });
     };
@@ -24,21 +22,13 @@ const CandidateDetailPage = ({ candidate, onBack, onUpdateCandidate, onScheduleM
                     <h1>{candidate.name}</h1>
                     <p className="candidate-title">{candidate.title}</p>
                     <div className="contact-info-bar">
-                        <span><span className="material-symbols-outlined">mail</span>{candidate.contact.email || 'N/A'}</span>
-                        <span><span className="material-symbols-outlined">phone</span>{candidate.contact.phone || 'N/A'}</span>
-                        <span><span className="material-symbols-outlined">location_on</span>{candidate.contact.location || 'N/A'}</span>
+                        <span><span className="material-symbols-outlined">mail</span>{candidate.email || 'N/A'}</span>
+                        <span><span className="material-symbols-outlined">phone</span>{candidate.phone || 'N/A'}</span>
+                        <span><span className="material-symbols-outlined">location_on</span>{candidate.location || 'N/A'}</span>
                     </div>
                 </div>
                 <div className="detail-header-actions">
-                    <div className="status-editor">
-                        <select value={candidate.status} onChange={(e) => handleUpdate('status', e.target.value)} className={`status-pill editable ${candidate.status.toLowerCase()}`}>
-                            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-                     <button className="btn btn-secondary" onClick={() => onScheduleMeeting(candidate)}>
-                         <span className="material-symbols-outlined">event</span> Schedule Interview
-                    </button>
-                     <button className="btn btn-secondary" onClick={() => downloadOriginalResume(candidate)} disabled={!candidate.originalResumeFile}>
+                     <button className="btn btn-secondary" onClick={() => downloadOriginalResume(candidate)} disabled={!candidate.originalResumeFile && !candidate.email}>
                          <span className="material-symbols-outlined">description</span> Original
                     </button>
                      <button className="btn btn-secondary" onClick={() => downloadResumeText(candidate)}>
@@ -49,10 +39,6 @@ const CandidateDetailPage = ({ candidate, onBack, onUpdateCandidate, onScheduleM
 
             <div className="detail-body-grid">
                 <main className="detail-main-content">
-                    <div className="info-card">
-                        <h4>Professional Summary</h4>
-                        <p>{candidate.summary}</p>
-                    </div>
                     <div className="info-card">
                         <h4>Interview History</h4>
                         <div className="timeline vertical">

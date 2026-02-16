@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Candidate, JobDescription, CandidateWithScore } from '../../types/types';
 import FilterBar from '../candidates/FilterBar';
 import { exportToCSV } from '../../utils/helpers';
-import CandidateProfileModal from '../../modals/CandidateProfileModal';
 
 const defaultFilters = {
     status: [] as Candidate['status'][],
@@ -27,30 +26,115 @@ const InlineATSAnalysis = ({
     analysisResult,
     onCandidateSelect,
     onDeleteCandidates,
-    onEmailSelected
+    onEmailSelected,
+    onViewCandidate,
+    onScheduleMeeting,
+    onEmailSelectedCandidates,
+    onScheduleBulk
 }: {
     job: JobDescription;
     analysisResult: AnalysisResult;
     onCandidateSelect: (c: Candidate) => void;
     onDeleteCandidates: (ids: number[]) => void;
     onEmailSelected: (ids: number[]) => void;
+    onViewCandidate: (c: Candidate) => void;
+    onScheduleMeeting: (c: Candidate, jobId?: string) => void;
+    onEmailSelectedCandidates?: (candidates: Candidate[]) => void;
+    onScheduleBulk?: (candidates: Candidate[], jobId?: string) => void;
 }) => {
 
     const [filters, setFilters] = useState(defaultFilters);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const [viewingCandidate, setViewingCandidate] = useState<Candidate | null>(null);
-
+    const [expandedMissingSkillIds, setExpandedMissingSkillIds] = useState<number[]>([]);
     if (!analysisResult) return null;
 
     const { loading, candidates: initialRankedCandidates, keywords } = analysisResult;
 
+    const filteredCandidates = useMemo(() => {
+        const filtered = initialRankedCandidates.filter(c => {
+            const locationValue = (c.location || c.contact?.location || c.originalLocation || '').toString();
+            const skillsValue = Array.isArray(c.skills) ? c.skills : [];
+            const tagsValue = Array.isArray(c.tags) ? c.tags : [];
+            const educationValue = Array.isArray(c.education) ? c.education : [];
+            const experienceValue = Array.isArray(c.experience) ? c.experience : [];
+            const originalSkillsValue = c.originalSkills || '';
+            const originalExperienceValue = c.originalExperience || '';
+            const matchedSkillsValue = Array.isArray(c.matchingSkills) ? c.matchingSkills : [];
+
+            const statusMatch = filters.status.length === 0 || filters.status.includes(c.status);
+            const skillsMatch = !filters.skills || filters.skills.toLowerCase().split(',').every(skill => {
+                const term = skill.trim();
+                if (!term) return true;
+                return (
+                    skillsValue.some(cs => cs.toLowerCase().includes(term)) ||
+                    matchedSkillsValue.some(ms => ms.toLowerCase().includes(term)) ||
+                    originalSkillsValue.toLowerCase().includes(term)
+                );
+            });
+            const locationMatch = !filters.location || locationValue.toLowerCase().includes(filters.location.toLowerCase());
+            const categoryMatch = !filters.roleCategory || (c.category || '').toLowerCase().includes(filters.roleCategory.toLowerCase());
+            const educationMatch = !filters.education || (educationValue.length > 0 && educationValue.some(edu =>
+                edu.degree.toLowerCase().includes(filters.education.toLowerCase()) ||
+                edu.institution.toLowerCase().includes(filters.education.toLowerCase())
+            ));
+            const salaryMin = parseFloat(filters.salaryMin);
+            const salaryMax = parseFloat(filters.salaryMax);
+            const salaryMatch = (!filters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
+                                (!filters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
+            const tagsMatch = !filters.tags || filters.tags.toLowerCase().split(',').every(tag => {
+                const term = tag.trim();
+                if (!term) return true;
+                return tagsValue.some(ct => ct.toLowerCase().includes(term));
+            });
+            const experienceMatch = !filters.experience || filters.experience.toLowerCase().split(',').every(expTerm => {
+                const term = expTerm.trim();
+                if (!term) return true;
+                const totalExpText = `${c.totalExperienceYears ?? ''}`.toLowerCase();
+                return (
+                    totalExpText.includes(term) ||
+                    experienceValue.some(exp => `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(term)) ||
+                    originalExperienceValue.toLowerCase().includes(term)
+                );
+            });
+
+            return statusMatch && skillsMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
+        });
+
+        const deduped = new Map<string, CandidateWithScore>();
+        for (const c of filtered) {
+            const emailKey = (c.email || '').trim().toLowerCase();
+            const phoneKey = (c.phone || '').replace(/\D/g, '');
+            const locationKey = (c.location || c.contact?.location || c.originalLocation || '').toString().trim().toLowerCase();
+            const nameKey = (c.name || '').trim().toLowerCase();
+            const key = emailKey || (phoneKey ? `phone:${phoneKey}` : `name:${nameKey}|loc:${locationKey}`);
+
+            if (!key) continue;
+            const existing = deduped.get(key);
+            if (!existing) {
+                deduped.set(key, c);
+                continue;
+            }
+
+            const existingScore = existing.overallScore ?? 0;
+            const nextScore = c.overallScore ?? 0;
+            const existingLoc = existing.location_matched === true;
+            const nextLoc = c.location_matched === true;
+
+            if (nextScore > existingScore || (nextScore === existingScore && nextLoc && !existingLoc)) {
+                deduped.set(key, c);
+            }
+        }
+
+        return Array.from(deduped.values());
+    }, [initialRankedCandidates, filters]);
+
     useEffect(() => {
         setSelectedIds([]);
-    }, [filters, initialRankedCandidates]);
+    }, [filters, filteredCandidates]);
 
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
-            setSelectedIds(initialRankedCandidates.map(c => c.id));
+            setSelectedIds(filteredCandidates.map(c => c.id));
         } else {
             setSelectedIds([]);
         }
@@ -72,14 +156,27 @@ const InlineATSAnalysis = ({
     };
 
     const handleEmailClick = () => {
-        onEmailSelected(selectedIds);
+        if (onEmailSelectedCandidates) {
+            const selectedCandidates = filteredCandidates.filter(c => selectedIds.includes(c.id));
+            onEmailSelectedCandidates(selectedCandidates);
+        } else {
+            onEmailSelected(selectedIds);
+        }
+        setSelectedIds([]);
+    };
+
+    const handleScheduleBulk = () => {
+        if (!onScheduleBulk) return;
+        const selectedCandidates = filteredCandidates.filter(c => selectedIds.includes(c.id));
+        const jobId = (job.jobId || job.id || '').toString();
+        onScheduleBulk(selectedCandidates, jobId || undefined);
         setSelectedIds([]);
     };
 
     const handleExportCSV = () => {
         const data = selectedIds.length > 0
-            ? initialRankedCandidates.filter(c => selectedIds.includes(c.id))
-            : initialRankedCandidates;
+            ? filteredCandidates.filter(c => selectedIds.includes(c.id))
+            : filteredCandidates;
 
         if (!data.length) return alert("No candidates");
 
@@ -97,8 +194,14 @@ const InlineATSAnalysis = ({
     };
 
     const allVisibleSelected =
-        initialRankedCandidates.length > 0 &&
-        selectedIds.length === initialRankedCandidates.length;
+        filteredCandidates.length > 0 &&
+        selectedIds.length === filteredCandidates.length;
+
+    const toggleMissingSkillsExpanded = (id: number) => {
+        setExpandedMissingSkillIds(prev =>
+            prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
+        );
+    };
 
     return (
         <div className="inline-ats-analysis">
@@ -126,6 +229,10 @@ const InlineATSAnalysis = ({
 
                                 <button className="btn btn-secondary btn-small" onClick={handleEmailClick}>
                                     Email
+                                </button>
+
+                                <button className="btn btn-secondary btn-small" onClick={handleScheduleBulk} disabled={!onScheduleBulk}>
+                                    Schedule Interview
                                 </button>
 
                                 <button className="btn btn-secondary btn-small" onClick={handleExportCSV}>
@@ -168,7 +275,7 @@ const InlineATSAnalysis = ({
                         </thead>
 
                         <tbody>
-                            {initialRankedCandidates.length ? initialRankedCandidates.map(c => (
+                            {filteredCandidates.length ? filteredCandidates.map(c => (
 
                                 <tr key={c.id}>
                                     <td>
@@ -179,28 +286,14 @@ const InlineATSAnalysis = ({
                                         />
                                     </td>
 
-                                    <td>
-                                        <a href="#" onClick={(e) => {
-                                            e.preventDefault();
-                                            onCandidateSelect(c);
-                                        }}>{c.name}</a>
-                                    </td>
+                                    <td>{c.name}</td>
 
                                     <td>{c.totalExperienceYears || 'N/A'}</td>
 
-                                    {/* LOCATION */}
-                        {/* ✅ LOCATION - Fixed */}
-<td>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span>{c.contact?.location || c.location }</span>
-        {c.location_matched === true && (
-            <span style={{ color: '#10B981', fontSize: '16px' }} title="Location matches">✓</span>
-        )}
-        {c.location_matched === false && (
-            <span style={{ color: '#EF4444', fontSize: '16px' }} title="Location does not match">✗</span>
-        )}
-    </div>
-</td>
+                                                                        {/* LOCATION */}
+                                    <td>
+                                        <span>{c.location_matched === true ? 'Yes' : 'No'}</span>
+                                    </td>
 
                                     <td>{c.overallScore}</td>
 
@@ -217,22 +310,28 @@ const InlineATSAnalysis = ({
                                     {/* MISSING */}
                                     <td>
                                         {c.missingSkills?.length
-                                            ? c.missingSkills.slice(0, 5).map(s => (
+                                            ? (expandedMissingSkillIds.includes(c.id) ? c.missingSkills : c.missingSkills.slice(0, 5)).map(s => (
                                                 <span key={s} className="missing-skill-tag">{s}</span>
                                             ))
                                             : <span style={{ color: '#10B981' }}>✓ All matched</span>
                                         }
 
-                                        {c.missingSkills && c.missingSkills.length > 5 &&
-                                            <span style={{ color: '#9CA3AF' }}>
-                                                +{c.missingSkills.length - 5} more
-                                            </span>
-                                        }
+                                        {c.missingSkills && c.missingSkills.length > 5 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleMissingSkillsExpanded(c.id)}
+                                                style={{ color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, marginLeft: '6px' }}
+                                            >
+                                                {expandedMissingSkillIds.includes(c.id) ? 'Show less' : `+${c.missingSkills.length - 5} more`}
+                                            </button>
+                                        )}
                                     </td>
 
                                     <td>
-                                        <button onClick={() => setViewingCandidate(c)}>View</button>
-                                        <button onClick={() => onDeleteCandidates([c.id])}>Delete</button>
+                                        <button onClick={() => onViewCandidate(c)}>View</button>
+                                        <button onClick={() => onScheduleMeeting(c, (job.jobId || job.id || '').toString())} style={{ marginLeft: '8px' }}>
+                                            Schedule Interview
+                                        </button>
                                     </td>
                                 </tr>
 
@@ -247,14 +346,9 @@ const InlineATSAnalysis = ({
                 </>
             )}
 
-            <CandidateProfileModal
-                isOpen={Boolean(viewingCandidate)}
-                onClose={() => setViewingCandidate(null)}
-                candidate={viewingCandidate}
-            />
-
         </div>
     );
 };
 
 export default InlineATSAnalysis;
+

@@ -88,11 +88,11 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, onProj
     const myProjects = useMemo(() => projects, [projects]);
     const myActiveProjectsCount = myProjects.length;
     
-    const pendingReviews = candidates.filter(c => ['Applied', 'Screening'].includes(c.status)).length;
+    const pendingReviews = candidates.filter(c => ['Screening'].includes(c.status)).length;
     const hired = candidates.filter(c => c.status === 'Hired').length;
 
     const statusCounts = useMemo(() => {
-        const counts = { Applied: 0, Screening: 0, Interview: 0, Offer: 0, Hired: 0 };
+        const counts = { Screening: 0, Interview: 0, Offer: 0, Hired: 0 };
         candidates.forEach(c => {
             if (c.status in counts) counts[c.status]++;
         });

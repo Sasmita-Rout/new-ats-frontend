@@ -7,19 +7,27 @@ import { downloadOriginalResume, downloadResumeText } from '../utils/fileUtils';
 const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
     if (!isOpen || !candidate) return null;
 
-    const totalExp = candidate.totalExperienceYears ?? (candidate as any).experience ?? 0;
-    const dob = (candidate as any).dob || 'DOB N/A';
+    // Robustly get data from the candidate object, providing sensible fallbacks.
+    const totalExp = candidate.totalExperienceYears || 0;
+    const dob = candidate.dob || 'N/A';
+    const email = candidate.email || 'No Email';
+    const phone = candidate.phone || 'No Phone';
+    const location = candidate.location || 'No Location';
+    const hasSummary = Boolean(candidate.summary && candidate.summary.trim());
+    const hasOriginalDetails = Boolean(
+        (candidate.originalSkills && candidate.originalSkills.trim()) ||
+        (candidate.originalContact && candidate.originalContact.trim()) ||
+        (candidate.originalLocation && candidate.originalLocation.trim()) ||
+        (candidate.originalExperience && candidate.originalExperience.trim()) ||
+        (candidate.originalDob && candidate.originalDob.trim())
+    );
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-                <div className="profile-header-premium" style={{
-                    background: 'linear-gradient(135deg, var(--color-surface-solid), var(--color-surface-soft))',
-                    padding: '40px 24px 32px',
-                    textAlign: 'center'
-                }}>
-                    <button onClick={onClose} className="close-btn-absolute">
-                        <span className="material-symbols-outlined">close</span>
+            <div className="modal-content premium-modal" onClick={e => e.stopPropagation()}>
+                <div className="modal-body" style={{ padding: '40px 24px 32px', textAlign: 'center' }}>
+                    <button onClick={onClose} className="close-btn" style={{ top: '16px', right: '16px' }}>
+                        &times;
                     </button>
 
                     <div className="user-avatar premium-avatar" style={{
@@ -50,6 +58,7 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                         flexWrap: 'wrap',
                         marginTop: '16px'
                     }}>
+                        {/* Experience */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -62,8 +71,9 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             border: '1px solid var(--color-border)'
                         }}>
                             <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>work_history</span>
-                            {totalExp !== undefined ? `${totalExp} Years Exp` : 'Exp N/A'}
+                            {totalExp ? `${totalExp} years` : 'Exp N/A'}
                         </div>
+                        {/* DOB */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -78,6 +88,7 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>calendar_month</span>
                             {dob}
                         </div>
+                        {/* Email */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -90,8 +101,9 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             border: '1px solid var(--color-border)'
                         }}>
                             <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>mail</span>
-                            {candidate.contact.email || 'No Email'}
+                            {email}
                         </div>
+                        {/* Phone */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -104,8 +116,9 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             border: '1px solid var(--color-border)'
                         }}>
                             <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>phone</span>
-                            {candidate.contact.phone || 'No Phone'}
+                            {phone}
                         </div>
+                        {/* Location */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -118,30 +131,88 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             border: '1px solid var(--color-border)'
                         }}>
                             <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>location_on</span>
-                            {candidate.contact.location || 'No Location'}
+                            {location}
                         </div>
                     </div>
                 </div>
 
-                <div className="modal-body profile-body-premium" style={{ padding: '32px' }}>
-                    <div className="premium-card">
-                        <div className="jd-card-section">
+                <div className="modal-body" style={{ padding: '0 32px 24px', textAlign: 'left' }}>
+                    <div className="info-card" style={{ padding: '20px', background: 'var(--color-surface)', borderRadius: '12px' }}>
+                        <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '16px', marginBottom: '16px' }}>
                             <h5>Technical Expertise</h5>
                             <div className="skills-container">
                                 {candidate.skills && candidate.skills.length > 0
-                                    ? candidate.skills.map(skill => (
+                                    ? candidate.skills.map((skill: string) => (
                                         <SkillTag key={skill} tag={skill} />
                                     ))
                                     : <p className="placeholder-text" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>No skills listed.</p>
                                 }
                             </div>
                         </div>
+                        {hasSummary && (
+                            <div>
+                                <h5>Professional Summary</h5>
+                                <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                    {candidate.summary}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
 
+                {hasOriginalDetails && (
+                    <div className="modal-body" style={{ padding: '0 32px 24px', textAlign: 'left' }}>
+                        <div className="info-card" style={{ padding: '20px', background: 'var(--color-surface)', borderRadius: '12px' }}>
+                            <h5>Original Resume Details</h5>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {candidate.originalSkills && candidate.originalSkills.trim() && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Skills:</strong>
+                                        <span style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                                            {candidate.originalSkills}
+                                        </span>
+                                    </div>
+                                )}
+                                {candidate.originalContact && candidate.originalContact.trim() && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Contact:</strong>
+                                        <span style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                                            {candidate.originalContact}
+                                        </span>
+                                    </div>
+                                )}
+                                {candidate.originalLocation && candidate.originalLocation.trim() && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Location:</strong>
+                                        <span style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                                            {candidate.originalLocation}
+                                        </span>
+                                    </div>
+                                )}
+                                {candidate.originalExperience && candidate.originalExperience.trim() && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Experience:</strong>
+                                        <span style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                                            {candidate.originalExperience}
+                                        </span>
+                                    </div>
+                                )}
+                                {candidate.originalDob && candidate.originalDob.trim() && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Date of Birth:</strong>
+                                        <span style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                                            {candidate.originalDob}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="modal-footer premium-footer" style={{ justifyContent: 'space-between', padding: '24px 32px' }}>
                     <div style={{ display: 'flex', gap: '12px' }}>
-                        {(candidate.originalResumeFile || candidate.contact?.email) && (
+                        {(candidate.originalResumeFile || (email && email !== 'No Email')) && (
                             <button type="button" className="btn btn-secondary" onClick={() => downloadOriginalResume(candidate)}>
                                 <span className="material-symbols-outlined">download</span> Original Resume
                             </button>
@@ -150,7 +221,6 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             <span className="material-symbols-outlined">description</span> Download Text
                         </button>
                     </div>
-                    <button type="button" className="btn btn-primary" onClick={onClose}>Close</button>
                 </div>
             </div>
         </div>

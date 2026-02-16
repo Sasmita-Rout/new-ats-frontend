@@ -3,7 +3,7 @@ import { Candidate } from '../../types/types';
 
 const StatusFilterDropdown = ({ selectedStatuses, onStatusChange }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const statuses: Candidate['status'][] = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected'];
+    const statuses: Candidate['status'][] = ['Screening', 'Interview', 'Offer', 'Hired', 'Rejected'];
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const handleStatusToggle = (status: Candidate['status']) => {

@@ -107,14 +107,17 @@ export type Candidate = {
   title: string;
   avatar: string;
   summary: string;
-  contact: {
+  // Legacy shape still seen in some API responses
+  contact?: {
     email: string;
     phone: string;
     location: string;
   };
-  /*email: string;
+  // Current normalized shape used across the app
+  email: string;
   phone: string;
-  location: string;*/
+  location: string;
+  dob?: string;
   experience: Experience[];
   education: Education[];
   skills: string[];
@@ -122,7 +125,7 @@ export type Candidate = {
   languages: string[];
   certifications: string[];
   links: Link[];
-  status: 'Interview' | 'Hired' | 'Screening' | 'Offer' | 'Rejected' | 'Applied';
+  status: 'Interview' | 'Hired' | 'Screening' | 'Offer' | 'Rejected';
   appliedDate: string;
   salaryExpectation: number | null;
   resumeContent: string;
@@ -138,6 +141,11 @@ export type Candidate = {
   communicationHistory: { type: 'email' | 'call'; date: string; subject: string }[];
   interviews?: Interview[];
   totalExperienceYears?: number;
+  originalSkills?: string;
+  originalContact?: string;
+  originalLocation?: string;
+  originalExperience?: string;
+  originalDob?: string;
 };
 
 export type JobDescription = {

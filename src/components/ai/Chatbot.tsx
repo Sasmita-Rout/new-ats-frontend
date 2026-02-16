@@ -1,99 +1,128 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { JobDescription, Candidate, ChatMessage, ChatSession, User } from '../../types/types';
-import { getChatbotResponse } from '../../services/geminiService';
+
+import * as React from 'react';
+import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { chatApi } from '../../services/chatApi';
 import { PaperAirplaneIcon, XCircleIcon, LogoIcon, PencilSquareIcon } from './Icons';
+import { toast } from 'react-toastify';
 
 interface ChatbotProps {
-    jobs: JobDescription[];
-    candidates: Candidate[];
-    currentUser: User;
+    currentUser: { id: number | string; name: string; email: string };
 }
 
-const Chatbot: React.FC<ChatbotProps> = ({ jobs, candidates, currentUser }) => {
-    const storageKey = `accionTalent_chatbotHistory_${currentUser.id}`;
+interface ChatMessage {
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+}
 
+interface ChatSession {
+    id: string;
+    title: string;
+    messages: ChatMessage[];
+    updated_at?: string;
+}
+
+const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
+    // UI State
     const [isOpen, setIsOpen] = useState(false);
-    const [allChats, setAllChats] = useState<ChatSession[]>([]);
-    const [activeChatId, setActiveChatId] = useState<number | null>(null);
-    const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // TODO: Chat history will eventually be managed via an API.
+    // Data State (from Backend)
+    const [sessions, setSessions] = useState<ChatSession[]>([]);
+    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+    const [currentMessages, setCurrentMessages] = useState<ChatMessage[]>([]);
 
+    // 1. Fetch Sessions on Open
     useEffect(() => {
-        if (isOpen) {
-            if (allChats.length === 0) {
-                handleNewChat();
-            } else if (activeChatId === null) {
-                // Default to the most recent chat on open
-                setActiveChatId(allChats[allChats.length - 1].id);
-            }
+        if (isOpen && currentUser?.id) {
+            loadSessions();
         }
-    }, [isOpen, allChats]);
-    
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    }, [isOpen, currentUser]);
 
-    useEffect(() => {
-        if (isOpen) {
-            scrollToBottom();
-        }
-    }, [isOpen, allChats, activeChatId]);
-
-    const activeChat = useMemo(() => {
-        return allChats.find(chat => chat.id === activeChatId);
-    }, [allChats, activeChatId]);
-
-    const handleNewChat = () => {
-        const newChat: ChatSession = {
-            id: Date.now(),
-            title: 'New Chat',
-            messages: [{ role: 'model', parts: [{ text: "Hi! How can I help you today?" }] }],
-        };
-        setAllChats(prev => [...prev, newChat]);
-        setActiveChatId(newChat.id);
-    };
-
-    const handleSelectChat = (chatId: number) => {
-        setActiveChatId(chatId);
-    };
-
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!inputValue.trim() || isLoading || !activeChat) return;
-
-        const userMessage: ChatMessage = { role: 'user', parts: [{ text: inputValue }] };
-        const currentInputValue = inputValue;
-        setInputValue('');
-        
-        const updatedChats = allChats.map(chat => {
-            if (chat.id === activeChatId) {
-                const isFirstUserMessage = chat.messages.filter(m => m.role === 'user').length === 0;
-                const newTitle = isFirstUserMessage ? currentInputValue.substring(0, 40) + (currentInputValue.length > 40 ? '...' : '') : chat.title;
-                return { ...chat, title: newTitle, messages: [...chat.messages, userMessage] };
-            }
-            return chat;
-        });
-
-        setAllChats(updatedChats);
-        setIsLoading(true);
-        
-        const currentChatHistory = updatedChats.find(c => c.id === activeChatId)?.messages || [];
-
+    const loadSessions = async () => {
         try {
-            const responseText = await getChatbotResponse(currentChatHistory, currentInputValue, { jobs, candidates });
-            const modelMessage: ChatMessage = { role: 'model', parts: [{ text: responseText }] };
-            setAllChats(prev => prev.map(chat => chat.id === activeChatId ? { ...chat, messages: [...chat.messages, modelMessage] } : chat));
+            const data = await chatApi.getSessions(currentUser.email);
+            setSessions(data);
+            if (data.length > 0 && !activeSessionId) {
+                // Load most recent session
+                selectSession(data[0].id);
+            } else if (data.length === 0) {
+                // Create first session automatically
+                handleNewChat();
+            }
         } catch (error) {
-            console.error("Chatbot error:", error);
-            const errorMessage: ChatMessage = { role: 'model', parts: [{ text: "Sorry, I'm having trouble connecting right now. Please try again later." }] };
-            setAllChats(prev => prev.map(chat => chat.id === activeChatId ? { ...chat, messages: [...chat.messages, errorMessage] } : chat));
+            console.error("Failed to load chat history", error);
+        }
+    };
+
+    // 2. Select Session -> Load Messages
+    const selectSession = async (sessionId: string) => {
+        setActiveSessionId(sessionId);
+        setIsLoading(true);
+        try {
+            const sessionData = await chatApi.getSessionHistory(sessionId);
+            // Messages from Mongo might have extra fields, we just need role/content
+            setCurrentMessages(sessionData.messages || []);
+        } catch (error) {
+            toast.error("Failed to load conversation");
         } finally {
             setIsLoading(false);
         }
     };
+
+    // 3. Create New Chat
+    const handleNewChat = async () => {
+        try {
+            const res = await chatApi.createSession(currentUser.email);
+            if (res.session_id) {
+                await loadSessions(); // Refresh list
+                setActiveSessionId(res.session_id);
+                setCurrentMessages([]); // Empty start
+            }
+        } catch (error) {
+            toast.error("Could not start new chat");
+        }
+    };
+
+    // 4. Send Message
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inputValue.trim() || !activeSessionId) return;
+
+        const userMsg = inputValue;
+        setInputValue('');
+
+        // Optimistic UI Update
+        const optimisticMsg: ChatMessage = { role: 'user', content: userMsg };
+        setCurrentMessages(prev => [...prev, optimisticMsg]);
+        setIsLoading(true);
+
+        try {
+            const res = await chatApi.sendMessage(activeSessionId, currentUser.email, userMsg);
+
+            // Backend returns the full AI response
+            if (res.ai_response) {
+                const aiMsg: ChatMessage = { role: 'assistant', content: res.ai_response };
+                setCurrentMessages(prev => [...prev, aiMsg]);
+
+                // Refresh list to update titles/sorting if needed
+                loadSessions();
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to send message");
+            // Remove optimistic message on failure? Or show error state.
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Auto-scroll
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [currentMessages, isOpen]);
 
     return (
         <>
@@ -110,16 +139,16 @@ const Chatbot: React.FC<ChatbotProps> = ({ jobs, candidates, currentUser }) => {
                             New Chat
                         </button>
                         <div className="chatbot-history-container">
-                            <h4>Chat History</h4>
+                            <h4>History</h4>
                             <div className="chatbot-history-list">
-                                {[...allChats].reverse().map(chat => (
-                                    <div 
-                                        key={chat.id} 
-                                        className={`chatbot-history-item ${chat.id === activeChatId ? 'active' : ''}`} 
-                                        onClick={() => handleSelectChat(chat.id)}
+                                {sessions.map(chat => (
+                                    <div
+                                        key={chat.id}
+                                        className={`chatbot-history-item ${chat.id === activeSessionId ? 'active' : ''}`}
+                                        onClick={() => selectSession(chat.id)}
                                         title={chat.title}
                                     >
-                                        <p>{chat.title}</p>
+                                        <p>{chat.title || "New Chat"}</p>
                                     </div>
                                 ))}
                             </div>
@@ -127,17 +156,26 @@ const Chatbot: React.FC<ChatbotProps> = ({ jobs, candidates, currentUser }) => {
                     </aside>
                     <div className="chatbot-main-content">
                         <header className="chatbot-header-new">
-                             <div className="chatbot-header-title">
+                            <div className="chatbot-header-title">
                                 <div className="chatbot-header-logo"><LogoIcon /></div>
-                                <h2>AI Assistant</h2>
+                                <h2>AI Assistant (Beta)</h2>
                             </div>
                         </header>
-                         <main className="chatbot-messages-new">
+                        <main className="chatbot-messages-new">
                             <div className="chatbot-message-list">
-                                {activeChat?.messages.map((msg, index) => (
-                                    <div key={`${activeChat.id}-${index}`} className={`chatbot-message-row ${msg.role === 'user' ? 'user' : 'model'}`}>
-                                        {msg.role === 'model' && (<div className="chatbot-avatar"><LogoIcon /></div>)}
-                                        <div className={`chatbot-message-bubble ${msg.role === 'user' ? 'user' : 'model'}`}>{msg.parts[0].text}</div>
+                                {currentMessages.length === 0 && !isLoading && (
+                                    <div className="chatbot-empty-state">
+                                        <p>👋 Hi {currentUser.name}! I can help you find candidates or answer questions about your jobs.</p>
+                                    </div>
+                                )}
+                                {currentMessages.map((msg, index) => (
+                                    <div key={index} className={`chatbot-message-row ${msg.role === 'user' ? 'user' : 'model'}`}>
+                                        {msg.role === 'assistant' && (<div className="chatbot-avatar"><LogoIcon /></div>)}
+                                        <div className={`chatbot-message-bubble ${msg.role === 'user' ? 'user' : 'model'}`}>
+                                            <ReactMarkdown>
+                                                {msg.content}
+                                            </ReactMarkdown>
+                                        </div>
                                     </div>
                                 ))}
                                 {isLoading && (
@@ -145,9 +183,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ jobs, candidates, currentUser }) => {
                                         <div className="chatbot-avatar"><LogoIcon /></div>
                                         <div className="chatbot-message-bubble model">
                                             <div className="typing-indicator">
-                                                <span></span>
-                                                <span></span>
-                                                <span></span>
+                                                <span></span><span></span><span></span>
                                             </div>
                                         </div>
                                     </div>
@@ -157,8 +193,17 @@ const Chatbot: React.FC<ChatbotProps> = ({ jobs, candidates, currentUser }) => {
                         </main>
                         <footer className="chatbot-footer-new">
                             <form onSubmit={handleSendMessage} className="chatbot-input-form">
-                                <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Ask about jobs or candidates..." disabled={isLoading} className="chatbot-input-new" />
-                                <button type="submit" disabled={isLoading || !inputValue.trim()} className="chatbot-send-btn" aria-label="Send message"><PaperAirplaneIcon /></button>
+                                <input
+                                    type="text"
+                                    value={inputValue}
+                                    onChange={(e) => setInputValue(e.target.value)}
+                                    placeholder="Ask: 'Who is best for the React job?'"
+                                    disabled={isLoading}
+                                    className="chatbot-input-new"
+                                />
+                                <button type="submit" disabled={isLoading || !inputValue.trim()} className="chatbot-send-btn">
+                                    <PaperAirplaneIcon />
+                                </button>
                             </form>
                         </footer>
                     </div>
