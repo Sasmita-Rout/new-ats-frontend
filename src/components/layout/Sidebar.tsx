@@ -1,8 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, UserPermission } from '../../types/types';
 
-const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
+const Sidebar = ({ currentPage, onNavigate, effectiveUser }) => {
     
     const [expandedSections, setExpandedSections] = useState({ 
         'ATS': true 
@@ -22,7 +22,14 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
                 { name: 'History', icon: 'history', page: 'History' },
             ]
         },
-        { name: 'Settings', icon: 'settings', page: 'Settings' },
+        {
+            name: 'Settings',
+            icon: 'settings',
+            children: [
+                { name: 'My Profile', icon: 'person', page: 'SettingsMyProfile' },
+                { name: 'Contact Support', icon: 'support_agent', page: 'SettingsContactSupport' },
+            ]
+        },
     ], [effectiveUser.role]);
 
     const toggleSection = (sectionName: string) => {
@@ -36,6 +43,22 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
         if (!item.children) return false;
         return item.children.some(child => child.page === currentPage);
     };
+
+    useEffect(() => {
+        const activeParents = navConfig
+            .filter(item => item.children && item.children.some(child => child.page === currentPage))
+            .map(item => item.name);
+
+        if (activeParents.length > 0) {
+            setExpandedSections(prev => {
+                const next = { ...prev };
+                activeParents.forEach(name => {
+                    next[name] = true;
+                });
+                return next;
+            });
+        }
+    }, [currentPage, navConfig]);
 
     return (
         <aside className="sidebar">
@@ -86,12 +109,6 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
                     ))}
                 </ul>
             </nav>
-            <div className="sidebar-logout">
-                 <button className="btn btn-secondary" style={{width: '100%'}} onClick={onLogout}>
-                    <span className="material-symbols-outlined">logout</span>
-                    Logout
-                </button>
-            </div>
         </aside>
     );
 };

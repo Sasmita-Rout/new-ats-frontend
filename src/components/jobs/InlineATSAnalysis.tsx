@@ -254,6 +254,7 @@ const InlineATSAnalysis = ({
                         )}
                     </div>
 
+                    <div className="inline-ats-table-scroll">
                     <table className="ats-table">
 
                         <thead>
@@ -328,10 +329,24 @@ const InlineATSAnalysis = ({
                                     </td>
 
                                     <td>
-                                        <button onClick={() => onViewCandidate(c)}>View</button>
-                                        <button onClick={() => onScheduleMeeting(c, (job.jobId || job.id || '').toString())} style={{ marginLeft: '8px' }}>
-                                            Schedule Interview
-                                        </button>
+                                        <div className="ats-row-actions">
+                                            <button
+                                                type="button"
+                                                className="ats-action-btn secondary"
+                                                onClick={() => onViewCandidate(c)}
+                                            >
+                                                <span className="material-symbols-outlined">visibility</span>
+                                                View
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ats-action-btn primary"
+                                                onClick={() => onScheduleMeeting(c, (job.jobId || job.id || '').toString())}
+                                            >
+                                                <span className="material-symbols-outlined">calendar_month</span>
+                                                Schedule Interview
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
 
@@ -343,6 +358,7 @@ const InlineATSAnalysis = ({
                         </tbody>
 
                     </table>
+                    </div>
                 </>
             )}
 

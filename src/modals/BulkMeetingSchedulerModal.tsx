@@ -91,7 +91,7 @@ const BulkMeetingSchedulerModal = ({
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-content bulk-meeting-modal" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h3>Schedule Interview (Bulk)</h3>
                     <button onClick={onClose} className="close-btn">&times;</button>
@@ -159,9 +159,9 @@ const BulkMeetingSchedulerModal = ({
                             </label>
                         </div>
 
-                        <div className="form-group" style={{ marginTop: '12px' }}>
+                        <div className="form-group bulk-meeting-candidates-group" style={{ marginTop: '12px' }}>
                             <label>Candidate Interviewers</label>
-                            <div style={{ overflowX: 'auto' }}>
+                            <div className="bulk-meeting-candidates-table-wrap">
                                 <table className="ats-table" style={{ marginTop: '8px' }}>
                                     <thead>
                                         <tr>

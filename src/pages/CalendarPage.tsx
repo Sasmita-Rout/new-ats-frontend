@@ -9,7 +9,7 @@ type CalendarEvent = {
     candidate: Candidate;
 };
 
-const CalendarView = ({ events, onEventClick, currentDate }) => {
+const CalendarView = ({ events, onEventClick, onMoreClick, currentDate }) => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
 
@@ -31,6 +31,7 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
     while (calendarDays.length % 7 !== 0) {
         calendarDays.push({ key: `next-${calendarDays.length}`, day: null, isOtherMonth: true });
     }
+    const weekCount = calendarDays.length / 7;
 
     const eventsByDate = useMemo(() => {
         const map = new Map<string, CalendarEvent[]>();
@@ -45,7 +46,7 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
     }, [events]);
 
     return (
-        <div className="calendar-grid">
+        <div className="calendar-grid" style={{ gridTemplateRows: `auto repeat(${weekCount}, 1fr)` }}>
             {daysOfWeek.map(day => <div key={day} className="calendar-day-header">{day}</div>)}
             {calendarDays.map(({ key, day, isOtherMonth }) => {
                 const dateKey = day ? new Date(year, month, day).toISOString().split('T')[0] : '';
@@ -56,11 +57,20 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
                     <div key={key} className={`calendar-day ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''}`}>
                         {day && <span className="day-number">{day}</span>}
                         <div className="day-events">
-                            {dayEvents.map(event => (
+                            {dayEvents.slice(0, 3).map(event => (
                                 <div key={event.interview.id} className="event-pill" onClick={() => onEventClick(event)}>
                                     {event.title}
                                 </div>
                             ))}
+                            {dayEvents.length > 3 && (
+                                <button
+                                    type="button"
+                                    className="event-more-btn"
+                                    onClick={() => onMoreClick(new Date(year, month, day), dayEvents)}
+                                >
+                                    +{dayEvents.length - 3} more
+                                </button>
+                            )}
                         </div>
                     </div>
                 );
@@ -74,6 +84,7 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [backendEvents, setBackendEvents] = useState<CalendarEvent[]>([]);
+    const [moreEventsModal, setMoreEventsModal] = useState<{ dateLabel: string; events: CalendarEvent[] } | null>(null);
 
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -193,6 +204,18 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
         onCandidateSelect(candidate);
     };
 
+    const handleMoreClick = (date: Date, events: CalendarEvent[]) => {
+        setMoreEventsModal({
+            dateLabel: date.toLocaleDateString(undefined, {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+            }),
+            events,
+        });
+    };
+
     return (
         <div className="page-content">
             <div className="page-header">
@@ -216,8 +239,40 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
                     events={allEvents} 
                     currentDate={currentDate} 
                     onEventClick={setSelectedEvent} 
+                    onMoreClick={handleMoreClick}
                 />
             </div>
+
+            {moreEventsModal && (
+                <div className="modal-overlay" onClick={() => setMoreEventsModal(null)}>
+                    <div className="modal-content" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>Interviews on {moreEventsModal.dateLabel}</h3>
+                            <button className="close-btn" onClick={() => setMoreEventsModal(null)}>
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <ul className="calendar-more-list">
+                                {moreEventsModal.events.map((event, index) => (
+                                    <li key={`${event.interview.id}-${index}`} className="calendar-more-item">
+                                        <button
+                                            type="button"
+                                            className="calendar-more-link"
+                                            onClick={() => {
+                                                setMoreEventsModal(null);
+                                                setSelectedEvent(event);
+                                            }}
+                                        >
+                                            {event.candidate.name}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {selectedEvent && (
                 <InterviewDetailModal

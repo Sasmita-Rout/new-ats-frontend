@@ -11,6 +11,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     const [showCcBcc, setShowCcBcc] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [showAIPrompt, setShowAIPrompt] = useState(false);
+    const [showSampleTemplates, setShowSampleTemplates] = useState(false);
     const [showSendConfirm, setShowSendConfirm] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -167,6 +168,223 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         }, 0);
     };
 
+    const sampleTemplates = [
+        {
+            category: 'Interview Schedule',
+            title: 'Initial HR Screening',
+            subject: 'Interview Invitation - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for your interest in the [Job Title] role.
+We would like to schedule an initial HR screening with you.
+
+Please confirm your availability for the proposed interview slot.
+
+Best regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Technical Interview Invite',
+            subject: 'Technical Interview Scheduled - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Your technical interview for the [Job Title] role has been scheduled.
+Meeting Link: [Meeting Link]
+
+Please join 5 minutes before the scheduled time.
+
+Regards,
+Talent Acquisition Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Final Round Interview',
+            subject: 'Final Interview Round - [Job Title]',
+            body: `Hi [Candidate Name],
+
+You have been shortlisted for the final interview round for the [Job Title] role.
+Meeting Link: [Meeting Link]
+
+Please be available 10 minutes before the interview.
+
+Regards,
+Hiring Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Interview Reschedule Request',
+            subject: 'Interview Reschedule - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Due to an internal scheduling change, we request to reschedule your interview for the [Job Title] role.
+
+Please share your availability for the next 2-3 business days.
+
+Apologies for the inconvenience.
+
+Regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Panel Interview Confirmation',
+            subject: 'Panel Interview Confirmation - [Job Title]',
+            body: `Hi [Candidate Name],
+
+This is to confirm your panel interview for the [Job Title] role.
+Meeting Link: [Meeting Link]
+
+Panel members will evaluate technical depth and role fit.
+
+Best regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Direct Interview',
+            title: 'Walk-in / Direct Interview',
+            subject: 'Direct Interview Invitation - [Job Title]',
+            body: `Hi [Candidate Name],
+
+You are invited for a direct interview for the [Job Title] position.
+
+Location: [Location]
+Please carry an updated resume and valid ID proof.
+
+Regards,
+HR Team`,
+        },
+        {
+            category: 'Direct Interview',
+            title: 'In-Person Interview Invitation',
+            subject: 'In-Person Interview Invite - [Job Title]',
+            body: `Hi [Candidate Name],
+
+You are invited for an in-person interview for the [Job Title] role.
+
+Location: [Location]
+Please report 15 minutes early at the reception.
+
+Regards,
+Talent Acquisition Team`,
+        },
+        {
+            category: 'Direct Interview',
+            title: 'Same-Day Interview Invite',
+            subject: 'Urgent Interview Opportunity - [Job Title]',
+            body: `Hi [Candidate Name],
+
+We have an immediate interview slot open today for the [Job Title] role.
+
+If interested, please confirm your availability at the earliest.
+
+Regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'Offer & Joining Instructions',
+            subject: 'Welcome Onboard - Joining Details',
+            body: `Hi [Candidate Name],
+
+Congratulations and welcome to the team.
+Your joining for the [Job Title] role is confirmed.
+
+Please report to the office as per the joining instructions shared by HR.
+
+Best wishes,
+People Operations`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'Offer Rollout Email',
+            subject: 'Offer Released - [Job Title]',
+            body: `Hi [Candidate Name],
+
+We are pleased to inform you that your offer for the [Job Title] role has been released.
+
+Kindly review the offer details and confirm your acceptance.
+
+Regards,
+HR Team`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'Pre-Joining Document Request',
+            subject: 'Document Submission Before Joining',
+            body: `Hi [Candidate Name],
+
+Welcome aboard. To complete your onboarding, please share the required documents before your joining date.
+
+If you need any help, feel free to contact us.
+
+Regards,
+People Operations`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'First Day Office Instructions',
+            subject: 'Day 1 Office Instructions - [Job Title]',
+            body: `Hi [Candidate Name],
+
+We are excited to welcome you on your first day.
+
+Reporting Location: [Location]
+Please carry valid ID proof and required onboarding documents.
+
+Best regards,
+HR Operations`,
+        },
+        {
+            category: 'Follow-up',
+            title: 'Interview Follow-up',
+            subject: 'Follow-up on Your Interview - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for attending the interview for the [Job Title] role.
+We appreciate your time and interest.
+
+We will share the next update shortly.
+
+Regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Follow-up',
+            title: 'Selection Update',
+            subject: 'Update on Your Application - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for your patience.
+We are pleased to move your profile forward for the [Job Title] role.
+
+Our team will connect with you shortly regarding next steps.
+
+Regards,
+Hiring Team`,
+        },
+        {
+            category: 'Follow-up',
+            title: 'Regret / Not Selected',
+            subject: 'Application Update - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for your interest in the [Job Title] role and for taking time to interview with us.
+
+After careful consideration, we will not be moving forward at this stage.
+We wish you all the best in your career.
+
+Regards,
+Recruitment Team`,
+        },
+    ];
+
+    const handleUseSampleTemplate = (template: { subject: string; body: string }) => {
+        setSubject(template.subject);
+        setBody(template.body);
+        setShowSampleTemplates(false);
+    };
+
     return (
         <div className="page-content">
             <div className="page-header">
@@ -260,6 +478,9 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                     <button title="Bulleted List" onClick={() => applyFormat('list')}><span className="material-symbols-outlined">format_list_bulleted</span></button>
                                 </div>
                                 <div className="actions-toolbar">
+                                    <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowSampleTemplates(true)}>
+                                        <span className="material-symbols-outlined">menu_book</span> Sample Templates
+                                    </button>
                                     <button className="btn btn-secondary btn-small" onClick={() => setShowAIPrompt(true)} disabled={isGenerating}>
                                         <span className="material-symbols-outlined">auto_awesome</span> {isGenerating ? 'Generating...' : 'Generate with AI'}
                                     </button>
@@ -326,6 +547,48 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                 <button type="submit" className="btn btn-primary" disabled={isGenerating || !aiPrompt}>Generate</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {showSampleTemplates && (
+                <div className="modal-overlay" onClick={() => setShowSampleTemplates(false)}>
+                    <div className="modal-content large" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>Sample Email Templates</h3>
+                            <button onClick={() => setShowSampleTemplates(false)} className="close-btn">&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="modal-subtitle">Select a template to auto-fill subject and message body.</p>
+                            <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
+                                {sampleTemplates.map((template, idx) => (
+                                    <div
+                                        key={`${template.title}-${idx}`}
+                                        style={{
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: '10px',
+                                            padding: '14px',
+                                            background: '#fff'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                            <div>
+                                                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>{template.category}</div>
+                                                <div style={{ fontWeight: 600 }}>{template.title}</div>
+                                            </div>
+                                            <button type="button" className="btn btn-primary btn-small" onClick={() => handleUseSampleTemplate(template)}>
+                                                Use Template
+                                            </button>
+                                        </div>
+                                        <div style={{ marginTop: '10px', fontSize: '13px', color: '#374151' }}>
+                                            <strong>Subject:</strong> {template.subject}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowSampleTemplates(false)}>Close</button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -204,10 +204,53 @@ const App = () => {
         const safeTemplate = template || '';
         const latestInterview = (candidate.interviews || []).slice().reverse().find(i => i.status === 'Scheduled');
         const meetingLink = latestInterview?.meetingLink || '';
-        return safeTemplate
-            .replace(/\[Candidate Name\]/gi, candidate.name)
-            .replace(/\[Job Title\]/gi, jobTitle || '')
-            .replace(/\[Meeting Link\]/gi, meetingLink);
+        const currentCompany = candidate.experience?.[0]?.company || '';
+        const replacements: Array<[RegExp, string]> = [
+            [/\[Candidate Name\]|\{\{candidate_name\}\}/gi, candidate.name || 'Candidate'],
+            [/\[Candidate Email\]|\{\{candidate_email\}\}/gi, candidate.email || ''],
+            [/\[Job Title\]|\{\{job_title\}\}/gi, jobTitle || ''],
+            [/\[Meeting Link\]|\{\{meeting_link\}\}/gi, meetingLink],
+            [/\[Current Role\]|\{\{current_role\}\}/gi, candidate.title || ''],
+            [/\[Current Company\]|\{\{current_company\}\}/gi, currentCompany],
+            [/\[Location\]|\{\{location\}\}/gi, candidate.location || ''],
+            [/\[Status\]|\{\{status\}\}/gi, candidate.status || ''],
+        ];
+
+        let rendered = safeTemplate;
+        replacements.forEach(([pattern, value]) => {
+            rendered = rendered.replace(pattern, value);
+        });
+
+        const hasNameToken = /\[Candidate Name\]|\{\{candidate_name\}\}/i.test(safeTemplate);
+        if (!hasNameToken) {
+            rendered = `Hi ${candidate.name || 'Candidate'},\n\n${rendered}`;
+        }
+
+        return rendered;
+    }, []);
+
+    const enrichBulkEmailBody = useCallback((baseBody: string, candidate: Candidate, index: number) => {
+        const variants = [
+            `Based on your profile as ${candidate.title || 'a professional'}, we believe this discussion will be highly relevant to your experience.`,
+            `Your background${candidate.location ? ` in ${candidate.location}` : ''} makes you a strong fit, and we are looking forward to speaking with you.`,
+            `We reviewed your recent experience and would like to explore how your skills align with the role expectations.`,
+            `This round will focus on your practical strengths and project experience relevant to the open position.`,
+            `We are keen to understand your approach to real-world scenarios and how your expertise can contribute to the team.`,
+            `Your application stood out in the shortlist, and this interaction will help us discuss next-step alignment in detail.`,
+        ];
+
+        const roleLine = candidate.title
+            ? `Current Role: ${candidate.title}${candidate.location ? ` | Location: ${candidate.location}` : ''}`
+            : candidate.location
+                ? `Location: ${candidate.location}`
+                : '';
+
+        const variantLine = variants[index % variants.length];
+        const extraBlock = roleLine
+            ? `\n\n${variantLine}\n${roleLine}`
+            : `\n\n${variantLine}`;
+
+        return `${baseBody}${extraBlock}`;
     }, []);
 
     useEffect(() => {
@@ -567,13 +610,14 @@ const App = () => {
     };
     
     const handleNavigate = (page: string) => {
+        const targetPage = page === 'Settings' ? 'SettingsMyProfile' : page;
         setSelectedCandidate(null);
         setSelectedJob(null);
         setSelectedJobForDetail(null);
         setSelectedProject(null);
         setCandidatesForAnalysis([]);
-        if (page !== 'Communications') setEmailTargets([]);
-        setCurrentPage(page);
+        if (targetPage !== 'Communications') setEmailTargets([]);
+        setCurrentPage(targetPage);
     };
     
     const handleNavigateTo = (type: HistoryEntry['targetType'], id: number) => {
@@ -1863,18 +1907,28 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
         const fromEmail = options.fromEmail.trim().toLowerCase();
         const results = await Promise.allSettled(
-            options.candidates.map(async candidate => {
+            options.candidates.map(async (candidate, index) => {
                 if (!candidate.email) {
                     throw new Error(`Missing email for ${candidate.name}`);
                 }
-                const personalizedBody = applyEmailTemplate(options.body, candidate, jobTitle);
+                const personalizedSubjectBase = applyEmailTemplate(options.subject, candidate, jobTitle);
+                const personalizedSubject =
+                    options.candidates.length > 1 && !personalizedSubjectBase.toLowerCase().includes((candidate.name || '').toLowerCase())
+                        ? `${personalizedSubjectBase} - ${candidate.name}`
+                        : personalizedSubjectBase;
+
+                const personalizedBodyBase = applyEmailTemplate(options.body, candidate, jobTitle);
+                const personalizedBody =
+                    options.candidates.length > 1
+                        ? enrichBulkEmailBody(personalizedBodyBase, candidate, index)
+                        : personalizedBodyBase;
                 const payload = {
                     job_id: jobId,
                     candidate_id: candidate.id,
                     uploaded_by: uploadedBy,
                     from_email: fromEmail,
                     to: [candidate.email.trim().toLowerCase()],
-                    subject: options.subject,
+                    subject: personalizedSubject,
                     body: personalizedBody,
                     cc: ccList,
                     bcc: bccList,
@@ -2117,19 +2171,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     allUsers={users}
                 />;
             case 'Settings':
+            case 'SettingsMyProfile':
                 return <SettingsPage 
                     effectiveUser={effectiveUser} 
                     onUpdateUser={handleSaveUser}
-                    onResetAllData={handleResetAllData}
-                    companyProfile={companyProfile}
-                    onUpdateCompanyProfile={handleUpdateCompanyProfile}
                     allUsers={users}
-                    onUpdateAllUsers={handleUpdateAllUsers}
-                    onExportData={handleExportData}
-                    onImportData={handleImportData}
                     invitations={invitations}
                     onInviteUser={() => setInviteModalOpen(true)}
-                    onAddUser={() => { setUserToEdit(null); setUserEditorModalOpen(true); }}
+                    activeView="My Profile"
+                />;
+            case 'SettingsContactSupport':
+                return <SettingsPage 
+                    effectiveUser={effectiveUser} 
+                    onUpdateUser={handleSaveUser}
+                    allUsers={users}
+                    invitations={invitations}
+                    onInviteUser={() => setInviteModalOpen(true)}
+                    activeView="Contact Support"
                 />;
             default:
                 return <div>Page not found</div>;
@@ -2148,6 +2206,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             'Communications': 'Communications',
             'Reports': 'Reports',
             'Settings': 'Settings',
+            'SettingsMyProfile': 'Settings',
+            'SettingsContactSupport': 'Settings',
             'History': 'History',
         };
         const requiredPermission = permissionMap[pageName];
@@ -2168,7 +2228,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
     return (
         <div className="app-container">
-            <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} onLogout={handleLogout} />
+            <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} />
             <main className="main-content">
                 <Header 
                     user={effectiveUser}
@@ -2201,7 +2261,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 onClose={() => setBulkMeetingModalOpen(false)}
                 onSchedule={handleScheduleBulkMeetings}
                 candidates={candidatesForBulkMeeting}
-                defaultInterviewer={effectiveUser?.name || effectiveUser?.email || ''}
+                defaultInterviewer={
+                    effectiveUser?.name && effectiveUser?.email
+                        ? `${effectiveUser.name} (${effectiveUser.email})`
+                        : (effectiveUser?.email || effectiveUser?.name || '')
+                }
                 isSubmitting={isBulkMeetingSubmitting}
             />
             <UserEditorModal isOpen={isUserEditorModalOpen} onClose={() => setUserEditorModalOpen(false)} onSave={handleSaveUser} userToEdit={userToEdit} />
