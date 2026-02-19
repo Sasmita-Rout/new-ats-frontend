@@ -202,14 +202,35 @@ const App = () => {
 
     const applyEmailTemplate = useCallback((template: string, candidate: Candidate, jobTitle?: string) => {
         const safeTemplate = template || '';
-        const latestInterview = (candidate.interviews || []).slice().reverse().find(i => i.status === 'Scheduled');
+        const interviews = (candidate.interviews || []).slice().reverse();
+        const latestInterviewWithLink = interviews.find(i => i.status === 'Scheduled' && !!i.meetingLink);
+        const latestInterview = latestInterviewWithLink || interviews.find(i => i.status === 'Scheduled');
         const meetingLink = latestInterview?.meetingLink || '';
+        const rawInterviewer = latestInterview?.interviewer || '';
+        const emailPattern = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+        const matchedEmails = rawInterviewer.match(emailPattern) || [];
+        let interviewer = rawInterviewer
+            .replace(emailPattern, '')
+            .replace(/[()<>]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .split(',')[0]
+            .trim();
+        if (!interviewer && matchedEmails.length > 0) {
+            const local = matchedEmails[0].split('@')[0] || '';
+            interviewer = local
+                .split(/[._-]+/)
+                .filter(Boolean)
+                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                .join(' ');
+        }
+        if (!interviewer) interviewer = 'Interviewer';
         const currentCompany = candidate.experience?.[0]?.company || '';
         const replacements: Array<[RegExp, string]> = [
             [/\[Candidate Name\]|\{\{candidate_name\}\}/gi, candidate.name || 'Candidate'],
             [/\[Candidate Email\]|\{\{candidate_email\}\}/gi, candidate.email || ''],
             [/\[Job Title\]|\{\{job_title\}\}/gi, jobTitle || ''],
             [/\[Meeting Link\]|\{\{meeting_link\}\}/gi, meetingLink],
+            [/\[Interviewer\]|\{\{interviewer\}\}/gi, interviewer],
             [/\[Current Role\]|\{\{current_role\}\}/gi, candidate.title || ''],
             [/\[Current Company\]|\{\{current_company\}\}/gi, currentCompany],
             [/\[Location\]|\{\{location\}\}/gi, candidate.location || ''],
@@ -537,7 +558,7 @@ const App = () => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload),
                     });
-                    return { candidate, meetingLink: data?.meeting_link || '' };
+                    return { candidate, meetingLink: data?.meeting_link || data?.web_link || '' };
                 })
             );
 
@@ -578,13 +599,32 @@ const App = () => {
             if (details.sendEmailAfter && successful.length > 0) {
                 const jobTitle = selectedJob?.title || selectedJobForDetail?.title || 'a relevant position';
                 const meetingDate = new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
-                const emailBodyTemplate = `Hi [Candidate Name],\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${meetingDate}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.defaultInterviewer || '[Interviewer]'}\nMeeting Link: [Meeting Link]\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+                const emailBodyTemplate = `Hi [Candidate Name],\n\nYour ${details.type} interview is scheduled on ${meetingDate}, and your interviewer is [Interviewer].\n\nTopic: ${details.title}\nDuration: ${details.duration} minutes\nMeeting Link: [Meeting Link]\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
 
                 setInitialEmailDraft({
                     subject: `Invitation: ${details.type} Interview for ${jobTitle}`,
                     body: emailBodyTemplate,
                 });
-                setEmailTargets(successful.map(s => s.candidate));
+                // Keep meeting link on each target so [Meeting Link] is always available in bulk email.
+                setEmailTargets(
+                    successful.map(s => {
+                        const interviewForMail: Interview = {
+                            id: Date.now() + Math.floor(Math.random() * 10000),
+                            type: details.type,
+                            date: new Date(details.dateTime).toISOString(),
+                            duration: details.duration,
+                            interviewer: (details.interviewerById[s.candidate.id] || details.defaultInterviewer || '').trim(),
+                            status: 'Scheduled',
+                            meetingLink: s.meetingLink,
+                            notes: details.description,
+                            schedulerId: effectiveUser.id,
+                        };
+                        return {
+                            ...s.candidate,
+                            interviews: [...(s.candidate.interviews || []), interviewForMail],
+                        };
+                    })
+                );
                 setCurrentPage('Communications');
             }
 
