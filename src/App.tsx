@@ -2024,6 +2024,20 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             }
         }
 
+        if (email) {
+            try {
+                const formData = new FormData();
+                if (updatedCandidate.name) formData.append('name', updatedCandidate.name);
+                if (updatedCandidate.phone) formData.append('phone', updatedCandidate.phone);
+                await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/${encodeURIComponent(email)}`, {
+                    method: 'PUT',
+                    body: formData,
+                });
+            } catch (error) {
+                console.error('Failed to update resume vault metadata:', error);
+            }
+        }
+
         setAllCandidates(prev => prev.map(c => c.id === updatedCandidate.id ? updatedCandidate : c));
         if (oldCandidate && oldCandidate.status !== updatedCandidate.status) {
             logAction(`Changed candidate status to ${updatedCandidate.status}`, { targetType: 'Candidate', targetName: updatedCandidate.name, targetId: updatedCandidate.id });
@@ -2210,6 +2224,13 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: normalizedEmail }),
                 });
+                try {
+                    await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/${encodeURIComponent(normalizedEmail)}`, {
+                        method: 'DELETE',
+                    });
+                } catch (vaultError) {
+                    console.error('Failed to delete resume from vault:', vaultError);
+                }
                 return { id: candidate.id, ok: true };
             } catch (error) {
                 notifyError(`Failed to delete ${candidate.name}: ${error instanceof Error ? error.message : String(error)}`);
