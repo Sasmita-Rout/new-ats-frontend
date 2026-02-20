@@ -10,7 +10,7 @@ type AnalysisResult = {
     keywords: string[];
 };
 
-const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk }) => {
+const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest }) => {
     const [analyzingJobId, setAnalyzingJobId] = useState<number | null>(null);
     const [selectedJobIds, setSelectedJobIds] = useState<number[]>([]);
     const [analysisData, setAnalysisData] = useState<{ [key: number]: AnalysisResult }>({});
@@ -173,6 +173,8 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                         onViewCandidate={onViewCandidate}
                                         onScheduleMeeting={onScheduleMeeting}
                                         onScheduleBulk={onScheduleBulk}
+                                        organizerEmail={organizerEmail}
+                                        apiRequest={apiRequest}
                                     />
                                 )}
                             </React.Fragment>

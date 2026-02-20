@@ -168,7 +168,7 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
                         type: toInterviewType(event?.subject),
                         date: (startDate || new Date()).toISOString(),
                         duration,
-                        interviewer: event?.organizer?.emailAddress?.address || organizerEmail,
+                        interviewer: event?.interviewer_email || event?.organizer?.emailAddress?.address || organizerEmail,
                         status: 'Scheduled',
                         meetingLink: event?.meeting_link || event?.meetingLink || event?.onlineMeeting?.joinUrl,
                         notes: event?.subject || '',

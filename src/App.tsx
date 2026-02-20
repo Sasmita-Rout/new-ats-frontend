@@ -51,7 +51,7 @@ const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
 const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '' };
+const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
 
 const hashStringToInt = (value: string): number => {
@@ -142,6 +142,7 @@ const App = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [globalSearchTerm, setGlobalSearchTerm] = useState('');
     const [emailTargets, setEmailTargets] = useState<Candidate[]>([]);
+    const [emailJobIdOverride, setEmailJobIdOverride] = useState<string | null>(null);
     const [stagedResumes, setStagedResumes] = useState<File[]>([]);
     const [stagedJds, setStagedJds] = useState<File[]>([]);
     const [isUploadModalOpen, setUploadModalOpen] = useState(false);
@@ -174,6 +175,110 @@ const App = () => {
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
     const [previewCandidate, setPreviewCandidate] = useState<Candidate | null>(null);
     const [candidateBackPage, setCandidateBackPage] = useState<string | null>(null);
+
+    const upsertCandidatesByEmail = useCallback((prev: Candidate[], incoming: Candidate[]) => {
+        const next = [...prev];
+        const indexByEmail = new Map<string, number>();
+        next.forEach((c, i) => {
+            const email = (c.email || '').trim().toLowerCase();
+            if (email) indexByEmail.set(email, i);
+        });
+
+        const additions: Candidate[] = [];
+        incoming.forEach((c) => {
+            const email = (c.email || '').trim().toLowerCase();
+            if (!email) {
+                additions.push(c);
+                return;
+            }
+            const idx = indexByEmail.get(email);
+            if (idx === undefined) {
+                additions.push(c);
+            } else {
+                next.splice(idx, 1);
+                // Ensure replaced candidates float to the top.
+                additions.push(c);
+                // Rebuild indices after removal to avoid stale positions.
+                indexByEmail.clear();
+                next.forEach((nc, ni) => {
+                    const em = (nc.email || '').trim().toLowerCase();
+                    if (em) indexByEmail.set(em, ni);
+                });
+            }
+        });
+
+        return additions.length ? [...additions, ...next] : next;
+    }, []);
+
+    const confirmReplaceToast = useCallback((message: string) => {
+        return new Promise<boolean>((resolve) => {
+            toast.info(
+                ({ closeToast }) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>{message}</div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                type="button"
+                                className="btn btn-primary btn-small"
+                                onClick={() => {
+                                    if (closeToast) closeToast();
+                                    resolve(true);
+                                }}
+                            >
+                                Yes, replace
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-small"
+                                onClick={() => {
+                                    if (closeToast) closeToast();
+                                    resolve(false);
+                                }}
+                            >
+                                No
+                            </button>
+                        </div>
+                    </div>
+                ),
+                { autoClose: false, closeOnClick: false }
+            );
+        });
+    }, []);
+
+    const confirmActionToast = useCallback((message: string, yesLabel: string, noLabel: string) => {
+        return new Promise<boolean>((resolve) => {
+            toast.info(
+                ({ closeToast }) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>{message}</div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                type="button"
+                                className="btn btn-primary btn-small"
+                                onClick={() => {
+                                    if (closeToast) closeToast();
+                                    resolve(true);
+                                }}
+                            >
+                                {yesLabel}
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-small"
+                                onClick={() => {
+                                    if (closeToast) closeToast();
+                                    resolve(false);
+                                }}
+                            >
+                                {noLabel}
+                            </button>
+                        </div>
+                    </div>
+                ),
+                { autoClose: false, closeOnClick: false }
+            );
+        });
+    }, []);
     
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
@@ -252,6 +357,108 @@ const App = () => {
 
         return `${baseBody}${extraBlock}`;
     }, []);
+
+
+    const extractEmails = useCallback((input: string) => {
+        if (!input) return [];
+        const matches = input.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+        return Array.from(new Set(matches.map(m => m.toLowerCase())));
+    }, []);
+
+    const formatInterviewerName = useCallback((input: string) => {
+        const name = (input || '').split('(')[0].trim();
+        return name || 'Interviewer';
+    }, []);
+
+
+    const sendInterviewerEmail = useCallback(async (params: {
+        candidate: Candidate;
+        jobTitle: string;
+        interviewer: string;
+        interviewDate: string;
+        duration: number;
+        meetingLink: string;
+        jobId: string;
+        uploadedBy: string;
+        fromEmail: string;
+    }) => {
+        const interviewerEmails = extractEmails(params.interviewer || '');
+        if (!interviewerEmails.length) return;
+
+        const interviewerName = (params.interviewer || '').split('(')[0].trim() || 'Interviewer';
+        const durationText = params.duration ? `${params.duration} minutes` : 'TBD';
+        const meetingLinkText = params.meetingLink || 'TBD (will be shared)';
+        let attachments: Array<{ name: string; content_type: string; content_bytes: string }> = [];
+        if (params.candidate.email) {
+            try {
+                const resumeUrl = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/download/${encodeURIComponent(params.candidate.email)}`;
+                const resumeResponse = await fetch(resumeUrl);
+                if (resumeResponse.ok) {
+                    const blob = await resumeResponse.blob();
+                    const contentType = blob.type || 'application/octet-stream';
+                    const contentDisposition = resumeResponse.headers.get('content-disposition') || '';
+                    const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+                    const filename = match?.[1] || `${(params.candidate.name || 'candidate').replace(/\s+/g, '_')}_resume`;
+                    const contentBytes = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const result = String(reader.result || '');
+                            resolve(result.split(',')[1] || '');
+                        };
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsDataURL(blob);
+                    });
+                    if (contentBytes) {
+                        attachments = [{ name: filename, content_type: contentType, content_bytes: contentBytes }];
+                    }
+                }
+            } catch {
+                attachments = [];
+            }
+        }
+
+        const interviewerBodyTemplate = `Dear ${interviewerName},
+
+An interview has been scheduled with the following candidate:
+
+Candidate Name: [Candidate Name]
+Role: ${params.jobTitle || 'a relevant position'}
+Interview Date & Time: ${params.interviewDate}
+Mode: Online
+Meeting Link: ${meetingLinkText}
+
+Candidate Resume: (Attached)
+
+Kindly confirm your availability.
+
+Regards,
+${effectiveUser?.name || 'HR Team'}`;
+        const interviewerSubject = applyEmailTemplate('Interview Assignment: [Candidate Name] - [Job Title]', params.candidate, params.jobTitle);
+        const interviewerBody = applyEmailTemplate(interviewerBodyTemplate, params.candidate, params.jobTitle);
+
+        await Promise.all(interviewerEmails.map(interviewerEmail => {
+            const interviewerPayload = {
+                job_id: params.jobId,
+                candidate_id: params.candidate.id,
+                uploaded_by: params.uploadedBy,
+                from_email: params.fromEmail,
+                to: [interviewerEmail],
+                subject: interviewerSubject,
+                body: interviewerBody,
+                cc: [],
+                bcc: [],
+                content_type: 'Text',
+                save_to_sent_items: true,
+                attachments,
+            };
+            return apiRequest('/communications/email/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(interviewerPayload),
+            });
+        }));
+    }, [applyEmailTemplate, extractEmails, effectiveUser?.name]);
+
 
     useEffect(() => {
         let isMounted = true;
@@ -433,6 +640,17 @@ const App = () => {
             const uploadedBy = await getUploadedBy();
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
             const jobId = resolveJobId(meetingJobId);
+            const existsData = await apiRequest(
+                `/communications/interview/exists?candidate_email=${encodeURIComponent(candidateForMeeting.email.trim().toLowerCase())}&job_id=${encodeURIComponent(jobId)}`
+            );
+            if (existsData?.exists) {
+                const shouldSchedule = await confirmActionToast(
+                    `Interview already scheduled for ${candidateForMeeting.name}. Schedule again?`,
+                    'Schedule again',
+                    'Cancel'
+                );
+                if (!shouldSchedule) return;
+            }
             const payload = {
                 job_id: jobId,
                 candidate_id: candidateForMeeting.id,
@@ -457,6 +675,21 @@ const App = () => {
 
             const meetingLink = data?.meeting_link || '';
 
+            const interviewDate = new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
+
+            await sendInterviewerEmail({
+                candidate: candidateForMeeting,
+                jobTitle: selectedJob?.title || selectedJobForDetail?.title || 'a relevant position',
+                interviewer: details.interviewer,
+                interviewDate,
+                duration: details.duration,
+                meetingLink,
+                jobId,
+                uploadedBy,
+                fromEmail: uploadedBy.trim().toLowerCase(),
+            });
+
+
             const newInterview: Interview = {
                 id: Date.now(),
                 type: details.type,
@@ -479,7 +712,7 @@ const App = () => {
             logAction(`Scheduled ${details.type} interview for candidate`, { targetType: 'Candidate', targetName: candidateForMeeting.name, targetId: candidateForMeeting.id });
 
             const meetingLine = meetingLink ? `Meeting Link: ${meetingLink}` : 'Meeting Link: TBD (will be shared)';
-            const emailBody = `Hi ${candidateForMeeting.name},\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.interviewer}\n${meetingLine}\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+            const emailBody = `Hi ${candidateForMeeting.name},\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}\nDuration: ${details.duration} minutes\nInterviewer(s): ${formatInterviewerName(details.interviewer)}\n${meetingLine}\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
 
             setInitialEmailDraft({
                 subject: `Invitation: ${details.type} Interview for ${selectedJob?.title || 'a relevant position'}`,
@@ -487,6 +720,7 @@ const App = () => {
             });
 
             setEmailTargets([candidateForMeeting]);
+            setEmailJobIdOverride(jobId);
             setMeetingModalOpen(false);
             setCandidateForMeeting(null);
             setMeetingJobId(null);
@@ -507,9 +741,30 @@ const App = () => {
             setBulkMeetingSubmitting(true);
             const uploadedBy = await getUploadedBy();
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+            const existsList = await Promise.all(
+                candidatesForBulkMeeting.map(async candidate => {
+                    if (!candidate.email) return false;
+                    const data = await apiRequest(
+                        `/communications/interview/exists?candidate_email=${encodeURIComponent(candidate.email.trim().toLowerCase())}&job_id=${encodeURIComponent(jobId)}`
+                    );
+                    return !!data?.exists;
+                })
+            );
+            const alreadyScheduled = candidatesForBulkMeeting.filter((_, index) => existsList[index]);
+            let candidatesToSchedule = candidatesForBulkMeeting;
+            if (alreadyScheduled.length > 0) {
+                const shouldSchedule = await confirmActionToast(
+                    `${alreadyScheduled.length} candidate(s) already have scheduled interviews. Schedule again for all?`,
+                    'Schedule again',
+                    'Skip duplicates'
+                );
+                if (!shouldSchedule) {
+                    candidatesToSchedule = candidatesForBulkMeeting.filter((_, index) => !existsList[index]);
+                }
+            }
 
             const results = await Promise.allSettled(
-                candidatesForBulkMeeting.map(async candidate => {
+                candidatesToSchedule.map(async candidate => {
                     if (!candidate.email) {
                         throw new Error(`Missing email for ${candidate.name}`);
                     }
@@ -546,6 +801,20 @@ const App = () => {
                 .map(r => (r as PromiseFulfilledResult<{ candidate: Candidate; meetingLink: string }>).value);
 
             if (successful.length) {
+                await Promise.allSettled(successful.map(s => {
+                    const interviewer = (details.interviewerById[s.candidate.id] || details.defaultInterviewer || '').trim();
+                    return sendInterviewerEmail({
+                        candidate: s.candidate,
+                        jobTitle: selectedJob?.title || selectedJobForDetail?.title || 'a relevant position',
+                        interviewer,
+                        interviewDate: new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' }),
+                        duration: details.duration,
+                        meetingLink: s.meetingLink || '',
+                        jobId,
+                        uploadedBy,
+                        fromEmail: uploadedBy.trim().toLowerCase(),
+                    });
+                }));
                 setAllCandidates(prev => prev.map(c => {
                     const match = successful.find(s => s.candidate.id === c.id);
                     if (!match) return c;
@@ -578,13 +847,14 @@ const App = () => {
             if (details.sendEmailAfter && successful.length > 0) {
                 const jobTitle = selectedJob?.title || selectedJobForDetail?.title || 'a relevant position';
                 const meetingDate = new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
-                const emailBodyTemplate = `Hi [Candidate Name],\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${meetingDate}\nDuration: ${details.duration} minutes\nInterviewer(s): ${details.defaultInterviewer || '[Interviewer]'}\nMeeting Link: [Meeting Link]\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+                const emailBodyTemplate = `Hi [Candidate Name],\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${meetingDate}\nDuration: ${details.duration} minutes\nInterviewer(s): ${formatInterviewerName(details.defaultInterviewer || '')}\nMeeting Link: [Meeting Link]\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
 
                 setInitialEmailDraft({
                     subject: `Invitation: ${details.type} Interview for ${jobTitle}`,
                     body: emailBodyTemplate,
                 });
                 setEmailTargets(successful.map(s => s.candidate));
+                setEmailJobIdOverride(jobId);
                 setCurrentPage('Communications');
             }
 
@@ -616,7 +886,10 @@ const App = () => {
         setSelectedJobForDetail(null);
         setSelectedProject(null);
         setCandidatesForAnalysis([]);
-        if (targetPage !== 'Communications') setEmailTargets([]);
+        if (targetPage !== 'Communications') {
+            setEmailTargets([]);
+            setEmailJobIdOverride(null);
+        }
         setCurrentPage(targetPage);
     };
     
@@ -990,7 +1263,7 @@ const App = () => {
 
     const handleDeleteJobs = async (ids: number[]) => {
         const jobsToDelete = allJobDescriptions.filter(j => ids.includes(j.id));
-        if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? This action cannot be undone.`)) {
+        if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? `)) {
         const results = await Promise.all(jobsToDelete.map(async (job) => {
             if (!job.jobId) return { id: job.id, ok: false };
             try {
@@ -1747,7 +2020,16 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             if (rawCandidate) {
                 const newCandidate = normalizeCandidate(rawCandidate);
                 candidateEmail = newCandidate.email || uploadedBy;
-                setAllCandidates(prev => [newCandidate, ...prev]);
+                const existing = allCandidates.find(c => (c.email || '').trim().toLowerCase() === candidateEmail.trim().toLowerCase());
+                if (existing) {
+                    const shouldReplace = await confirmReplaceToast(
+                        `This email already exists (${candidateEmail}). Do you want to replace it?`
+                    );
+                    if (!shouldReplace) {
+                        return null;
+                    }
+                }
+                setAllCandidates(prev => upsertCandidatesByEmail(prev, [newCandidate]));
                 logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
                 try {
                     await uploadResumeToVault(file, candidateEmail, uploadedBy, newCandidate.name, newCandidate.phone);
@@ -1771,7 +2053,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             alert(`Failed to parse resume.`);
             return null;
         }
-    }, [apiRequest, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault]);
+    }, [apiRequest, allCandidates, confirmReplaceToast, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault, upsertCandidatesByEmail]);
 
     const handleClearStagedResumes = () => {
         if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
@@ -1812,11 +2094,46 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 });
                 const newCandidates = extractCandidates(data).map(normalizeCandidate);
                 if (newCandidates.length > 0) {
-                    setAllCandidates(prev => [...newCandidates, ...prev]);
-                    successCount = newCandidates.length;
-                    await Promise.all(filesToProcess.map(async (file, index) => {
-                        const candidate = newCandidates[index];
-                        const candidateEmail = candidate?.email || uploadedBy;
+                    const existingEmails = new Set(
+                        allCandidates.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
+                    );
+                    const duplicates = newCandidates.filter(c => {
+                        const email = (c.email || '').trim().toLowerCase();
+                        return email && existingEmails.has(email);
+                    });
+                    const fileCandidatePairs = filesToProcess.map((file, index) => ({
+                        file,
+                        candidate: newCandidates[index],
+                    }));
+                    let pairsForVault = fileCandidatePairs;
+                    if (duplicates.length > 0) {
+                        const shouldReplace = await confirmReplaceToast(
+                            `${duplicates.length} email(s) already exist. Replace all duplicates?`
+                        );
+                        if (shouldReplace) {
+                            setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
+                            successCount = newCandidates.length;
+                        } else {
+                            const uniqueNew = newCandidates.filter(c => {
+                                const email = (c.email || '').trim().toLowerCase();
+                                return !email || !existingEmails.has(email);
+                            });
+                            if (uniqueNew.length > 0) {
+                                setAllCandidates(prev => upsertCandidatesByEmail(prev, uniqueNew));
+                            }
+                            successCount = uniqueNew.length;
+                            pairsForVault = fileCandidatePairs.filter(pair => {
+                                const email = (pair.candidate?.email || '').trim().toLowerCase();
+                                return !email || !existingEmails.has(email);
+                            });
+                        }
+                    } else {
+                        setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
+                        successCount = newCandidates.length;
+                    }
+                    await Promise.all(pairsForVault.map(async ({ file, candidate }) => {
+                        if (!candidate) return;
+                        const candidateEmail = candidate.email || uploadedBy;
                         try {
                             await uploadResumeToVault(file, candidateEmail, uploadedBy, candidate?.name, candidate?.phone);
                         } catch (vaultError) {
@@ -1852,74 +2169,110 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
         if (candidatesMissingEmail.length > 0) {
             const names = candidatesMissingEmail.map(c => c.name).join(', ');
-            alert(`Cannot delete ${candidatesMissingEmail.length} candidate(s) because email is missing: ${names}`);
+            notifyError(`Cannot delete ${candidatesMissingEmail.length} candidate(s) because email is missing: ${names}`);
         }
 
         Promise.all(candidatesToDelete.map(async (candidate) => {
-            if (!candidate.email || !candidate.email.trim()) {
+            const normalizedEmail = candidate.email?.trim().toLowerCase();
+            if (!normalizedEmail) {
                 return { id: candidate.id, ok: false };
             }
             try {
                 await apiRequest(`/resume/delete?uploaded_by=${encodeURIComponent(uploadedBy)}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: candidate.email }),
+                    body: JSON.stringify({ email: normalizedEmail }),
                 });
                 return { id: candidate.id, ok: true };
             } catch (error) {
-                alert(`Failed to delete ${candidate.name}: ${error instanceof Error ? error.message : String(error)}`);
+                notifyError(`Failed to delete ${candidate.name}: ${error instanceof Error ? error.message : String(error)}`);
                 console.error('Failed to delete candidate:', error);
                 return { id: candidate.id, ok: false };
             }
         })).then((results) => {
             const deletedIds = results.filter(r => r.ok).map(r => r.id);
-            if (deletedIds.length === 0) return;
+            const failedCount = results.length - deletedIds.length;
+            if (deletedIds.length === 0) {
+                if (failedCount > 0) notifyError(`Failed to delete ${failedCount} candidate(s).`);
+                return;
+            }
             setAllCandidates(prev => prev.filter(c => !deletedIds.includes(c.id)));
             candidatesToDelete.filter(c => deletedIds.includes(c.id))
                 .forEach(c => logAction('Deleted candidate', { targetType: 'Candidate', targetName: c.name, targetId: c.id }));
             if (selectedCandidate && deletedIds.includes(selectedCandidate.id)) setSelectedCandidate(null);
+            notifySuccess(`Deleted ${deletedIds.length} candidate(s).`);
+            if (failedCount > 0) notifyError(`Failed to delete ${failedCount} candidate(s).`);
         });
     };
 
     const handleEmailSelected = (ids: number[]) => {
         const targets = allCandidates.filter(c => ids.includes(c.id));
         setEmailTargets(targets);
+        setEmailJobIdOverride(null);
         setCurrentPage('Communications');
     };
 
-    const handleEmailSelectedCandidates = (candidates: Candidate[]) => {
+    const handleEmailSelectedCandidates = (candidates: Candidate[], jobId?: string | null) => {
         const targets = candidates.filter(c => c.email && c.email.trim());
         setEmailTargets(targets);
+        setEmailJobIdOverride(jobId ? String(jobId) : null);
         setCurrentPage('Communications');
     };
 
     const clearEmailTargets = useCallback(() => {
         setEmailTargets([]);
+        setEmailJobIdOverride(null);
     }, []);
 
     const handleSendEmail = async (options: { candidates: Candidate[]; subject: string; body: string; fromEmail: string; cc: string; bcc: string; contentType: 'Text' | 'HTML'; saveToSentItems: boolean; }) => {
         if (!options.candidates.length) return;
         const uploadedBy = await getUploadedBy();
-        const jobId = resolveJobId(null);
+        const jobId = emailJobIdOverride || resolveJobId(null);
         const jobTitle = selectedJob?.title || selectedJobForDetail?.title || '';
         const ccList = options.cc ? options.cc.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) : [];
         const bccList = options.bcc ? options.bcc.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) : [];
 
+        const emailExistsList = await Promise.all(
+            options.candidates.map(async (candidate) => {
+                if (!candidate.email) return false;
+                const data = await apiRequest(
+                    `/communications/email/exists?candidate_email=${encodeURIComponent(candidate.email.trim().toLowerCase())}&job_id=${encodeURIComponent(jobId)}`
+                );
+                return !!data?.exists;
+            })
+        );
+        const alreadySent = options.candidates.filter((_, index) => emailExistsList[index]);
+        let candidatesToSend = options.candidates;
+        if (alreadySent.length > 0) {
+            const shouldSend = await confirmActionToast(
+                `${alreadySent.length} candidate(s) already received an email. Send again to all?`,
+                'Send again',
+                'Skip duplicates'
+            );
+            if (!shouldSend) {
+                candidatesToSend = options.candidates.filter((_, index) => !emailExistsList[index]);
+                if (!candidatesToSend.length) {
+                    notifyInfo('No emails sent.');
+                    return;
+                }
+            }
+        }
+
         const fromEmail = options.fromEmail.trim().toLowerCase();
         const results = await Promise.allSettled(
-            options.candidates.map(async (candidate, index) => {
+            candidatesToSend.map(async (candidate, index) => {
                 if (!candidate.email) {
                     throw new Error(`Missing email for ${candidate.name}`);
                 }
                 const personalizedSubjectBase = applyEmailTemplate(options.subject, candidate, jobTitle);
                 const personalizedSubject =
-                    options.candidates.length > 1 && !personalizedSubjectBase.toLowerCase().includes((candidate.name || '').toLowerCase())
+                    candidatesToSend.length > 1 && !personalizedSubjectBase.toLowerCase().includes((candidate.name || '').toLowerCase())
                         ? `${personalizedSubjectBase} - ${candidate.name}`
                         : personalizedSubjectBase;
 
                 const personalizedBodyBase = applyEmailTemplate(options.body, candidate, jobTitle);
                 const personalizedBody =
-                    options.candidates.length > 1
+                    candidatesToSend.length > 1
                         ? enrichBulkEmailBody(personalizedBodyBase, candidate, index)
                         : personalizedBodyBase;
                 const payload = {
@@ -1940,6 +2293,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
+
                 return candidate.id;
             })
         );
@@ -1956,6 +2310,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         if (successCount > 0) {
             logAction(`Sent email with subject "${options.subject}" to ${successCount} candidate(s)`);
         }
+        setEmailJobIdOverride(null);
     };
     
     const handleAnalyzeSelected = (ids: number[]) => {
@@ -1998,6 +2353,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 if (!term) return true;
                 return skillsValue.some(cs => cs.toLowerCase().includes(term)) || originalSkillsValue.toLowerCase().includes(term);
             });
+            const nameMatch = !mainFilters.name || (c.name || '').toLowerCase().includes(mainFilters.name.toLowerCase());
+            const emailMatch = !mainFilters.email || (c.email || '').toLowerCase().includes(mainFilters.email.toLowerCase());
             const locationMatch = !mainFilters.location || locationValue.toLowerCase().includes(mainFilters.location.toLowerCase());
             const categoryMatch = !mainFilters.roleCategory || c.category.toLowerCase().includes(mainFilters.roleCategory.toLowerCase());
             const educationMatch = !mainFilters.education || (educationValue.length > 0 && educationValue.some(edu => 
@@ -2021,7 +2378,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 ) || originalExperienceValue.toLowerCase().includes(term);
             });
             
-            return searchMatch && statusMatch && skillsMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
+            return searchMatch && statusMatch && skillsMatch && nameMatch && emailMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
         });
     }, [allCandidates, selectedJob, searchTerm, mainFilters]);
 
@@ -2090,6 +2447,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         onScheduleMeeting={handleOpenMeetingModal}
                         onScheduleBulk={handleOpenBulkMeetingModal}
                         onEmailSelectedCandidates={handleEmailSelectedCandidates}
+                        organizerEmail={effectiveUser?.email || ''}
+                        apiRequest={apiRequest}
                     />;
                 }
                 if (selectedJobForDetail) {
@@ -2137,6 +2496,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onAnalyzeSelected={handleAnalyzeSelected}
                     onViewCandidate={handleViewCandidate}
                     onScheduleSelected={handleOpenBulkMeetingModal}
+                    confirmActionToast={confirmActionToast}
                  />;
             case 'Communications':
                 return <CommunicationsPage 
@@ -2251,7 +2611,18 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
             </main>
             <Chatbot currentUser={effectiveUser} />
-            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnFocusLoss draggable pauseOnHover />
+            <ToastContainer
+                position="top-center"
+                autoClose={3000}
+                hideProgressBar={false}
+                newestOnTop
+                closeOnClick
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                style={{ width: '560px' }}
+                toastStyle={{ fontSize: '1.25rem', lineHeight: 1.4, padding: '20px 24px', minHeight: '88px' }}
+            />
             <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} />
             <JDUploadModal isOpen={isJdUploadModalOpen} onClose={() => setJdUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedJds(prev => [...prev, ...Array.from(files)])} />
             <JobEditorModal isOpen={isJobEditorModalOpen} onClose={() => setJobEditorModalOpen(false)} onSave={(jobData) => handleSaveJob(jobData, selectedProject!.project_id)} jobToEdit={jobToEdit} />

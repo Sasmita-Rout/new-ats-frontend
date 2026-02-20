@@ -7,7 +7,7 @@ import { exportToCSV } from '../utils/helpers';
 
 const BATCH_SIZE = 10;
 
-const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected, onViewCandidate, onScheduleSelected }) => {
+const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected, onViewCandidate, onScheduleSelected, confirmActionToast }) => {
     const [displayLimit, setDisplayLimit] = useState(10);
     const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
     const [isFiltersVisible, setIsFiltersVisible] = useState(false);
@@ -53,8 +53,12 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         );
     };
 
-    const handleDeleteSelected = () => {
-        if (window.confirm(`Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`)) {
+    const handleDeleteSelected = async () => {
+        const message = `Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`;
+        const shouldDelete = confirmActionToast
+            ? await confirmActionToast(message, 'Delete', 'Cancel')
+            : window.confirm(message);
+        if (shouldDelete) {
             onDeleteCandidates(selectedIds);
             setSelectedIds([]);
         }
@@ -218,10 +222,8 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     </td>
                                     <td>
                                         <div className="candidate-cell">
-                                            <div className="candidate-avatar">{candidate.avatar}</div>
                                             <div>
                                                 <a href="#" className="candidate-name" onClick={(e) => { e.preventDefault(); onCandidateSelect(candidate); }}>{candidate.name}</a>
-                                                <p className="candidate-title">{candidate.category}</p>
                                             </div>
                                         </div>
                                     </td>
@@ -256,8 +258,12 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                             <button 
                                                 className="icon-btn" 
                                                 title="Delete Candidate" 
-                                                onClick={() => {
-                                                    if (window.confirm(`Are you sure you want to delete ${candidate.name}? This action cannot be undone.`)) {
+                                                onClick={async () => {
+                                                    const message = `Are you sure you want to delete ${candidate.name}? This action cannot be undone.`;
+                                                    const shouldDelete = confirmActionToast
+                                                        ? await confirmActionToast(message, 'Delete', 'Cancel')
+                                                        : window.confirm(message);
+                                                    if (shouldDelete) {
                                                         onDeleteCandidates([candidate.id]);
                                                     }
                                                 }}

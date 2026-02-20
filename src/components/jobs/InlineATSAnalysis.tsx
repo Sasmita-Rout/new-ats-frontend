@@ -1,18 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Candidate, JobDescription, CandidateWithScore } from '../../types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview } from '../../types/types';
 import FilterBar from '../candidates/FilterBar';
 import { exportToCSV } from '../../utils/helpers';
+import InterviewDetailModal from '../../modals/InterviewDetailModal';
 
 const defaultFilters = {
-    status: [] as Candidate['status'][],
     skills: '',
-    location: '',
-    roleCategory: '',
-    education: '',
-    salaryMin: '',
-    salaryMax: '',
-    tags: '',
-    experience: ''
+    name: '',
+    expMin: '',
+    expMax: '',
+    score: ''
 };
 
 type AnalysisResult = {
@@ -30,7 +27,9 @@ const InlineATSAnalysis = ({
     onViewCandidate,
     onScheduleMeeting,
     onEmailSelectedCandidates,
-    onScheduleBulk
+    onScheduleBulk,
+    organizerEmail,
+    apiRequest,
 }: {
     job: JobDescription;
     analysisResult: AnalysisResult;
@@ -39,29 +38,29 @@ const InlineATSAnalysis = ({
     onEmailSelected: (ids: number[]) => void;
     onViewCandidate: (c: Candidate) => void;
     onScheduleMeeting: (c: Candidate, jobId?: string) => void;
-    onEmailSelectedCandidates?: (candidates: Candidate[]) => void;
+    onEmailSelectedCandidates?: (candidates: Candidate[], jobId?: string) => void;
     onScheduleBulk?: (candidates: Candidate[], jobId?: string) => void;
+    organizerEmail?: string;
+    apiRequest: (url: string, options?: RequestInit) => Promise<any>;
 }) => {
 
     const [filters, setFilters] = useState(defaultFilters);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [expandedMissingSkillIds, setExpandedMissingSkillIds] = useState<number[]>([]);
+    const [emailSentMap, setEmailSentMap] = useState<Record<string, boolean>>({});
+    const [interviewScheduledMap, setInterviewScheduledMap] = useState<Record<string, boolean>>({});
+    const [isInterviewDetailOpen, setIsInterviewDetailOpen] = useState(false);
+    const [selectedInterviewEvent, setSelectedInterviewEvent] = useState<{ candidate: Candidate; interview: Candidate['interviews'][number] } | null>(null);
     if (!analysisResult) return null;
 
     const { loading, candidates: initialRankedCandidates, keywords } = analysisResult;
 
     const filteredCandidates = useMemo(() => {
         const filtered = initialRankedCandidates.filter(c => {
-            const locationValue = (c.location || c.contact?.location || c.originalLocation || '').toString();
             const skillsValue = Array.isArray(c.skills) ? c.skills : [];
-            const tagsValue = Array.isArray(c.tags) ? c.tags : [];
-            const educationValue = Array.isArray(c.education) ? c.education : [];
-            const experienceValue = Array.isArray(c.experience) ? c.experience : [];
             const originalSkillsValue = c.originalSkills || '';
-            const originalExperienceValue = c.originalExperience || '';
             const matchedSkillsValue = Array.isArray(c.matchingSkills) ? c.matchingSkills : [];
 
-            const statusMatch = filters.status.length === 0 || filters.status.includes(c.status);
             const skillsMatch = !filters.skills || filters.skills.toLowerCase().split(',').every(skill => {
                 const term = skill.trim();
                 if (!term) return true;
@@ -71,33 +70,35 @@ const InlineATSAnalysis = ({
                     originalSkillsValue.toLowerCase().includes(term)
                 );
             });
-            const locationMatch = !filters.location || locationValue.toLowerCase().includes(filters.location.toLowerCase());
-            const categoryMatch = !filters.roleCategory || (c.category || '').toLowerCase().includes(filters.roleCategory.toLowerCase());
-            const educationMatch = !filters.education || (educationValue.length > 0 && educationValue.some(edu =>
-                edu.degree.toLowerCase().includes(filters.education.toLowerCase()) ||
-                edu.institution.toLowerCase().includes(filters.education.toLowerCase())
-            ));
-            const salaryMin = parseFloat(filters.salaryMin);
-            const salaryMax = parseFloat(filters.salaryMax);
-            const salaryMatch = (!filters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
-                                (!filters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
-            const tagsMatch = !filters.tags || filters.tags.toLowerCase().split(',').every(tag => {
-                const term = tag.trim();
-                if (!term) return true;
-                return tagsValue.some(ct => ct.toLowerCase().includes(term));
-            });
-            const experienceMatch = !filters.experience || filters.experience.toLowerCase().split(',').every(expTerm => {
-                const term = expTerm.trim();
-                if (!term) return true;
-                const totalExpText = `${c.totalExperienceYears ?? ''}`.toLowerCase();
-                return (
-                    totalExpText.includes(term) ||
-                    experienceValue.some(exp => `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(term)) ||
-                    originalExperienceValue.toLowerCase().includes(term)
-                );
-            });
+            const nameMatch = !filters.name || (c.name || '').toLowerCase().includes(filters.name.toLowerCase());
+            const expMin = filters.expMin !== '' ? parseFloat(filters.expMin) : null;
+            const expMax = filters.expMax !== '' ? parseFloat(filters.expMax) : null;
+            const expValueRaw = c.totalExperienceYears;
+            const expValue = typeof expValueRaw === 'number' ? expValueRaw : parseFloat(String(expValueRaw ?? ''));
+            const experienceMatch =
+                expMin === null && expMax === null
+                    ? true
+                    : Number.isFinite(expValue) &&
+                      (expMin === null || expValue >= expMin) &&
+                      (expMax === null || expValue <= expMax);
 
-            return statusMatch && skillsMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
+            const scoreRaw = c.overallScore;
+            const scoreValue = typeof scoreRaw === 'number' ? scoreRaw : parseFloat(String(scoreRaw ?? ''));
+            const scoreFilter = filters.score;
+            let scoreMatch = true;
+            if (scoreFilter) {
+                if (!Number.isFinite(scoreValue)) {
+                    scoreMatch = false;
+                } else if (scoreFilter.startsWith('>=')) {
+                    const threshold = parseFloat(scoreFilter.slice(2));
+                    scoreMatch = Number.isFinite(threshold) ? scoreValue >= threshold : true;
+                } else if (scoreFilter.startsWith('<=')) {
+                    const threshold = parseFloat(scoreFilter.slice(2));
+                    scoreMatch = Number.isFinite(threshold) ? scoreValue <= threshold : true;
+                }
+            }
+
+            return skillsMatch && nameMatch && experienceMatch && scoreMatch;
         });
 
         const deduped = new Map<string, CandidateWithScore>();
@@ -132,6 +133,95 @@ const InlineATSAnalysis = ({
         setSelectedIds([]);
     }, [filters, filteredCandidates]);
 
+    useEffect(() => {
+        let active = true;
+        const jobId = (job.jobId || job.id || '').toString();
+        const emails = filteredCandidates
+            .map(c => (c.email || '').trim().toLowerCase())
+            .filter(Boolean);
+
+        if (!emails.length) {
+            setEmailSentMap({});
+            setInterviewScheduledMap({});
+            return;
+        }
+
+        const run = async () => {
+            try {
+                const emailResults = await Promise.all(
+                    emails.map(email =>
+                        apiRequest(`/communications/email/exists?candidate_email=${encodeURIComponent(email)}&job_id=${encodeURIComponent(jobId)}`)
+                            .then(data => !!data?.exists)
+                            .catch(() => false)
+                    )
+                );
+                let interviewMap: Record<string, boolean> = {};
+                if (organizerEmail) {
+                    try {
+                        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+                        const now = new Date();
+                        const start = new Date(now);
+                        start.setMonth(start.getMonth() - 3);
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(now);
+                        end.setMonth(end.getMonth() + 3);
+                        end.setHours(23, 59, 59, 0);
+                        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                        const response = await fetch(`${API_BASE_URL}/communications/calendar/events`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                organizer_email: organizerEmail.trim().toLowerCase(),
+                                start_date_time: start.toISOString(),
+                                end_date_time: end.toISOString(),
+                                timezone,
+                                top: 500,
+                            }),
+                        });
+                        const data = await response.json();
+                        if (response.ok && data?.events) {
+                            const parseAttendeeEmails = (event: any) => {
+                                const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
+                                return attendees
+                                    .map((a: any) => a?.emailAddress?.address || a?.address || a?.email)
+                                    .filter((email: string) => !!email)
+                                    .map((email: string) => email.toLowerCase());
+                            };
+                            const eventEmails = new Set<string>();
+                            (data.events as any[]).forEach(ev => {
+                                parseAttendeeEmails(ev).forEach((em: string) => eventEmails.add(em));
+                            });
+                            interviewMap = emails.reduce((acc, email) => {
+                                acc[email] = eventEmails.has(email);
+                                return acc;
+                            }, {} as Record<string, boolean>);
+                        }
+                    } catch {
+                        interviewMap = {};
+                    }
+                }
+
+                if (!active) return;
+                const emailMap: Record<string, boolean> = {};
+                emails.forEach((email, index) => {
+                    emailMap[email] = emailResults[index];
+                    if (!(email in interviewMap)) {
+                        interviewMap[email] = false;
+                    }
+                });
+                setEmailSentMap(emailMap);
+                setInterviewScheduledMap(interviewMap);
+            } catch {
+                if (!active) return;
+                setEmailSentMap({});
+                setInterviewScheduledMap({});
+            }
+        };
+
+        run();
+        return () => { active = false; };
+    }, [apiRequest, filteredCandidates, job]);
+
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
             setSelectedIds(filteredCandidates.map(c => c.id));
@@ -148,6 +238,96 @@ const InlineATSAnalysis = ({
         );
     };
 
+    const handleOpenInterviewDetails = async (candidate: Candidate) => {
+        let sourceCandidate = candidate;
+        let interviews = sourceCandidate.interviews || [];
+        if (!interviews.length && candidate.email) {
+            try {
+                const full = await apiRequest(`/resume/by-email?email=${encodeURIComponent(candidate.email)}`);
+                if (full && typeof full === 'object') {
+                    sourceCandidate = { ...candidate, ...full };
+                    interviews = sourceCandidate.interviews || [];
+                }
+            } catch {
+                // Fall back to the current candidate data
+            }
+        }
+
+        let interview = interviews.slice().reverse().find(i => i.status === 'Scheduled') || interviews.slice().reverse()[0];
+        if (!interview && organizerEmail && candidate.email) {
+            try {
+                const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+                const now = new Date();
+                const start = new Date(now);
+                start.setMonth(start.getMonth() - 3);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(now);
+                end.setMonth(end.getMonth() + 3);
+                end.setHours(23, 59, 59, 0);
+                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                const response = await fetch(`${API_BASE_URL}/communications/calendar/events`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        organizer_email: organizerEmail.trim().toLowerCase(),
+                        start_date_time: start.toISOString(),
+                        end_date_time: end.toISOString(),
+                        timezone,
+                        top: 500,
+                    }),
+                });
+                const data = await response.json();
+                if (response.ok && data?.events) {
+                    const toInterviewType = (subject: string | undefined): Interview['type'] => {
+                        const lowered = (subject || '').toLowerCase();
+                        if (lowered.includes('technical')) return 'Technical';
+                        if (lowered.includes('hr')) return 'HR';
+                        if (lowered.includes('final')) return 'Final';
+                        return 'Screening';
+                    };
+                    const parseAttendeeEmails = (event: any) => {
+                        const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
+                        return attendees
+                            .map((a: any) => a?.emailAddress?.address || a?.address || a?.email)
+                            .filter((email: string) => !!email)
+                            .map((email: string) => email.toLowerCase());
+                    };
+                    const candidateEmail = candidate.email.trim().toLowerCase();
+                    const matchingEvent = (data.events as any[]).find(ev => {
+                        const attendees = parseAttendeeEmails(ev);
+                        return attendees.includes(candidateEmail);
+                    });
+                    if (matchingEvent) {
+                        const startTime = matchingEvent?.start?.dateTime || matchingEvent?.start?.date_time || matchingEvent?.start;
+                        const endTime = matchingEvent?.end?.dateTime || matchingEvent?.end?.date_time || matchingEvent?.end;
+                        const startDate = startTime ? new Date(startTime) : new Date();
+                        const endDate = endTime ? new Date(endTime) : null;
+                        const duration = endDate ? Math.max(10, Math.round((endDate.getTime() - startDate.getTime()) / 60000)) : 30;
+                        interview = {
+                            id: Math.abs((matchingEvent?.id || '').split('').reduce((acc: number, ch: string) => acc + ch.charCodeAt(0), 0)) || Date.now(),
+                            type: toInterviewType(matchingEvent?.subject),
+                            date: startDate.toISOString(),
+                            duration,
+                            interviewer: matchingEvent?.interviewer_email || matchingEvent?.organizer?.emailAddress?.address || organizerEmail,
+                            status: 'Scheduled',
+                            meetingLink: matchingEvent?.meeting_link || matchingEvent?.meetingLink || matchingEvent?.onlineMeeting?.joinUrl,
+                            notes: matchingEvent?.subject || '',
+                            schedulerId: sourceCandidate.id,
+                        };
+                    }
+                }
+            } catch {
+                // Ignore calendar lookup failures
+            }
+        }
+        if (!interview) {
+            onViewCandidate(sourceCandidate);
+            return;
+        }
+        setSelectedInterviewEvent({ candidate: sourceCandidate, interview });
+        setIsInterviewDetailOpen(true);
+    };
+
     const handleDeleteSelected = () => {
         if (window.confirm(`Delete ${selectedIds.length} candidates?`)) {
             onDeleteCandidates(selectedIds);
@@ -158,7 +338,8 @@ const InlineATSAnalysis = ({
     const handleEmailClick = () => {
         if (onEmailSelectedCandidates) {
             const selectedCandidates = filteredCandidates.filter(c => selectedIds.includes(c.id));
-            onEmailSelectedCandidates(selectedCandidates);
+            const jobId = (job.jobId || job.id || '').toString();
+            onEmailSelectedCandidates(selectedCandidates, jobId);
         } else {
             onEmailSelected(selectedIds);
         }
@@ -266,6 +447,7 @@ const InlineATSAnalysis = ({
                                     />
                                 </th>
                                 <th>Name</th>
+                                <th>Status</th>
                                 <th>Experience</th>
                                 <th>Location</th>
                                 <th>Score</th>
@@ -288,6 +470,34 @@ const InlineATSAnalysis = ({
                                     </td>
 
                                     <td>{c.name}</td>
+                                    <td>
+                                        <div className="status-badges">
+                                            {emailSentMap[(c.email || '').trim().toLowerCase()] && (
+                                                <span className="status-badge status-badge-email">Email Sent</span>
+                                            )}
+                                            {interviewScheduledMap[(c.email || '').trim().toLowerCase()] && (
+                                                <span
+                                                    className="status-badge status-badge-interview"
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onClick={() => handleOpenInterviewDetails(c)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.preventDefault();
+                                                            handleOpenInterviewDetails(c);
+                                                        }
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    Interview Scheduled
+                                                </span>
+                                            )}
+                                            {!emailSentMap[(c.email || '').trim().toLowerCase()] &&
+                                                !interviewScheduledMap[(c.email || '').trim().toLowerCase()] && (
+                                                    <span style={{ color: '#9CA3AF' }}>—</span>
+                                                )}
+                                        </div>
+                                    </td>
 
                                     <td>{c.totalExperienceYears || 'N/A'}</td>
 
@@ -333,6 +543,21 @@ const InlineATSAnalysis = ({
                                             <button
                                                 type="button"
                                                 className="ats-action-btn secondary"
+                                                onClick={() => {
+                                                    const jobId = (job.jobId || job.id || '').toString();
+                                                    if (onEmailSelectedCandidates) {
+                                                        onEmailSelectedCandidates([c], jobId);
+                                                    } else {
+                                                        onEmailSelected([c.id]);
+                                                    }
+                                                }}
+                                            >
+                                                <span className="material-symbols-outlined">mail</span>
+                                                Email
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ats-action-btn secondary"
                                                 onClick={() => onViewCandidate(c)}
                                             >
                                                 <span className="material-symbols-outlined">visibility</span>
@@ -352,7 +577,7 @@ const InlineATSAnalysis = ({
 
                             )) : (
                                 <tr>
-                                    <td colSpan={8} style={{ textAlign: 'center' }}>No candidates</td>
+                                    <td colSpan={9} style={{ textAlign: 'center' }}>No candidates</td>
                                 </tr>
                             )}
                         </tbody>
@@ -362,6 +587,12 @@ const InlineATSAnalysis = ({
                 </>
             )}
 
+            <InterviewDetailModal
+                isOpen={isInterviewDetailOpen}
+                onClose={() => setIsInterviewDetailOpen(false)}
+                event={selectedInterviewEvent}
+                onViewProfile={onViewCandidate}
+            />
         </div>
     );
 };
