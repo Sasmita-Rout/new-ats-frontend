@@ -1615,6 +1615,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [notifyError]);
 
+    const checkResumeExistsInVault = useCallback(async (email: string): Promise<boolean> => {
+        if (!email) return false;
+        const response = await fetch(
+            `${RESUME_VAULT_BASE_URL}/api/v1/resumes/metadata/${encodeURIComponent(email)}`
+        );
+        if (response.ok) return true;
+        if (response.status === 404) return false;
+        const message = await response.text().catch(() => '');
+        throw new Error(message || `Resume vault check failed (${response.status})`);
+    }, []);
+
     const uploadResumeToVault = useCallback(async (
         file: File,
         email: string,
@@ -1622,17 +1633,33 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         name?: string,
         phone?: string
     ) => {
+        const exists = await checkResumeExistsInVault(email);
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('email', email);
-        formData.append('name', name || email.split('@')[0] || 'Unknown Candidate');
-        if (phone) {
-            formData.append('phone', phone);
-        }
-        formData.append('uploaded_by', uploadedBy);
 
-        const response = await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`, {
-            method: 'POST',
+        let url = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`;
+        let method: 'POST' | 'PUT' = 'POST';
+
+        if (exists) {
+            method = 'PUT';
+            url = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/${encodeURIComponent(email)}`;
+            if (name) {
+                formData.append('name', name);
+            }
+            if (phone) {
+                formData.append('phone', phone);
+            }
+        } else {
+            formData.append('email', email);
+            formData.append('name', name || email.split('@')[0] || 'Unknown Candidate');
+            if (phone) {
+                formData.append('phone', phone);
+            }
+            formData.append('uploaded_by', uploadedBy);
+        }
+
+        const response = await fetch(url, {
+            method,
             body: formData,
         });
 
@@ -1642,7 +1669,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const message = typeof data === 'string' ? data : (data?.detail || 'Resume vault upload failed');
             throw new Error(message);
         }
-    }, []);
+    }, [checkResumeExistsInVault]);
 
     const safeArray = (value: unknown): string[] => {
         if (Array.isArray(value)) return value.filter(Boolean).map(String);
