@@ -19,7 +19,7 @@ const HistoryPage = ({
 }) => {
     // Super Admin default view is their own history
     const [selectedUserId, setSelectedUserId] = useState<string>(currentUser.id.toString());
-    const isSuperAdmin = currentUser.role === 'super_admin' && !impersonatedUser;
+    const isSuperAdmin = (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role.includes('Admin')) && !impersonatedUser;
 
     // Reset filter when the view context changes (e.g., stops impersonating)
     useEffect(() => {

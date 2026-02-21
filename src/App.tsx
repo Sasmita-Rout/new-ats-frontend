@@ -47,6 +47,7 @@ import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
+const ATS_SSO_APP_NAME = (import.meta.env.VITE_SSO_APP_NAME || 'accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
 const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -63,10 +64,11 @@ const hashStringToInt = (value: string): number => {
     return Math.abs(hash) || 1;
 };
 
-const deriveAtsRoleFromIntranet = (intranetRole?: string, isSuperAdmin?: boolean): UserRole => {
+const deriveAtsRoleFromIntranet = (intranetRole?: string, isSuperAdmin?: boolean, accessLevel?: string): UserRole => {
     if (isSuperAdmin) return 'super_admin';
     const role = (intranetRole || '').toLowerCase();
     if (role === 'admin' || role === 'head_dd' || role === 'pdm') return role as UserRole;
+    if ((accessLevel || '').toLowerCase() === 'admin') return 'admin';
     if (role === 'user') return 'user';
     return 'user';
 };
@@ -76,7 +78,7 @@ const derivePermissionsFromRole = (role: UserRole): UserPermission[] => {
     return privileged ? allPermissions : allPermissions;
 };
 
-const createUserFromSession = (session: { email: string; name?: string; role?: string; isSuperAdmin?: boolean; }): User => {
+const createUserFromSession = (session: { email: string; name?: string; role?: string; isSuperAdmin?: boolean; accessLevel?: string; }): User => {
     const safeEmail = session.email.trim().toLowerCase();
     const namePart = safeEmail.split('@')[0] || 'User';
     const displayName = session.name || namePart
@@ -84,7 +86,7 @@ const createUserFromSession = (session: { email: string; name?: string; role?: s
         .filter(Boolean)
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
-    const intranetRole = deriveAtsRoleFromIntranet(session.role, session.isSuperAdmin);
+    const intranetRole = deriveAtsRoleFromIntranet(session.role, session.isSuperAdmin, session.accessLevel);
 
     return {
         id: hashStringToInt(safeEmail),
@@ -107,18 +109,18 @@ async function getCurrentUserSession(): Promise<{ email: string; name?: string; 
             const data = await response.json();
             if (data.authenticated && data.email) {
                 const apps = Array.isArray(data.apps) ? data.apps : [];
-                const recruiterApp = apps.find((app: any) => {
+                const atsApp = apps.find((app: any) => {
                     const name = String(app?.app_name || '').toLowerCase();
-                    return name === 'recruiter_tool' || name === 'recruiter tool';
+                    return name === ATS_SSO_APP_NAME;
                 });
-                const role = recruiterApp?.role || recruiterApp?.access_level || undefined;
+                const role = atsApp?.role || undefined;
                 localStorage.setItem('userEmail', data.email);
                 return {
                     email: data.email,
                     name: data.name,
                     role,
                     isSuperAdmin: data.is_super_admin,
-                    accessLevel: recruiterApp?.access_level,
+                    accessLevel: atsApp?.access_level,
                 };
             }
         }
@@ -1915,8 +1917,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const fetchProjects = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
         try {
-            const isSuperAdmin = effectiveUser?.role === 'super_admin';
-            const listUrl = isSuperAdmin
+            const role = effectiveUser?.role || '';
+            const isFullAccess = role === 'super_admin' || role === 'admin' || role.includes('Admin');
+            const listUrl = isFullAccess
                 ? `/project/list?limit=200&offset=0`
                 : `/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`;
             const data = await apiRequest(listUrl);
@@ -1930,8 +1933,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const fetchJobs = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
         try {
-            const isSuperAdmin = effectiveUser?.role === 'super_admin';
-            const listUrl = isSuperAdmin
+            const role = effectiveUser?.role || '';
+            const isFullAccess = role === 'super_admin' || role === 'admin' || role.includes('Admin');
+            const listUrl = isFullAccess
                 ? `/job/list?limit=200&offset=0`
                 : `/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`;
             const data = await apiRequest(listUrl);
@@ -2548,7 +2552,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         onEmailSelectedCandidates={handleEmailSelectedCandidates}
                         organizerEmail={effectiveUser?.email || ''}
                         apiRequest={apiRequest}
-                        showOwner={effectiveUser?.role === 'super_admin'}
+                        showOwner={(effectiveUser?.role || '') === 'super_admin' || (effectiveUser?.role || '') === 'admin' || (effectiveUser?.role || '').includes('Admin')}
                         confirmActionToast={confirmActionToast}
                     />;
                 }
@@ -2621,7 +2625,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 const calendarEmail = effectiveUser?.role === 'super_admin' ? '' : (effectiveUser?.email || '');
+                 const role = effectiveUser?.role || '';
+                 const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
+                    ? ''
+                    : (effectiveUser?.email || '');
                  return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
             case 'History':
                  return <HistoryPage 

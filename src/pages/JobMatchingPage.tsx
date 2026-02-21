@@ -58,7 +58,8 @@ const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEdit
         return projects.filter(p => p.uploaded_by === effectiveUser.email);
     }, [projects, effectiveUser]);
 
-    const showOwner = effectiveUser?.role === 'super_admin';
+    const role = effectiveUser?.role || '';
+    const showOwner = role === 'super_admin' || role === 'admin' || role.includes('Admin');
 
     return (
     <div className="page-content">
