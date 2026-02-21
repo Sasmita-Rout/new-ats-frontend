@@ -10,7 +10,45 @@ type AnalysisResult = {
     keywords: string[];
 };
 
-const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner, confirmActionToast }) => {
+type ProjectDetailPageProps = {
+    project: Project;
+    jobsForProject: JobDescription[];
+    onBack: () => void;
+    onJobSelect: (job: JobDescription) => void;
+    onJobEdit: (job: JobDescription) => void;
+    onJobChangeJd: (job: JobDescription) => void;
+    onJobCreateManually: () => void;
+    candidates: Candidate[];
+    onCandidateSelect: (candidate: Candidate) => void;
+    onUploadJds: () => void;
+    stagedJds: File[];
+    isProcessingJds: boolean;
+    processingJdsStatus: string;
+    onProcessJds: () => void;
+    onClearJds: () => void;
+    onDeleteJobs: (jobIds: number[]) => void;
+    onRemoveJd: (file: File) => void;
+    onDeleteCandidates: (candidateIds: number[]) => void;
+    onEmailSelected: (ids: number[]) => void;
+    onEmailSelectedCandidates: (candidates: Candidate[], jobId?: string | null) => void;
+    candidatesForAnalysis: CandidateWithScore[];
+    onClearCandidatesForAnalysis: () => void;
+    onAnalyzeJobFit: (job: JobDescription) => Promise<{ rankedCandidates: CandidateWithScore[]; keywords: string[] }>;
+    onOpenAIGenerateModal: () => void;
+    onViewCandidate: (candidate: Candidate) => void;
+    onScheduleMeeting: (candidate: Candidate, jobId?: string | null) => void;
+    onScheduleBulk: (candidates: Candidate[], jobId?: string | null) => void;
+    organizerEmail: string;
+    apiRequest: (path: string, options?: RequestInit) => Promise<any>;
+    showOwner?: boolean;
+    confirmActionToast?: (message: string, yesLabel: string, noLabel: string) => Promise<boolean>;
+};
+
+const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner = false, confirmActionToast }: ProjectDetailPageProps) => {
+    const confirmAction = useMemo(() => {
+        if (confirmActionToast) return confirmActionToast;
+        return async (message: string) => window.confirm(message);
+    }, [confirmActionToast]);
     const [analyzingJobId, setAnalyzingJobId] = useState<number | null>(null);
     const [selectedJobIds, setSelectedJobIds] = useState<number[]>([]);
     const [analysisData, setAnalysisData] = useState<{ [key: number]: AnalysisResult }>({});
@@ -62,7 +100,7 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
 
     const handleDeleteSelectedJobs = async () => {
         if (!selectedJobIds.length) return;
-        const shouldDelete = await confirmActionToast(
+        const shouldDelete = await confirmAction(
             `Are you sure you want to delete ${selectedJobIds.length} selected jobs? This action cannot be undone.`,
             'Delete',
             'Cancel'
@@ -74,7 +112,7 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
 
     const handleDeleteJob = async (jobId: number) => {
         const job = jobsForProject.find(j => j.id === jobId);
-        const shouldDelete = await confirmActionToast(
+        const shouldDelete = await confirmAction(
             `Are you sure you want to delete the job "${job?.title || 'this job'}"? This action cannot be undone.`,
             'Delete',
             'Cancel'
