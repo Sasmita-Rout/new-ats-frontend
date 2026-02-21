@@ -6,9 +6,10 @@ interface ProjectCardProps {
     jobs: JobDescription[];
     onSelect: (project: Project) => void;
     onEdit: (project: Project) => void;
+    showOwner?: boolean;
 }
 
-const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit }: ProjectCardProps) => {
+const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: ProjectCardProps) => {
     const projectJobs = jobs.filter(j => j.projectId === project.project_id);
     const jobCount = projectJobs.length;
     const activeJobs = projectJobs.filter(j => j.status === 'Active').length;
@@ -18,10 +19,13 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit }: ProjectCard
         <div className="card job-card" onClick={() => onSelect(project)}>
             <div className="job-card-main">
                  <h3 className="job-card-title">{project.project_name}</h3>
-                 <div className="job-card-meta">
+                <div className="job-card-meta">
                     <span><span className="material-symbols-outlined">folder_open</span> {jobCount} Job(s)</span>
                     <span><span className="material-symbols-outlined">fact_check</span> {activeJobs} Active</span>
                     <span><span className="material-symbols-outlined">toggle_on</span> {statusLabel}</span>
+                    {showOwner && (
+                        <span><span className="material-symbols-outlined">person</span> {project.uploaded_by || 'Unknown'}</span>
+                    )}
                 </div>
                  <p className="job-card-description-snippet">
                     <span className="material-symbols-outlined">notes</span>
@@ -47,12 +51,14 @@ const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEdit
     // Filter projects locally within the component to ensure correct visibility.
     const myProjects = useMemo(() => {
         if (!effectiveUser) return [];
-        if (effectiveUser.role.includes('Admin')) {
+        if (effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm') {
             return projects; // Admins see all projects passed in.
         }
         // Recruiters see only projects they created.
         return projects.filter(p => p.uploaded_by === effectiveUser.email);
     }, [projects, effectiveUser]);
+
+    const showOwner = effectiveUser?.role === 'super_admin';
 
     return (
     <div className="page-content">
@@ -77,6 +83,7 @@ const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEdit
                         jobs={jobs}
                         onSelect={onProjectSelect}
                         onEdit={onEditProject}
+                        showOwner={showOwner}
                     />
                 ))}
             </div>

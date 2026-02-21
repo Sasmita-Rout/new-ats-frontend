@@ -111,25 +111,23 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
     }, [candidates, interviews, backendEvents]);
 
     useEffect(() => {
-        if (!organizerEmail) return;
         const fetchEvents = async () => {
-            
             try {
                 const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
                 const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
                 endOfMonth.setHours(23, 59, 59, 0);
                 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
-                const response = await fetch(`${API_BASE_URL}/communications/calendar/events`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        organizer_email: organizerEmail.trim().toLowerCase(),
-                        start_date_time: startOfMonth.toISOString(),
-                        end_date_time: endOfMonth.toISOString(),
-                        timezone,
-                        top: 500,
-                    }),
+                const params = new URLSearchParams({
+                    start_date_time: startOfMonth.toISOString(),
+                    end_date_time: endOfMonth.toISOString(),
+                    timezone,
+                    limit: '500',
+                    offset: '0',
                 });
+                if (organizerEmail) {
+                    params.set('interviewer_email', organizerEmail.trim().toLowerCase());
+                }
+                const response = await fetch(`${API_BASE_URL}/communications/calendar/events-db?${params.toString()}`);
                 const data = await response.json();
                 if (!response.ok) {
                     throw new Error(data?.detail || 'Failed to fetch calendar events');
@@ -143,22 +141,14 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
                     return 'Screening';
                 };
 
-                const parseAttendeeEmails = (event: any) => {
-                    const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
-                    return attendees
-                        .map((a: any) => a?.emailAddress?.address || a?.address || a?.email)
-                        .filter((email: string) => !!email)
-                        .map((email: string) => email.toLowerCase());
-                };
-
                 const derived: CalendarEvent[] = [];
                 for (const event of data?.events || []) {
-                    const attendeeEmails = parseAttendeeEmails(event);
-                    const candidate = candidates.find(c => attendeeEmails.includes((c.email || '').toLowerCase()));
+                    const candidateEmail = (event?.candidate_email || '').toLowerCase();
+                    const candidate = candidates.find(c => (c.email || '').toLowerCase() === candidateEmail);
                     if (!candidate) continue;
 
-                    const start = event?.start?.dateTime || event?.start?.date_time || event?.start;
-                    const end = event?.end?.dateTime || event?.end?.date_time || event?.end;
+                    const start = event?.start?.dateTime || event?.start;
+                    const end = event?.end?.dateTime || event?.end;
                     const startDate = start ? new Date(start) : null;
                     const endDate = end ? new Date(end) : null;
                     const duration = startDate && endDate ? Math.max(10, Math.round((endDate.getTime() - startDate.getTime()) / 60000)) : 30;
@@ -168,9 +158,9 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
                         type: toInterviewType(event?.subject),
                         date: (startDate || new Date()).toISOString(),
                         duration,
-                        interviewer: event?.interviewer_email || event?.organizer?.emailAddress?.address || organizerEmail,
+                        interviewer: event?.interviewer_email || organizerEmail,
                         status: 'Scheduled',
-                        meetingLink: event?.meeting_link || event?.meetingLink || event?.onlineMeeting?.joinUrl,
+                        meetingLink: event?.meeting_link || event?.meetingLink,
                         notes: event?.subject || '',
                         schedulerId: candidate.id,
                     };

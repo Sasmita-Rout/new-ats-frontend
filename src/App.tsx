@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
 // Import types
-import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification, Experience, Education, Link, Task, Note } from './types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, UserRole, Notification, Experience, Education, Link, Task, Note } from './types/types';
 
 // Import pages
 import DashboardPage from './pages/DashboardPage';
@@ -63,26 +63,41 @@ const hashStringToInt = (value: string): number => {
     return Math.abs(hash) || 1;
 };
 
-const createUserFromEmail = (email: string): User => {
-    const safeEmail = email.trim().toLowerCase();
+const deriveAtsRoleFromIntranet = (intranetRole?: string, isSuperAdmin?: boolean): UserRole => {
+    if (isSuperAdmin) return 'super_admin';
+    const role = (intranetRole || '').toLowerCase();
+    if (role === 'admin' || role === 'head_dd' || role === 'pdm') return role as UserRole;
+    if (role === 'user') return 'user';
+    return 'user';
+};
+
+const derivePermissionsFromRole = (role: UserRole): UserPermission[] => {
+    const privileged = role === 'super_admin' || role === 'admin' || role === 'head_dd' || role === 'pdm' || role === 'Main Admin' || role === 'Admin';
+    return privileged ? allPermissions : allPermissions;
+};
+
+const createUserFromSession = (session: { email: string; name?: string; role?: string; isSuperAdmin?: boolean; }): User => {
+    const safeEmail = session.email.trim().toLowerCase();
     const namePart = safeEmail.split('@')[0] || 'User';
-    const displayName = namePart
+    const displayName = session.name || namePart
         .split(/[._-]+/)
         .filter(Boolean)
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
+    const intranetRole = deriveAtsRoleFromIntranet(session.role, session.isSuperAdmin);
 
     return {
         id: hashStringToInt(safeEmail),
         name: displayName || safeEmail,
         email: safeEmail,
-        role: 'Admin',
+        role: intranetRole,
+        intranetRole: session.role,
         avatar: getInitials(displayName || safeEmail),
-        permissions: allPermissions,
+        permissions: derivePermissionsFromRole(intranetRole),
     };
 };
 
-async function getCurrentUserEmail(): Promise<string> {
+async function getCurrentUserSession(): Promise<{ email: string; name?: string; role?: string; isSuperAdmin?: boolean; accessLevel?: string; }> {
     try {
         const response = await fetch(`${SSO_API_URL}/api/auth/session-status`, {
             credentials: 'include',
@@ -91,8 +106,20 @@ async function getCurrentUserEmail(): Promise<string> {
         if (response.ok) {
             const data = await response.json();
             if (data.authenticated && data.email) {
+                const apps = Array.isArray(data.apps) ? data.apps : [];
+                const recruiterApp = apps.find((app: any) => {
+                    const name = String(app?.app_name || '').toLowerCase();
+                    return name === 'recruiter_tool' || name === 'recruiter tool';
+                });
+                const role = recruiterApp?.role || recruiterApp?.access_level || undefined;
                 localStorage.setItem('userEmail', data.email);
-                return data.email;
+                return {
+                    email: data.email,
+                    name: data.name,
+                    role,
+                    isSuperAdmin: data.is_super_admin,
+                    accessLevel: recruiterApp?.access_level,
+                };
             }
         }
     } catch (error) {
@@ -100,7 +127,7 @@ async function getCurrentUserEmail(): Promise<string> {
     }
 
     const localEmail = localStorage.getItem('userEmail');
-    if (localEmail) return localEmail;
+    if (localEmail) return { email: localEmail };
 
     throw new Error('User not identified. Please log in via Main SSO.');
 }
@@ -285,7 +312,8 @@ const App = () => {
 
     const getUploadedBy = useCallback(async () => {
         try {
-            return await getCurrentUserEmail();
+            const session = await getCurrentUserSession();
+            return session.email;
         } catch (error) {
             console.warn('Using local user email for uploaded_by.', error);
             if (effectiveUser?.email) return effectiveUser.email;
@@ -464,9 +492,9 @@ ${effectiveUser?.name || 'HR Team'}`;
         let isMounted = true;
         const initAuth = async () => {
             try {
-                const email = await getCurrentUserEmail();
+                const session = await getCurrentUserSession();
                 if (!isMounted) return;
-                const user = createUserFromEmail(email);
+                const user = createUserFromSession(session);
                 setCurrentUser(user);
                 setUsers(prev => (prev.some(u => u.email === user.email) ? prev : [user, ...prev]));
             } catch (error) {
@@ -483,6 +511,25 @@ ${effectiveUser?.name || 'HR Team'}`;
     // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
     
     // --- CORE HANDLERS ---
+    const persistHistoryEntry = useCallback(async (entry: HistoryEntry) => {
+        const { id, ...payload } = entry;
+        try {
+            const response = await fetch(`${API_BASE_URL}/history/log`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) {
+                const contentType = response.headers.get('content-type') || '';
+                const data = contentType.includes('application/json') ? await response.json() : await response.text();
+                const message = typeof data === 'string' ? data : (data?.detail || 'History persistence failed');
+                console.warn('History log failed:', message);
+            }
+        } catch (error) {
+            console.warn('History log failed:', error);
+        }
+    }, []);
+
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
         const userContext = directUser || effectiveUser;
         if (!userContext) return;
@@ -492,13 +539,11 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: userContext.id,
             userName: userContext.name,
-            userRole: userContext.role,
-            impersonatingUserName: (directUser === null && impersonatedUser) ? currentUser?.name : undefined,
             action,
-            ...details
         };
         setHistoryLog(prev => [newLog, ...prev]);
-    }, [currentUser, impersonatedUser, effectiveUser]);
+        persistHistoryEntry(newLog);
+    }, [currentUser, impersonatedUser, effectiveUser, persistHistoryEntry]);
 
     // --- NOTIFICATION HANDLERS ---
     const addNotification = useCallback((userId: number, message: string, linkTo?: { page: string; targetId?: number }) => {
@@ -554,19 +599,15 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: currentUser.id,
             userName: currentUser.name,
-            userRole: currentUser.role,
-            impersonatingUserName: undefined,
             action: 'User logged out',
         };
 
         if (impersonatedUser) {
             newLog.action = `User logged out while impersonating`;
-            newLog.targetType = 'User';
-            newLog.targetName = impersonatedUser.name;
-            newLog.targetId = impersonatedUser.id;
         }
         
         setHistoryLog(prev => [newLog, ...prev]);
+        persistHistoryEntry(newLog);
         
         setCurrentUser(null);
         setImpersonatedUser(null);
@@ -582,12 +623,7 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: currentUser.id,
             userName: currentUser.name,
-            userRole: currentUser.role,
-            impersonatingUserName: undefined,
             action: `Stopped impersonating`,
-            targetType: 'User',
-            targetName: impersonatedUser.name,
-            targetId: impersonatedUser.id,
         };
         
         const userNoticeLog: HistoryEntry = {
@@ -595,14 +631,12 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: impersonatedUser.id,
             userName: impersonatedUser.name,
-            userRole: impersonatedUser.role,
             action: `Impersonation session ended by`,
-            targetType: 'User',
-            targetName: currentUser.name,
-            targetId: currentUser.id,
         };
         
         setHistoryLog(prev => [userNoticeLog, adminLog, ...prev]);
+        persistHistoryEntry(adminLog);
+        persistHistoryEntry(userNoticeLog);
         
         setImpersonatedUser(null);
         handleNavigate('Dashboard');
@@ -1263,7 +1297,6 @@ ${effectiveUser?.name || 'HR Team'}`;
 
     const handleDeleteJobs = async (ids: number[]) => {
         const jobsToDelete = allJobDescriptions.filter(j => ids.includes(j.id));
-        if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? `)) {
         const results = await Promise.all(jobsToDelete.map(async (job) => {
             if (!job.jobId) return { id: job.id, ok: false };
             try {
@@ -1284,7 +1317,6 @@ ${effectiveUser?.name || 'HR Team'}`;
                 if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
                 if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
             }
-        }
     };
 
     const handleJobStatusUpdate = async (jobId: number, status: JobDescription['status']) => {
@@ -1816,6 +1848,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             industry: raw.industry || '',
             ownerId: raw.ownerId || 0,
             numberOfPositions: raw.numberOfPositions || 1,
+            uploadedBy: raw.uploaded_by || raw.uploadedBy || '',
         };
     }, []);
 
@@ -1869,27 +1902,45 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [apiRequest, normalizeCandidate]);
 
+    const fetchHistory = useCallback(async () => {
+        try {
+            const data = await apiRequest('/history/list?limit=200&offset=0');
+            const logs = Array.isArray(data?.history) ? data.history : [];
+            setHistoryLog(logs);
+        } catch (error) {
+            console.error('Failed to load history:', error);
+        }
+    }, [apiRequest]);
+
     const fetchProjects = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
         try {
-            const data = await apiRequest(`/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
+            const isSuperAdmin = effectiveUser?.role === 'super_admin';
+            const listUrl = isSuperAdmin
+                ? `/project/list?limit=200&offset=0`
+                : `/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`;
+            const data = await apiRequest(listUrl);
             const projects = extractProjects(data);
             setAllProjects(projects);
         } catch (error) {
             console.error('Failed to load projects:', error);
         }
-    }, [apiRequest, getUploadedBy]);
+    }, [apiRequest, getUploadedBy, effectiveUser?.role]);
 
     const fetchJobs = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
         try {
-            const data = await apiRequest(`/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
+            const isSuperAdmin = effectiveUser?.role === 'super_admin';
+            const listUrl = isSuperAdmin
+                ? `/job/list?limit=200&offset=0`
+                : `/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`;
+            const data = await apiRequest(listUrl);
             const jobs = (Array.isArray(data) ? data : data?.data || []).map(normalizeJobFromApi);
             setAllJobDescriptions(jobs);
         } catch (error) {
             console.error('Failed to load jobs:', error);
         }
-    }, [apiRequest, getUploadedBy, normalizeJobFromApi]);
+    }, [apiRequest, getUploadedBy, normalizeJobFromApi, effectiveUser?.role]);
 
     // --- SMART VIEW HANDLER ---
     // This ensures we show the FULL candidate profile (from allCandidates) 
@@ -1995,7 +2046,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         fetchCandidates();
         fetchProjects();
         fetchJobs();
-    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs]);
+        fetchHistory();
+    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs, fetchHistory]);
 
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
@@ -2071,7 +2123,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     }
                 }
                 setAllCandidates(prev => upsertCandidatesByEmail(prev, [newCandidate]));
-                logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
                 try {
                     await uploadResumeToVault(file, candidateEmail, uploadedBy, newCandidate.name, newCandidate.phone);
                 } catch (vaultError) {
@@ -2497,6 +2548,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         onEmailSelectedCandidates={handleEmailSelectedCandidates}
                         organizerEmail={effectiveUser?.email || ''}
                         apiRequest={apiRequest}
+                        showOwner={effectiveUser?.role === 'super_admin'}
+                        confirmActionToast={confirmActionToast}
                     />;
                 }
                 if (selectedJobForDetail) {
@@ -2568,7 +2621,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={effectiveUser?.email || ''} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
+                 const calendarEmail = effectiveUser?.role === 'super_admin' ? '' : (effectiveUser?.email || '');
+                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
             case 'History':
                  return <HistoryPage 
                     historyLog={historyLog} 
@@ -2620,7 +2674,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         };
         const requiredPermission = permissionMap[pageName];
         if (!requiredPermission) return true;
-        if (effectiveUser.role.includes('Admin')) return true;
+        const role = effectiveUser.role;
+        const isAdminRole = role === 'super_admin' || role === 'admin' || role === 'head_dd' || role === 'pdm' || role === 'Main Admin' || role === 'Admin';
+        if (isAdminRole) return true;
         return effectiveUser.permissions.includes(requiredPermission);
     };
 

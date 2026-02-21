@@ -118,7 +118,7 @@ const RecruiterReportsPage = ({ candidates, jobs, user }) => {
 
 
 const ReportsPage = ({ candidates, jobs, effectiveUser, allUsers }: { candidates: Candidate[], jobs: JobDescription[], effectiveUser: User, allUsers: User[] }) => {
-    const isAdminView = effectiveUser.role.includes('Admin');
+    const isAdminView = effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm';
     
     return (
         <div className="page-content reports-page">

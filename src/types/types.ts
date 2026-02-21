@@ -1,5 +1,13 @@
 
-export type UserRole = 'Main Admin' | 'Admin' | 'Recruiter';
+export type UserRole =
+  | 'Main Admin'
+  | 'Admin'
+  | 'Recruiter'
+  | 'super_admin'
+  | 'admin'
+  | 'head_dd'
+  | 'pdm'
+  | 'user';
 
 export type UserPermission = 'Dashboard' | 'Job Matching' | 'All Candidates' | 'Calendar' | 'Communications' | 'Reports' | 'Settings' | 'History';
 
@@ -9,6 +17,7 @@ export type User = {
   email: string;
   password?: string; // This should be handled securely on a server
   role: UserRole;
+  intranetRole?: string;
   avatar: string;
   permissions: UserPermission[];
 };
@@ -175,6 +184,7 @@ export type JobDescription = {
     industry: string;
     ownerId: number;
     numberOfPositions: number;
+    uploadedBy?: string;
     analysisKeywords?: string[];
     // Added to store the raw text content of the JD
     jdContent?: string;
@@ -202,7 +212,7 @@ export type HistoryEntry = {
   timestamp: string;
   userId: number;
   userName: string;
-  userRole: UserRole;
+  userRole?: UserRole;
   impersonatingUserName?: string;
   action: string;
   targetType?: 'Candidate' | 'Job' | 'User' | 'Project';

@@ -10,7 +10,7 @@ const getInitials = (name: string) => {
     return (first + last).toUpperCase() || 'JD';
 };
 
-const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete }) => {
+const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete, showOwner }) => {
     const companyName = (job.companyName || '').trim();
     const companyDomain = companyName
         ? `${companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`
@@ -40,6 +40,9 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
                     <span><span className="material-symbols-outlined">work</span> {job.experience || 'N/A'}</span>
                     <span><span className="material-symbols-outlined">location_on</span> {job.location}</span>
                     <span><span className="material-symbols-outlined">group</span> {job.numberOfPositions || 1} Position(s)</span>
+                    {showOwner && (
+                        <span><span className="material-symbols-outlined">person</span> {job.uploadedBy || 'Unknown'}</span>
+                    )}
                 </div>
                 <p className="job-card-description-snippet">
                     <span className="material-symbols-outlined">notes</span>
@@ -90,9 +93,7 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
                         title="Delete Job" 
                         onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm(`Are you sure you want to delete the job "${job.title}"? This action cannot be undone.`)) {
-                                onDelete(job.id);
-                            }
+                            onDelete(job.id);
                         }}
                     >
                         <span className="material-symbols-outlined">delete</span>

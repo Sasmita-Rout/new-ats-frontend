@@ -190,7 +190,7 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, onProj
 }
 
 const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate }) => {
-    const isAdminView = effectiveUser.role.includes('Admin');
+    const isAdminView = effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm';
     
     // Centralized filtering logic for this page.
     // This ensures the correct list of projects is used for either dashboard view.

@@ -10,7 +10,7 @@ type AnalysisResult = {
     keywords: string[];
 };
 
-const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest }) => {
+const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner, confirmActionToast }) => {
     const [analyzingJobId, setAnalyzingJobId] = useState<number | null>(null);
     const [selectedJobIds, setSelectedJobIds] = useState<number[]>([]);
     const [analysisData, setAnalysisData] = useState<{ [key: number]: AnalysisResult }>({});
@@ -60,11 +60,27 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
         }
     };
 
-    const handleDeleteSelectedJobs = () => {
-        if (window.confirm(`Are you sure you want to delete ${selectedJobIds.length} selected jobs? This action cannot be undone.`)) {
-            onDeleteJobs(selectedJobIds);
-            setSelectedJobIds([]);
-        }
+    const handleDeleteSelectedJobs = async () => {
+        if (!selectedJobIds.length) return;
+        const shouldDelete = await confirmActionToast(
+            `Are you sure you want to delete ${selectedJobIds.length} selected jobs? This action cannot be undone.`,
+            'Delete',
+            'Cancel'
+        );
+        if (!shouldDelete) return;
+        onDeleteJobs(selectedJobIds);
+        setSelectedJobIds([]);
+    };
+
+    const handleDeleteJob = async (jobId: number) => {
+        const job = jobsForProject.find(j => j.id === jobId);
+        const shouldDelete = await confirmActionToast(
+            `Are you sure you want to delete the job "${job?.title || 'this job'}"? This action cannot be undone.`,
+            'Delete',
+            'Cancel'
+        );
+        if (!shouldDelete) return;
+        onDeleteJobs([jobId]);
     };
     
     return (
@@ -161,7 +177,8 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                                                     onChangeJd={onJobChangeJd}
                                                                     isSelected={selectedJobIds.includes(job.id)}
                                                                     onSelect={handleSelectJob}
-                                                                    onDelete={(jobId) => onDeleteJobs([jobId])}
+                                                                    onDelete={handleDeleteJob}
+                                                                    showOwner={showOwner}
                                                                  />                                {analyzingJobId === job.id && (
                                     <InlineATSAnalysis
                                         job={job}
