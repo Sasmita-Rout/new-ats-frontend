@@ -1,14 +1,140 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Candidate, JobDescription, User } from '../types/types';
 
-const AdminReportsPage = ({ candidates, jobs, allUsers }) => {
-    // Placeholder for more complex admin reports
+type ReportRow = {
+    ta_email: string;
+    search_count: number;
+    month: string;
+    year: number;
+};
+
+const AdminReportsPage = ({
+    apiRequest,
+    title,
+    subtitle,
+    filterEmail,
+}: {
+    apiRequest: (path: string, options?: RequestInit) => Promise<any>;
+    title: string;
+    subtitle: string;
+    filterEmail?: string;
+}) => {
+    const now = new Date();
+    const [month, setMonth] = useState(now.getMonth() + 1);
+    const [year, setYear] = useState(now.getFullYear());
+    const [rows, setRows] = useState<ReportRow[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const loadReport = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const data = await apiRequest(`/report?month=${month}&year=${year}`);
+            setRows(Array.isArray(data) ? data : []);
+        } catch (e: any) {
+            setError(e?.message || 'Failed to load report.');
+            setRows([]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadReport();
+    }, [month, year]);
+
+    const filteredRows = useMemo(() => {
+        if (!filterEmail) return rows;
+        const email = filterEmail.toLowerCase();
+        return rows.filter(r => String(r.ta_email || '').toLowerCase() === email);
+    }, [rows, filterEmail]);
+
+    const totals = useMemo(() => {
+        const taCount = filteredRows.length;
+        const uniqueJobs = filteredRows.reduce((sum, r) => sum + (Number(r.search_count) || 0), 0);
+        return { taCount, uniqueJobs };
+    }, [filteredRows]);
+
     return (
-         <div className="empty-state large">
-            <span className="material-symbols-outlined">query_stats</span>
-            <h3>Global Reports & Analytics</h3>
-            <p>Deeper insights into the entire organization's recruitment pipeline will be available here soon.</p>
-        </div>
+        <>
+            <div className="page-header" style={{ marginBottom: '16px' }}>
+                <h1>{title}</h1>
+                <p>{subtitle}</p>
+            </div>
+            <div className="report-filter-bar">
+                <div className="filter-group">
+                    <label>Month</label>
+                    <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={month}
+                        onChange={(e) => setMonth(Number(e.target.value) || 1)}
+                    />
+                </div>
+                <div className="filter-group">
+                    <label>Year</label>
+                    <input
+                        type="number"
+                        min={2000}
+                        max={2100}
+                        value={year}
+                        onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())}
+                    />
+                </div>
+                <button className="btn btn-secondary" onClick={loadReport} disabled={isLoading}>
+                    Refresh
+                </button>
+            </div>
+
+            {error && (
+                <div className="empty-state">
+                    <span className="material-symbols-outlined">error</span>
+                    <p>{error}</p>
+                </div>
+            )}
+
+            {!error && (
+                <div className="report-card full-width">
+                    <div className="report-card-header">
+                        <h4><span className="material-symbols-outlined">query_stats</span> ATS Search Report</h4>
+                        <div className="report-badges">
+                            <span className="report-badge">TAs: {totals.taCount}</span>
+                            <span className="report-badge">Unique Jobs: {totals.uniqueJobs}</span>
+                        </div>
+                    </div>
+                    {isLoading ? (
+                        <div className="chart-placeholder">Loading report...</div>
+                    ) : filteredRows.length === 0 ? (
+                        <div className="chart-placeholder">No data for the selected month/year.</div>
+                    ) : (
+                        <div className="report-table-container">
+                            <table className="report-table">
+                                <thead>
+                                    <tr>
+                                        <th>TA Email</th>
+                                        <th>Search Count</th>
+                                        <th>Month</th>
+                                        <th>Year</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredRows.map((row, idx) => (
+                                        <tr key={`${row.ta_email}-${idx}`}>
+                                            <td className="report-email">{row.ta_email}</td>
+                                            <td><span className="report-count">{row.search_count}</span></td>
+                                            <td>{row.month}</td>
+                                            <td>{row.year}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+        </>
     );
 };
 
@@ -117,19 +243,46 @@ const RecruiterReportsPage = ({ candidates, jobs, user }) => {
 };
 
 
-const ReportsPage = ({ candidates, jobs, effectiveUser, allUsers }: { candidates: Candidate[], jobs: JobDescription[], effectiveUser: User, allUsers: User[] }) => {
+const ReportsPage = ({
+    candidates,
+    jobs,
+    effectiveUser,
+    allUsers,
+    apiRequest,
+}: {
+    candidates: Candidate[];
+    jobs: JobDescription[];
+    effectiveUser: User;
+    allUsers: User[];
+    apiRequest?: (path: string, options?: RequestInit) => Promise<any>;
+}) => {
     const isAdminView = effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm';
+    const safeApiRequest = apiRequest || (async (path: string, options: RequestInit = {}) => {
+        const response = await fetch(path, options);
+        const contentType = response.headers.get('content-type') || '';
+        const data = contentType.includes('application/json') ? await response.json() : await response.text();
+        if (!response.ok) {
+            const message = typeof data === 'string' ? data : (data?.detail || 'Request failed');
+            throw new Error(message);
+        }
+        return data;
+    });
     
     return (
         <div className="page-content reports-page">
-            <div className="page-header">
-                <h1>{isAdminView ? 'Global Reports & Analytics' : 'My Reports'}</h1>
-                <p>{isAdminView ? "Gain deeper insights into the entire organization's recruitment pipeline." : "Review your personal recruitment performance and pipeline."}</p>
-            </div>
             {isAdminView ? (
-                <AdminReportsPage candidates={candidates} jobs={jobs} allUsers={allUsers} />
+                <AdminReportsPage
+                    apiRequest={safeApiRequest}
+                    title="Global Reports & Analytics"
+                    subtitle="Gain deeper insights into the entire organization's recruitment pipeline."
+                />
             ) : (
-                <RecruiterReportsPage candidates={candidates} jobs={jobs} user={effectiveUser} />
+                <AdminReportsPage
+                    apiRequest={safeApiRequest}
+                    title="My Reports"
+                    subtitle="Review your personal recruitment performance and pipeline."
+                    filterEmail={effectiveUser.email}
+                />
             )}
         </div>
     );

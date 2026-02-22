@@ -2622,7 +2622,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     }}
                 />;
             case 'Reports':
-                return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
+                return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} apiRequest={apiRequest} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
                  const role = effectiveUser?.role || '';
