@@ -8,22 +8,32 @@ type ReportRow = {
     year: number;
 };
 
+type JobStats = {
+    total_jobs: number;
+    active_jobs: number;
+    closed_jobs: number;
+    paused_jobs: number;
+};
+
 const AdminReportsPage = ({
     apiRequest,
     title,
     subtitle,
     filterEmail,
+    showDownload,
 }: {
     apiRequest: (path: string, options?: RequestInit) => Promise<any>;
     title: string;
     subtitle: string;
     filterEmail?: string;
+    showDownload?: boolean;
 }) => {
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth() + 1);
     const [year, setYear] = useState(now.getFullYear());
     const [rows, setRows] = useState<ReportRow[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [jobStats, setJobStats] = useState<JobStats | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const loadReport = async () => {
@@ -31,12 +41,38 @@ const AdminReportsPage = ({
         setError(null);
         try {
             const data = await apiRequest(`/report?month=${month}&year=${year}`);
+            
+            let statsData = null;
+            try {
+                statsData = await apiRequest('/job/stats');
+            } catch (err) {
+                console.warn("Job stats endpoint not available:", err);
+            }
+
             setRows(Array.isArray(data) ? data : []);
+            setJobStats(statsData);
         } catch (e: any) {
             setError(e?.message || 'Failed to load report.');
             setRows([]);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleDownload = async () => {
+        try {
+            const csvText = await apiRequest(`/report/download?month=${month}&year=${year}`);
+            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `ats_report_${year}_${month}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (e: any) {
+            setError(e?.message || 'Failed to download report.');
         }
     };
 
@@ -62,7 +98,7 @@ const AdminReportsPage = ({
                 <h1>{title}</h1>
                 <p>{subtitle}</p>
             </div>
-            <div className="report-filter-bar">
+            <div className="report-filter-bar" style={{ marginTop: '24px' }}>
                 <div className="filter-group">
                     <label>Month</label>
                     <input
@@ -86,6 +122,11 @@ const AdminReportsPage = ({
                 <button className="btn btn-secondary" onClick={loadReport} disabled={isLoading}>
                     Refresh
                 </button>
+                {showDownload && (
+                    <button className="btn btn-primary" onClick={handleDownload} disabled={isLoading}>
+                        Download CSV
+                    </button>
+                )}
             </div>
 
             {error && (
@@ -113,7 +154,7 @@ const AdminReportsPage = ({
                             <table className="report-table">
                                 <thead>
                                     <tr>
-                                        <th>TA Email</th>
+                                        <th>Email</th>
                                         <th>Search Count</th>
                                         <th>Month</th>
                                         <th>Year</th>
@@ -275,6 +316,7 @@ const ReportsPage = ({
                     apiRequest={safeApiRequest}
                     title="Global Reports & Analytics"
                     subtitle="Gain deeper insights into the entire organization's recruitment pipeline."
+                    showDownload
                 />
             ) : (
                 <AdminReportsPage

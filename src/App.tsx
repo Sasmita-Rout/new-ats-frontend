@@ -1105,6 +1105,47 @@ ${effectiveUser?.name || 'HR Team'}`;
                         status: projectData.status,
                     }),
                 });
+
+                // Cascade status to jobs (Two-way sync)
+                // Check if status changed to avoid resetting jobs when editing other fields
+                const existingProject = allProjects.find(p => p.project_id === projectData.project_id);
+                const statusChanged = existingProject && existingProject.status !== projectData.status;
+
+                if (statusChanged && (projectData.status === 'inactive' || projectData.status === 'active')) {
+                    const newStatus = projectData.status === 'inactive' ? 'Closed' : 'Active';
+                    const apiStatus = projectData.status === 'inactive' ? 'closed' : 'active';
+
+                    const projectJobs = allJobDescriptions.filter(j => String(j.projectId) === String(projectData.project_id));
+                    
+                    // Optimistic update
+                    setAllJobDescriptions(prev => prev.map(j => 
+                        String(j.projectId) === String(projectData.project_id) ? { ...j, status: newStatus } : j
+                    ));
+
+                    // API updates
+                    await Promise.all(projectJobs.map(job => {
+                        if (job.jobId) {
+                            const { min, max } = parseExperienceRange(job.experience);
+                            const payload = {
+                                job_title: job.title,
+                                job_description: job.description,
+                                job_skills: job.requiredSkills,
+                                job_location: job.location,
+                                job_experience_min: min,
+                                job_experience_max: max,
+                                status: apiStatus,
+                                project_id: job.projectId,
+                            };
+                            return apiRequest(`/job/${encodeURIComponent(job.jobId)}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload),
+                            }).catch(e => console.error(`Failed to update job '${job.title}' (${job.id}):`, e));
+                        }
+                        return Promise.resolve();
+                    }));
+                }
+
                 await fetchProjects();
                 logAction('Updated project', { targetType: 'Project', targetName: projectData.project_name, targetId: Number(projectData.project_id) || 0 });
                 notifySuccess(`Project updated: ${projectData.project_name || 'Untitled'}`);
@@ -2519,6 +2560,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onProjectSelect={(p) => { setSelectedProject(p); setCurrentPage('Job Matching'); }}
                     pendingInvitationCount={pendingCount}
                     onNavigate={handleNavigate}
+                    apiRequest={apiRequest}
                 />;
             case 'Job Matching':
                 if (selectedProject) {
