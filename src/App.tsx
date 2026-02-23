@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
 // Import types
-import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, UserRole, Notification, Experience, Education, Link, Task, Note } from './types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, Notification, Experience, Education, Link, Task, Note } from './types/types';
 
 // Import pages
 import DashboardPage from './pages/DashboardPage';
@@ -47,8 +47,8 @@ import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
-const ATS_SSO_APP_NAME = (import.meta.env.VITE_SSO_APP_NAME || 'accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
+//const RESUME_VAULT_BASE_URL =import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://intranet.accionlabs.com/resume_vault';
 const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
@@ -64,42 +64,26 @@ const hashStringToInt = (value: string): number => {
     return Math.abs(hash) || 1;
 };
 
-const deriveAtsRoleFromIntranet = (intranetRole?: string, isSuperAdmin?: boolean, accessLevel?: string): UserRole => {
-    if (isSuperAdmin) return 'super_admin';
-    const role = (intranetRole || '').toLowerCase();
-    if (role === 'admin' || role === 'head_dd' || role === 'pdm') return role as UserRole;
-    if ((accessLevel || '').toLowerCase() === 'admin') return 'admin';
-    if (role === 'user') return 'user';
-    return 'user';
-};
-
-const derivePermissionsFromRole = (role: UserRole): UserPermission[] => {
-    const privileged = role === 'super_admin' || role === 'admin' || role === 'head_dd' || role === 'pdm' || role === 'Main Admin' || role === 'Admin';
-    return privileged ? allPermissions : allPermissions;
-};
-
-const createUserFromSession = (session: { email: string; name?: string; role?: string; isSuperAdmin?: boolean; accessLevel?: string; }): User => {
-    const safeEmail = session.email.trim().toLowerCase();
+const createUserFromEmail = (email: string, role: string = 'Admin'): User => {
+    const safeEmail = email.trim().toLowerCase();
     const namePart = safeEmail.split('@')[0] || 'User';
-    const displayName = session.name || namePart
+    const displayName = namePart
         .split(/[._-]+/)
         .filter(Boolean)
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
-    const intranetRole = deriveAtsRoleFromIntranet(session.role, session.isSuperAdmin, session.accessLevel);
 
     return {
         id: hashStringToInt(safeEmail),
         name: displayName || safeEmail,
         email: safeEmail,
-        role: intranetRole,
-        intranetRole: session.role,
+        role: role as any,
         avatar: getInitials(displayName || safeEmail),
-        permissions: derivePermissionsFromRole(intranetRole),
+        permissions: allPermissions,
     };
 };
 
-async function getCurrentUserSession(): Promise<{ email: string; name?: string; role?: string; isSuperAdmin?: boolean; accessLevel?: string; }> {
+async function getCurrentUserSession(): Promise<{ email: string; role: string }> {
     try {
         const response = await fetch(`${SSO_API_URL}/api/auth/session-status`, {
             credentials: 'include',
@@ -108,20 +92,10 @@ async function getCurrentUserSession(): Promise<{ email: string; name?: string; 
         if (response.ok) {
             const data = await response.json();
             if (data.authenticated && data.email) {
-                const apps = Array.isArray(data.apps) ? data.apps : [];
-                const atsApp = apps.find((app: any) => {
-                    const name = String(app?.app_name || '').toLowerCase();
-                    return name === ATS_SSO_APP_NAME;
-                });
-                const role = atsApp?.role || undefined;
                 localStorage.setItem('userEmail', data.email);
-                return {
-                    email: data.email,
-                    name: data.name,
-                    role,
-                    isSuperAdmin: data.is_super_admin,
-                    accessLevel: atsApp?.access_level,
-                };
+                const role = data.role || 'Admin';
+                localStorage.setItem('userRole', role);
+                return { email: data.email, role };
             }
         }
     } catch (error) {
@@ -129,7 +103,8 @@ async function getCurrentUserSession(): Promise<{ email: string; name?: string; 
     }
 
     const localEmail = localStorage.getItem('userEmail');
-    if (localEmail) return { email: localEmail };
+    const localRole = localStorage.getItem('userRole') || 'Admin';
+    if (localEmail) return { email: localEmail, role: localRole };
 
     throw new Error('User not identified. Please log in via Main SSO.');
 }
@@ -457,7 +432,7 @@ Interview Date & Time: ${params.interviewDate}
 Mode: Online
 Meeting Link: ${meetingLinkText}
 
-Candidate Resume: (Attached)
+
 
 Kindly confirm your availability.
 
@@ -494,9 +469,9 @@ ${effectiveUser?.name || 'HR Team'}`;
         let isMounted = true;
         const initAuth = async () => {
             try {
-                const session = await getCurrentUserSession();
+                const { email, role } = await getCurrentUserSession();
                 if (!isMounted) return;
-                const user = createUserFromSession(session);
+                const user = createUserFromEmail(email, role);
                 setCurrentUser(user);
                 setUsers(prev => (prev.some(u => u.email === user.email) ? prev : [user, ...prev]));
             } catch (error) {
@@ -513,25 +488,6 @@ ${effectiveUser?.name || 'HR Team'}`;
     // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
     
     // --- CORE HANDLERS ---
-    const persistHistoryEntry = useCallback(async (entry: HistoryEntry) => {
-        const { id, ...payload } = entry;
-        try {
-            const response = await fetch(`${API_BASE_URL}/history/log`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) {
-                const contentType = response.headers.get('content-type') || '';
-                const data = contentType.includes('application/json') ? await response.json() : await response.text();
-                const message = typeof data === 'string' ? data : (data?.detail || 'History persistence failed');
-                console.warn('History log failed:', message);
-            }
-        } catch (error) {
-            console.warn('History log failed:', error);
-        }
-    }, []);
-
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
         const userContext = directUser || effectiveUser;
         if (!userContext) return;
@@ -541,11 +497,13 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: userContext.id,
             userName: userContext.name,
+            userRole: userContext.role,
+            impersonatingUserName: (directUser === null && impersonatedUser) ? currentUser?.name : undefined,
             action,
+            ...details
         };
         setHistoryLog(prev => [newLog, ...prev]);
-        persistHistoryEntry(newLog);
-    }, [currentUser, impersonatedUser, effectiveUser, persistHistoryEntry]);
+    }, [currentUser, impersonatedUser, effectiveUser]);
 
     // --- NOTIFICATION HANDLERS ---
     const addNotification = useCallback((userId: number, message: string, linkTo?: { page: string; targetId?: number }) => {
@@ -601,15 +559,19 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: currentUser.id,
             userName: currentUser.name,
+            userRole: currentUser.role,
+            impersonatingUserName: undefined,
             action: 'User logged out',
         };
 
         if (impersonatedUser) {
             newLog.action = `User logged out while impersonating`;
+            newLog.targetType = 'User';
+            newLog.targetName = impersonatedUser.name;
+            newLog.targetId = impersonatedUser.id;
         }
         
         setHistoryLog(prev => [newLog, ...prev]);
-        persistHistoryEntry(newLog);
         
         setCurrentUser(null);
         setImpersonatedUser(null);
@@ -625,7 +587,12 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: currentUser.id,
             userName: currentUser.name,
+            userRole: currentUser.role,
+            impersonatingUserName: undefined,
             action: `Stopped impersonating`,
+            targetType: 'User',
+            targetName: impersonatedUser.name,
+            targetId: impersonatedUser.id,
         };
         
         const userNoticeLog: HistoryEntry = {
@@ -633,12 +600,14 @@ ${effectiveUser?.name || 'HR Team'}`;
             timestamp: new Date().toISOString(),
             userId: impersonatedUser.id,
             userName: impersonatedUser.name,
+            userRole: impersonatedUser.role,
             action: `Impersonation session ended by`,
+            targetType: 'User',
+            targetName: currentUser.name,
+            targetId: currentUser.id,
         };
         
         setHistoryLog(prev => [userNoticeLog, adminLog, ...prev]);
-        persistHistoryEntry(adminLog);
-        persistHistoryEntry(userNoticeLog);
         
         setImpersonatedUser(null);
         handleNavigate('Dashboard');
@@ -1299,6 +1268,7 @@ ${effectiveUser?.name || 'HR Team'}`;
 
     const handleDeleteJobs = async (ids: number[]) => {
         const jobsToDelete = allJobDescriptions.filter(j => ids.includes(j.id));
+        if (window.confirm(`Are you sure you want to delete ${jobsToDelete.length} selected jobs? `)) {
         const results = await Promise.all(jobsToDelete.map(async (job) => {
             if (!job.jobId) return { id: job.id, ok: false };
             try {
@@ -1319,6 +1289,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                 if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
                 if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
             }
+        }
     };
 
     const handleJobStatusUpdate = async (jobId: number, status: JobDescription['status']) => {
@@ -1649,17 +1620,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [notifyError]);
 
-    const checkResumeExistsInVault = useCallback(async (email: string): Promise<boolean> => {
-        if (!email) return false;
-        const response = await fetch(
-            `${RESUME_VAULT_BASE_URL}/api/v1/resumes/metadata/${encodeURIComponent(email)}`
-        );
-        if (response.ok) return true;
-        if (response.status === 404) return false;
-        const message = await response.text().catch(() => '');
-        throw new Error(message || `Resume vault check failed (${response.status})`);
-    }, []);
-
     const uploadResumeToVault = useCallback(async (
         file: File,
         email: string,
@@ -1667,33 +1627,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         name?: string,
         phone?: string
     ) => {
-        const exists = await checkResumeExistsInVault(email);
         const formData = new FormData();
         formData.append('file', file);
-
-        let url = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`;
-        let method: 'POST' | 'PUT' = 'POST';
-
-        if (exists) {
-            method = 'PUT';
-            url = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/${encodeURIComponent(email)}`;
-            if (name) {
-                formData.append('name', name);
-            }
-            if (phone) {
-                formData.append('phone', phone);
-            }
-        } else {
-            formData.append('email', email);
-            formData.append('name', name || email.split('@')[0] || 'Unknown Candidate');
-            if (phone) {
-                formData.append('phone', phone);
-            }
-            formData.append('uploaded_by', uploadedBy);
+        formData.append('email', email);
+        formData.append('name', name || email.split('@')[0] || 'Unknown Candidate');
+        if (phone) {
+            formData.append('phone', phone);
         }
+        formData.append('uploaded_by', uploadedBy);
 
-        const response = await fetch(url, {
-            method,
+        const response = await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/upload`, {
+            method: 'POST',
             body: formData,
         });
 
@@ -1703,7 +1647,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const message = typeof data === 'string' ? data : (data?.detail || 'Resume vault upload failed');
             throw new Error(message);
         }
-    }, [checkResumeExistsInVault]);
+    }, []);
 
     const safeArray = (value: unknown): string[] => {
         if (Array.isArray(value)) return value.filter(Boolean).map(String);
@@ -1850,7 +1794,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             industry: raw.industry || '',
             ownerId: raw.ownerId || 0,
             numberOfPositions: raw.numberOfPositions || 1,
-            uploadedBy: raw.uploaded_by || raw.uploadedBy || '',
         };
     }, []);
 
@@ -1904,47 +1847,27 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [apiRequest, normalizeCandidate]);
 
-    const fetchHistory = useCallback(async () => {
-        try {
-            const data = await apiRequest('/history/list?limit=200&offset=0');
-            const logs = Array.isArray(data?.history) ? data.history : [];
-            setHistoryLog(logs);
-        } catch (error) {
-            console.error('Failed to load history:', error);
-        }
-    }, [apiRequest]);
-
     const fetchProjects = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
         try {
-            const role = effectiveUser?.role || '';
-            const isFullAccess = role === 'super_admin' || role === 'admin' || role.includes('Admin');
-            const listUrl = isFullAccess
-                ? `/project/list?limit=200&offset=0`
-                : `/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`;
-            const data = await apiRequest(listUrl);
+            const data = await apiRequest(`/project/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
             const projects = extractProjects(data);
             setAllProjects(projects);
         } catch (error) {
             console.error('Failed to load projects:', error);
         }
-    }, [apiRequest, getUploadedBy, effectiveUser?.role]);
+    }, [apiRequest, getUploadedBy]);
 
     const fetchJobs = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
         try {
-            const role = effectiveUser?.role || '';
-            const isFullAccess = role === 'super_admin' || role === 'admin' || role.includes('Admin');
-            const listUrl = isFullAccess
-                ? `/job/list?limit=200&offset=0`
-                : `/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`;
-            const data = await apiRequest(listUrl);
+            const data = await apiRequest(`/job/list?uploaded_by=${encodeURIComponent(uploadedBy)}&limit=200&offset=0`);
             const jobs = (Array.isArray(data) ? data : data?.data || []).map(normalizeJobFromApi);
             setAllJobDescriptions(jobs);
         } catch (error) {
             console.error('Failed to load jobs:', error);
         }
-    }, [apiRequest, getUploadedBy, normalizeJobFromApi, effectiveUser?.role]);
+    }, [apiRequest, getUploadedBy, normalizeJobFromApi]);
 
     // --- SMART VIEW HANDLER ---
     // This ensures we show the FULL candidate profile (from allCandidates) 
@@ -2050,8 +1973,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         fetchCandidates();
         fetchProjects();
         fetchJobs();
-        fetchHistory();
-    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs, fetchHistory]);
+    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs]);
 
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
@@ -2077,20 +1999,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             } catch (error) {
                 console.error('Failed to update candidate:', error);
                 alert('Failed to update candidate.');
-            }
-        }
-
-        if (email) {
-            try {
-                const formData = new FormData();
-                if (updatedCandidate.name) formData.append('name', updatedCandidate.name);
-                if (updatedCandidate.phone) formData.append('phone', updatedCandidate.phone);
-                await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/${encodeURIComponent(email)}`, {
-                    method: 'PUT',
-                    body: formData,
-                });
-            } catch (error) {
-                console.error('Failed to update resume vault metadata:', error);
             }
         }
 
@@ -2127,6 +2035,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     }
                 }
                 setAllCandidates(prev => upsertCandidatesByEmail(prev, [newCandidate]));
+                logAction(`Parsed candidate via ${source}`, { targetType: 'Candidate', targetName: newCandidate.name, targetId: newCandidate.id });
                 try {
                     await uploadResumeToVault(file, candidateEmail, uploadedBy, newCandidate.name, newCandidate.phone);
                 } catch (vaultError) {
@@ -2279,13 +2188,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: normalizedEmail }),
                 });
-                try {
-                    await fetch(`${RESUME_VAULT_BASE_URL}/api/v1/resumes/${encodeURIComponent(normalizedEmail)}`, {
-                        method: 'DELETE',
-                    });
-                } catch (vaultError) {
-                    console.error('Failed to delete resume from vault:', vaultError);
-                }
                 return { id: candidate.id, ok: true };
             } catch (error) {
                 notifyError(`Failed to delete ${candidate.name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -2552,8 +2454,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         onEmailSelectedCandidates={handleEmailSelectedCandidates}
                         organizerEmail={effectiveUser?.email || ''}
                         apiRequest={apiRequest}
-                        showOwner={(effectiveUser?.role || '') === 'super_admin' || (effectiveUser?.role || '') === 'admin' || (effectiveUser?.role || '').includes('Admin')}
-                        confirmActionToast={confirmActionToast}
                     />;
                 }
                 if (selectedJobForDetail) {
@@ -2622,14 +2522,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     }}
                 />;
             case 'Reports':
-                return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} apiRequest={apiRequest} />;
+                return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 const role = effectiveUser?.role || '';
-                 const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
-                    ? ''
-                    : (effectiveUser?.email || '');
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
+                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={effectiveUser?.email || ''} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
             case 'History':
                  return <HistoryPage 
                     historyLog={historyLog} 
@@ -2681,9 +2577,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         };
         const requiredPermission = permissionMap[pageName];
         if (!requiredPermission) return true;
-        const role = effectiveUser.role;
-        const isAdminRole = role === 'super_admin' || role === 'admin' || role === 'head_dd' || role === 'pdm' || role === 'Main Admin' || role === 'Admin';
-        if (isAdminRole) return true;
+        if (effectiveUser.role.includes('Admin')) return true;
         return effectiveUser.permissions.includes(requiredPermission);
     };
 

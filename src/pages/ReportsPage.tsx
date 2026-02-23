@@ -13,11 +13,13 @@ const AdminReportsPage = ({
     title,
     subtitle,
     filterEmail,
+    showDownload,
 }: {
     apiRequest: (path: string, options?: RequestInit) => Promise<any>;
     title: string;
     subtitle: string;
     filterEmail?: string;
+    showDownload?: boolean;
 }) => {
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth() + 1);
@@ -37,6 +39,23 @@ const AdminReportsPage = ({
             setRows([]);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleDownload = async () => {
+        try {
+            const csvText = await apiRequest(`/report/download?month=${month}&year=${year}`);
+            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `ats_report_${year}_${month}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (e: any) {
+            setError(e?.message || 'Failed to download report.');
         }
     };
 
@@ -86,6 +105,11 @@ const AdminReportsPage = ({
                 <button className="btn btn-secondary" onClick={loadReport} disabled={isLoading}>
                     Refresh
                 </button>
+                {showDownload && (
+                    <button className="btn btn-primary" onClick={handleDownload} disabled={isLoading}>
+                        Download CSV
+                    </button>
+                )}
             </div>
 
             {error && (
@@ -275,6 +299,7 @@ const ReportsPage = ({
                     apiRequest={safeApiRequest}
                     title="Global Reports & Analytics"
                     subtitle="Gain deeper insights into the entire organization's recruitment pipeline."
+                    showDownload
                 />
             ) : (
                 <AdminReportsPage

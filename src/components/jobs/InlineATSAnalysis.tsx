@@ -156,49 +156,20 @@ const InlineATSAnalysis = ({
                     )
                 );
                 let interviewMap: Record<string, boolean> = {};
-                if (organizerEmail) {
-                    try {
-                        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-                        const now = new Date();
-                        const start = new Date(now);
-                        start.setMonth(start.getMonth() - 3);
-                        start.setHours(0, 0, 0, 0);
-                        const end = new Date(now);
-                        end.setMonth(end.getMonth() + 3);
-                        end.setHours(23, 59, 59, 0);
-                        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
-                        const response = await fetch(`${API_BASE_URL}/communications/calendar/events`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                organizer_email: organizerEmail.trim().toLowerCase(),
-                                start_date_time: start.toISOString(),
-                                end_date_time: end.toISOString(),
-                                timezone,
-                                top: 500,
-                            }),
-                        });
-                        const data = await response.json();
-                        if (response.ok && data?.events) {
-                            const parseAttendeeEmails = (event: any) => {
-                                const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
-                                return attendees
-                                    .map((a: any) => a?.emailAddress?.address || a?.address || a?.email)
-                                    .filter((email: string) => !!email)
-                                    .map((email: string) => email.toLowerCase());
-                            };
-                            const eventEmails = new Set<string>();
-                            (data.events as any[]).forEach(ev => {
-                                parseAttendeeEmails(ev).forEach((em: string) => eventEmails.add(em));
-                            });
-                            interviewMap = emails.reduce((acc, email) => {
-                                acc[email] = eventEmails.has(email);
-                                return acc;
-                            }, {} as Record<string, boolean>);
-                        }
-                    } catch {
-                        interviewMap = {};
-                    }
+                try {
+                    const interviewResults = await Promise.all(
+                        emails.map(email =>
+                            apiRequest(`/communications/interview/exists?candidate_email=${encodeURIComponent(email)}&job_id=${encodeURIComponent(jobId)}`)
+                                .then(data => !!data?.exists)
+                                .catch(() => false)
+                        )
+                    );
+                    interviewMap = emails.reduce((acc, email, index) => {
+                        acc[email] = interviewResults[index];
+                        return acc;
+                    }, {} as Record<string, boolean>);
+                } catch {
+                    interviewMap = {};
                 }
 
                 if (!active) return;
