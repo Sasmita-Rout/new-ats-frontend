@@ -2,15 +2,21 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Candidate, JobDescription, User } from '../types/types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ResponsiveContainer } from 'recharts';
 
 const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pendingInvitationCount, onNavigate, apiRequest }) => {
     const [openPositions, setOpenPositions] = useState<number | null>(null);
     const totalCandidates = typeof totalCandidatesCount === 'number' ? totalCandidatesCount : candidates.length;
     const activeProjects = projects.filter(p => p.status !== 'inactive').length;
     const inactiveProjects = projects.filter(p => p.status === 'inactive').length;
+    const [systemActivity, setSystemActivity] = useState([]);
+    const [recruiterPerformance, setRecruiterPerformance] = useState([]);
+    const [isLoadingCharts, setIsLoadingCharts] = useState(true);
     
     useEffect(() => {
         const fetchJobStats = async () => {
+            if (!apiRequest) return;
+
             // Calculate fallback from currently loaded jobs
             const fallbackCount = jobs.filter(j => j.status === 'Active').length;
 
@@ -33,7 +39,31 @@ const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pend
             }
         };
         fetchJobStats();
+
     }, [jobs, apiRequest]);
+
+    useEffect(() => {
+        const fetchChartData = async () => {
+            if (!apiRequest) {
+                setIsLoadingCharts(false);
+                return;
+            }
+            setIsLoadingCharts(true);
+            try {
+                const [activityData, performanceData] = await Promise.all([
+                    apiRequest('/report/system-activity?days=30'),
+                    apiRequest('/report/recruiter-performance?days=30&limit=10')
+                ]);
+                setSystemActivity(Array.isArray(activityData) ? activityData : []);
+                setRecruiterPerformance(Array.isArray(performanceData) ? performanceData : []);
+            } catch (error) {
+                console.error("Failed to fetch dashboard chart data:", error);
+            } finally {
+                setIsLoadingCharts(false);
+            }
+        };
+        fetchChartData();
+    }, [apiRequest]);
 
     return (
         <>
@@ -83,17 +113,56 @@ const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pend
             </div>
             <div className="dashboard-grid single-col">
                 <div className="chart-card">
-                    <h4>System-Wide Activity</h4>
-                    <div style={{ height: '300px', background: '#f5f5f5', borderRadius: '8px' }}></div>
+                    <h4>System-Wide Activity (Last 30 Days)</h4>
+                    {isLoadingCharts ? (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Loading Chart...</div>
+                    ) : systemActivity.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={systemActivity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="day" />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend />
+                                <Line type="monotone" dataKey="searches" stroke="#8884d8" name="Searches" />
+                                <Line type="monotone" dataKey="active_users" stroke="#82ca9d" name="Active Users" />
+                                <Line type="monotone" dataKey="unique_jobs" stroke="#ffc658" name="Unique Jobs" />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>No activity data available.</div>
+                    )}
                 </div>
                 <div className="chart-card">
-                    <h4>Recruiter Performance</h4>
-                    <div style={{ height: '300px', background: '#f5f5f5', borderRadius: '8px' }}></div>
+                    <h4>Recruiter Performance (Last 30 Days)</h4>
+                    {isLoadingCharts ? (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Loading Chart...</div>
+                    ) : recruiterPerformance.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={recruiterPerformance} layout="vertical" margin={{ top: 5, right: 30, left: 120, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis type="number" />
+                                <YAxis 
+                                    dataKey="ta_email" 
+                                    type="category" 
+                                    width={120}
+                                    tickFormatter={(value) => value.split('@')[0]}
+                                />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="total_searches" name="Total Searches" fill="#8884d8" barSize={15} />
+                                <Bar dataKey="unique_jobs" name="Unique Jobs" fill="#82ca9d" barSize={15} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>No performance data available.</div>
+                    )}
                 </div>
             </div>
         </>
     );
 };
+
 
 // FIX: Removed unused 'interviews' prop from component signature to resolve type error at the call site.
 const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, jobs, onProjectSelect, user }) => {
@@ -180,6 +249,7 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, jobs, 
     );
 }
 
+
 const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate, apiRequest }) => {
     const isAdminView = effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm';
     
@@ -192,6 +262,7 @@ const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, 
         // Recruiters see only projects they created.
         return projects.filter(p => p.uploaded_by === effectiveUser.email);
     }, [projects, effectiveUser, isAdminView]);
+
     
     return (
         <div className="page-content">
@@ -203,6 +274,7 @@ const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, 
                     projects={myProjects}
                     pendingInvitationCount={pendingInvitationCount}
                     onNavigate={onNavigate}
+
                     apiRequest={apiRequest}
                 />
             ) : (
