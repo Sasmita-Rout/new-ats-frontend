@@ -1113,7 +1113,7 @@ ${effectiveUser?.name || 'HR Team'}`;
 
                 if (statusChanged && (projectData.status === 'inactive' || projectData.status === 'active')) {
                     const newStatus = projectData.status === 'inactive' ? 'Closed' : 'Active';
-                    const apiStatus = projectData.status === 'inactive' ? 'closed' : 'active';
+                    const apiStatus = projectData.status === 'inactive' ? 'inactive' : 'active';
 
                     const projectJobs = allJobDescriptions.filter(j => String(j.projectId) === String(projectData.project_id));
                     
@@ -1219,7 +1219,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                     job_location: location,
                     job_experience_min: min,
                     job_experience_max: max,
-                    status: jobData.status?.toLowerCase() === 'closed' ? 'closed' : 'active',
+                    status: jobData.status?.toLowerCase() === 'closed' ? 'inactive' : 'active',
                 });
                 await apiRequest(`/job/${encodeURIComponent(existing.jobId)}`, {
                     method: 'PUT',
@@ -1231,7 +1231,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                         job_location: location,
                         job_experience_min: min,
                         job_experience_max: max,
-                        status: jobData.status?.toLowerCase() === 'closed' ? 'closed' : 'active',
+                        status: jobData.status?.toLowerCase() === 'closed' ? 'inactive' : 'active',
                         project_id: projectId,
                     }),
                 });
@@ -1370,7 +1370,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                 await apiRequest(`/job/${encodeURIComponent(jobToUpdate.jobId)}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: status.toLowerCase() === 'closed' ? 'closed' : 'active' }),
+                    body: JSON.stringify({ status: status.toLowerCase() === 'closed' ? 'inactive' : 'active' }),
                 });
                 await fetchJobs();
             } catch (error) {
@@ -1855,13 +1855,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             ? `${expMin ?? 0} - ${expMax ?? 0} Years`
             : (raw.experience || 'N/A');
         const statusRaw = (raw.status || raw.job_status || 'Active').toString().toLowerCase();
-        const status = statusRaw === 'inactive' || statusRaw === 'paused'
-            ? 'Paused'
-            : statusRaw === 'onhold'
+        const status = (statusRaw === 'inactive' || statusRaw === 'closed')
+            ? 'Closed'
+            : (statusRaw === 'onhold' || statusRaw === 'paused')
                 ? 'Paused'
-                : statusRaw === 'closed'
-                    ? 'Closed'
-                    : 'Active';
+                : 'Active';
         const idSource = jobId || `${projectId}|${raw.job_title || raw.title || ''}|${raw.created_at || ''}`;
 
         return {
