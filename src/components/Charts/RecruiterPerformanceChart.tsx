@@ -101,7 +101,7 @@ const RecruiterPerformanceChart: React.FC<RecruiterPerformanceChartProps> = ({ d
         const barWidth = groupSpacing * 0.35;
         const barGap = barWidth * 0.2;
 
-        const color1 = '#4F46E5';  // Deep indigo
+        const color1 = '#1D4ED8';  // Deep blue
         const color2 = '#93C5FD';  // Light blue
 
         chartData.forEach((recruiter, groupIndex) => {

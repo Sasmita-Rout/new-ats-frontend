@@ -3,11 +3,12 @@ import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { chatApi } from '../../services/chatApi';
-import { PaperAirplaneIcon, XCircleIcon, LogoIcon, PencilSquareIcon } from './Icons';
+import { PaperAirplaneIcon, XCircleIcon, LogoIcon, PencilSquareIcon, TrashIcon } from './Icons';
 import { toast } from 'react-toastify';
 
 interface ChatbotProps {
     currentUser: { id: number | string; name: string; email: string };
+    launcherVariant?: 'floating' | 'sidebar';
 }
 
 interface ChatMessage {
@@ -22,9 +23,10 @@ interface ChatSession {
     updated_at?: string;
 }
 
-const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
+const Chatbot: React.FC<ChatbotProps> = ({ currentUser, launcherVariant = 'floating' }) => {
     // UI State
     const [isOpen, setIsOpen] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -87,8 +89,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
     };
 
     // 4. Send Message
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const sendCurrentMessage = async () => {
         if (!inputValue.trim() || !activeSessionId) return;
 
         const userMsg = inputValue;
@@ -119,6 +120,31 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
         }
     };
 
+    const handleDeleteSession = async (sessionId: string) => {
+        try {
+            await chatApi.deleteSession(sessionId, currentUser.email);
+            const remaining = sessions.filter(s => s.id !== sessionId);
+            setSessions(remaining);
+
+            if (activeSessionId === sessionId) {
+                if (remaining.length > 0) {
+                    await selectSession(remaining[0].id);
+                } else {
+                    setActiveSessionId(null);
+                    setCurrentMessages([]);
+                    await handleNewChat();
+                }
+            }
+        } catch (error) {
+            toast.error("Failed to delete chat history");
+        }
+    };
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await sendCurrentMessage();
+    };
+
     // Auto-scroll
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -126,13 +152,22 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
 
     return (
         <>
-            <div className="chatbot-container">
-                <button onClick={() => setIsOpen(!isOpen)} className="chatbot-toggle" aria-label="Toggle AI Assistant">
+            <div className={`chatbot-container ${launcherVariant === 'sidebar' ? 'sidebar-launcher' : ''}`}>
+                <button
+                    onClick={() => {
+                        const nextOpen = !isOpen;
+                        setIsOpen(nextOpen);
+                        if (nextOpen) setIsMinimized(false);
+                    }}
+                    className={`chatbot-toggle ${launcherVariant === 'sidebar' ? 'sidebar' : ''}`}
+                    aria-label="Toggle AI Assistant"
+                >
                     {isOpen ? <XCircleIcon /> : <LogoIcon />}
+                    {launcherVariant === 'sidebar' && <span>{isOpen ? 'Close Assistant' : 'AI Assistant'}</span>}
                 </button>
             </div>
             {isOpen && (
-                <div className="chatbot-window-new">
+                <div className={`chatbot-window-new ${isMinimized ? 'minimized' : ''}`}>
                     <aside className="chatbot-sidebar">
                         <button className="new-chat-btn" onClick={handleNewChat}>
                             <PencilSquareIcon />
@@ -149,6 +184,18 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
                                         title={chat.title}
                                     >
                                         <p>{chat.title || "New Chat"}</p>
+                                        <button
+                                            type="button"
+                                            className="chat-history-delete-btn"
+                                            title="Delete chat"
+                                            aria-label="Delete chat"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleDeleteSession(chat.id);
+                                            }}
+                                        >
+                                            <TrashIcon />
+                                        </button>
                                     </div>
                                 ))}
                             </div>
@@ -159,6 +206,26 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
                             <div className="chatbot-header-title">
                                 <div className="chatbot-header-logo"><LogoIcon /></div>
                                 <h2>AI Assistant (Beta)</h2>
+                            </div>
+                            <div className="chatbot-window-controls">
+                                <button
+                                    type="button"
+                                    className="chatbot-window-close chatbot-window-minimize"
+                                    onClick={() => setIsMinimized(prev => !prev)}
+                                    aria-label={isMinimized ? 'Restore AI Assistant' : 'Minimize AI Assistant'}
+                                    title={isMinimized ? 'Restore' : 'Minimize'}
+                                >
+                                    <span className="material-symbols-outlined">remove</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="chatbot-window-close"
+                                    onClick={() => setIsOpen(false)}
+                                    aria-label="Close AI Assistant"
+                                    title="Close"
+                                >
+                                    <XCircleIcon />
+                                </button>
                             </div>
                         </header>
                         <main className="chatbot-messages-new">
@@ -197,6 +264,12 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser }) => {
                                     type="text"
                                     value={inputValue}
                                     onChange={(e) => setInputValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                                            e.preventDefault();
+                                            void sendCurrentMessage();
+                                        }
+                                    }}
                                     placeholder="Ask: 'Who is best for the React job?'"
                                     disabled={isLoading}
                                     className="chatbot-input-new"

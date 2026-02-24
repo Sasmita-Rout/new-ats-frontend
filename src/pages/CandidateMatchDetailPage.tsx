@@ -41,7 +41,7 @@ const CandidateMatchDetailPage = ({ candidate, job, onBack, onUpdateCandidate })
                          <svg viewBox="0 0 36 36" className="circular-chart">
                             <defs>
                                 <linearGradient id="score-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#8B5CF6" />
+                                <stop offset="0%" stopColor="#2563EB" />
                                 <stop offset="100%" stopColor="#3B82F6" />
                                 </linearGradient>
                             </defs>

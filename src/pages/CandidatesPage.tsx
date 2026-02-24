@@ -152,7 +152,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             </button>
                         </>
                     ) : (
-                        <>
+                        <div className="candidates-main-actions-row">
                             <div className="page-size-selector">
                                 <label htmlFor="displayLimit">Show up to:</label>
                                 <select id="displayLimit" value={displayLimit === Number.MAX_SAFE_INTEGER ? 'all' : displayLimit} onChange={handleDisplayLimitChange}>
@@ -172,7 +172,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             <button className="btn btn-primary" onClick={onUpload}>
                                 <span className="material-symbols-outlined">upload</span> Add Resumes
                             </button>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
@@ -210,8 +210,13 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             </tr>
                         </thead>
                         <tbody>
-                            {visibleCandidates.map(candidate => (
-                                <tr key={candidate.id}>
+                            {visibleCandidates.map(candidate => {
+                                const isSkillsExpanded = expandedSkillIds.includes(candidate.id);
+                                const totalColumns = selectedJob ? 9 : 8;
+
+                                return (
+                                <React.Fragment key={candidate.id}>
+                                <tr>
                                     <td>
                                         <input
                                             type="checkbox"
@@ -232,16 +237,16 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     <td>{candidate.location}</td>
                                     <td>
                                         <div className="skills-container">
-                                            {(expandedSkillIds.includes(candidate.id) ? candidate.skills : candidate.skills.slice(0, 3))
+                                            {candidate.skills.slice(0, 3)
                                                 .map(skill => <SkillTag key={skill} tag={skill} />)}
                                             {candidate.skills.length > 3 && (
                                                 <button
                                                     type="button"
                                                     className="skill-tag bg-gray-200 text-gray-800 border-gray-300"
                                                     onClick={() => toggleSkillsExpanded(candidate.id)}
-                                                    aria-label={expandedSkillIds.includes(candidate.id) ? "Show fewer skills" : "Show all skills"}
+                                                    aria-label={isSkillsExpanded ? "Show fewer skills" : "Show all skills"}
                                                 >
-                                                    {expandedSkillIds.includes(candidate.id) ? "Show less" : `+${candidate.skills.length - 3} more`}
+                                                    {`+${candidate.skills.length - 3} more`}
                                                 </button>
                                             )}
                                         </div>
@@ -273,7 +278,20 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                {isSkillsExpanded && (
+                                    <tr className="candidate-skill-expanded-row">
+                                        <td colSpan={totalColumns}>
+                                            <div className="candidate-skill-expanded-panel">
+                                                <strong>All Skills:</strong>
+                                                <div className="skills-container">
+                                                    {candidate.skills.map(skill => <SkillTag key={`${candidate.id}-${skill}`} tag={skill} />)}
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                </React.Fragment>
+                            )})}
                         </tbody>
                     </table>
                     {canLoadMore && (

@@ -129,13 +129,13 @@ const SystemActivityChart: React.FC<SystemActivityChartProps> = ({ data }) => {
         };
 
         // Draw all three lines
-        drawSmoothLine('value1', '#4338CA', 3);     // Deep purple/indigo
+        drawSmoothLine('value1', '#1D4ED8', 3);     // Deep blue
         drawSmoothLine('value2', '#FBBF24', 2.5);   // Amber/yellow
         drawSmoothLine('value3', '#10B981', 2.5);   // Green
 
         // Draw legend
         const legendItems = [
-            { label: 'Metric 1', color: '#4338CA' },
+            { label: 'Metric 1', color: '#1D4ED8' },
             { label: 'Metric 2', color: '#FBBF24' },
             { label: 'Metric 3', color: '#10B981' },
         ];

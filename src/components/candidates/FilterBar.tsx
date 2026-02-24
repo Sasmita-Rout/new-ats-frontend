@@ -52,7 +52,7 @@ const StatusFilterDropdown = ({ selectedStatuses, onStatusChange }) => {
     );
 };
 
-const FilterBar = ({ filters, onFilterChange, onClear, context = 'main' }) => {
+const FilterBar = ({ filters, onFilterChange, onClear, context = 'main', onExport }) => {
     const handleInputChange = (field: keyof typeof filters, value: any) => {
         onFilterChange(prev => ({ ...prev, [field]: value }));
     };
@@ -108,7 +108,12 @@ const FilterBar = ({ filters, onFilterChange, onClear, context = 'main' }) => {
                         </select>
                     </div>
                 </div>
-                <button onClick={onClear} className="clear-filters-btn">Clear All Filters</button>
+                <div className="inline-filter-actions">
+                    <button onClick={onClear} className="clear-filters-btn">Clear All Filters</button>
+                    {onExport && (
+                        <button onClick={onExport} className="btn btn-primary inline-export-btn">Export All</button>
+                    )}
+                </div>
             </div>
         );
     }

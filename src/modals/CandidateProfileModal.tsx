@@ -24,119 +24,119 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content premium-modal" onClick={e => e.stopPropagation()}>
-                <div className="modal-body" style={{ padding: '40px 24px 32px', textAlign: 'center' }}>
-                    <button onClick={onClose} className="close-btn" style={{ top: '16px', right: '16px' }}>
-                        &times;
-                    </button>
+            <div className="modal-content premium-modal candidate-profile-modal" onClick={e => e.stopPropagation()}>
+                <button onClick={onClose} className="close-btn candidate-profile-close-btn" aria-label="Close">
+                    &times;
+                </button>
+                <div className="modal-body candidate-profile-body">
+                    <div style={{ padding: '40px 24px 32px', textAlign: 'center' }}>
 
-                    <div className="user-avatar premium-avatar" style={{
-                        width: '100px',
-                        height: '100px',
-                        fontSize: '42px',
-                        margin: '0 auto 16px',
-                        boxShadow: '0 8px 20px var(--brand-primary-glow)',
-                        border: '4px solid var(--color-surface)'
-                    }}>
-                        {getInitials(candidate.name)}
+                        <div className="user-avatar premium-avatar" style={{
+                            width: '100px',
+                            height: '100px',
+                            fontSize: '42px',
+                            margin: '0 auto 16px',
+                            boxShadow: '0 8px 20px var(--brand-primary-glow)',
+                            border: '4px solid var(--color-surface)'
+                        }}>
+                            {getInitials(candidate.name)}
+                        </div>
+
+                        <h1 style={{
+                            fontSize: '32px',
+                            fontWeight: '700',
+                            marginBottom: '8px',
+                            color: 'var(--text-primary)',
+                            letterSpacing: '-0.5px'
+                        }}>
+                            {candidate.name}
+                        </h1>
+
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                            marginTop: '16px'
+                        }}>
+                            {/* Experience */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '14px',
+                                background: 'var(--color-surface)',
+                                padding: '6px 12px',
+                                borderRadius: '20px',
+                                border: '1px solid var(--color-border)'
+                            }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>work_history</span>
+                                {totalExp ? `${totalExp} years` : 'Exp N/A'}
+                            </div>
+                            {/* DOB */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '14px',
+                                background: 'var(--color-surface)',
+                                padding: '6px 12px',
+                                borderRadius: '20px',
+                                border: '1px solid var(--color-border)'
+                            }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>calendar_month</span>
+                                {dob}
+                            </div>
+                            {/* Email */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '14px',
+                                background: 'var(--color-surface)',
+                                padding: '6px 12px',
+                                borderRadius: '20px',
+                                border: '1px solid var(--color-border)'
+                            }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>mail</span>
+                                {email}
+                            </div>
+                            {/* Phone */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '14px',
+                                background: 'var(--color-surface)',
+                                padding: '6px 12px',
+                                borderRadius: '20px',
+                                border: '1px solid var(--color-border)'
+                            }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>phone</span>
+                                {phone}
+                            </div>
+                            {/* Location */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '14px',
+                                background: 'var(--color-surface)',
+                                padding: '6px 12px',
+                                borderRadius: '20px',
+                                border: '1px solid var(--color-border)'
+                            }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>location_on</span>
+                                {location}
+                            </div>
+                        </div>
                     </div>
 
-                    <h1 style={{
-                        fontSize: '32px',
-                        fontWeight: '700',
-                        marginBottom: '8px',
-                        color: 'var(--text-primary)',
-                        letterSpacing: '-0.5px'
-                    }}>
-                        {candidate.name}
-                    </h1>
-
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'center',
-                        gap: '12px',
-                        flexWrap: 'wrap',
-                        marginTop: '16px'
-                    }}>
-                        {/* Experience */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: 'var(--text-muted)',
-                            fontSize: '14px',
-                            background: 'var(--color-surface)',
-                            padding: '6px 12px',
-                            borderRadius: '20px',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>work_history</span>
-                            {totalExp ? `${totalExp} years` : 'Exp N/A'}
-                        </div>
-                        {/* DOB */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: 'var(--text-muted)',
-                            fontSize: '14px',
-                            background: 'var(--color-surface)',
-                            padding: '6px 12px',
-                            borderRadius: '20px',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>calendar_month</span>
-                            {dob}
-                        </div>
-                        {/* Email */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: 'var(--text-muted)',
-                            fontSize: '14px',
-                            background: 'var(--color-surface)',
-                            padding: '6px 12px',
-                            borderRadius: '20px',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>mail</span>
-                            {email}
-                        </div>
-                        {/* Phone */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: 'var(--text-muted)',
-                            fontSize: '14px',
-                            background: 'var(--color-surface)',
-                            padding: '6px 12px',
-                            borderRadius: '20px',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>phone</span>
-                            {phone}
-                        </div>
-                        {/* Location */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: 'var(--text-muted)',
-                            fontSize: '14px',
-                            background: 'var(--color-surface)',
-                            padding: '6px 12px',
-                            borderRadius: '20px',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--brand-primary)' }}>location_on</span>
-                            {location}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="modal-body" style={{ padding: '0 32px 24px', textAlign: 'left' }}>
                     <div className="info-card" style={{ padding: '20px', background: 'var(--color-surface)', borderRadius: '12px' }}>
                         <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '16px', marginBottom: '16px' }}>
                             <h5>Technical Expertise</h5>
@@ -158,10 +158,9 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                             </div>
                         )}
                     </div>
-                </div>
 
                 {hasOriginalDetails && (
-                    <div className="modal-body" style={{ padding: '0 32px 24px', textAlign: 'left' }}>
+                    <div style={{ padding: '0 32px 24px', textAlign: 'left' }}>
                         <div className="info-card" style={{ padding: '20px', background: 'var(--color-surface)', borderRadius: '12px' }}>
                             <h5>Original Resume Details</h5>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -209,6 +208,7 @@ const CandidateProfileModal = ({ isOpen, onClose, candidate }) => {
                         </div>
                     </div>
                 )}
+                </div>
 
                 <div className="modal-footer premium-footer" style={{ justifyContent: 'space-between', padding: '24px 32px' }}>
                     <div style={{ display: 'flex', gap: '12px' }}>

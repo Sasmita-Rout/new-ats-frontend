@@ -46,7 +46,7 @@ const InlineATSAnalysis = ({
 
     const [filters, setFilters] = useState(defaultFilters);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const [expandedMissingSkillIds, setExpandedMissingSkillIds] = useState<number[]>([]);
+    const [expandedSkillRowIds, setExpandedSkillRowIds] = useState<number[]>([]);
     const [emailSentMap, setEmailSentMap] = useState<Record<string, boolean>>({});
     const [interviewScheduledMap, setInterviewScheduledMap] = useState<Record<string, boolean>>({});
     const [isInterviewDetailOpen, setIsInterviewDetailOpen] = useState(false);
@@ -378,8 +378,8 @@ const InlineATSAnalysis = ({
         filteredCandidates.length > 0 &&
         selectedIds.length === filteredCandidates.length;
 
-    const toggleMissingSkillsExpanded = (id: number) => {
-        setExpandedMissingSkillIds(prev =>
+    const toggleSkillsExpanded = (id: number) => {
+        setExpandedSkillRowIds(prev =>
             prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
         );
     };
@@ -425,13 +425,15 @@ const InlineATSAnalysis = ({
                                 </button>
                             </div>
                         ) : (
-                            <>
-                                <FilterBar filters={filters} onFilterChange={setFilters} onClear={() => setFilters(defaultFilters)} context="inline" />
-
-                                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ marginLeft: 'auto' }}>
-                                    Export All
-                                </button>
-                            </>
+                            <div className="inline-ats-toolbar-stack">
+                                <FilterBar
+                                    filters={filters}
+                                    onFilterChange={setFilters}
+                                    onClear={() => setFilters(defaultFilters)}
+                                    context="inline"
+                                    onExport={handleExportCSV}
+                                />
+                            </div>
                         )}
                     </div>
 
@@ -459,8 +461,8 @@ const InlineATSAnalysis = ({
 
                         <tbody>
                             {filteredCandidates.length ? filteredCandidates.map(c => (
-
-                                <tr key={c.id}>
+                                <React.Fragment key={c.id}>
+                                <tr>
                                     <td>
                                         <input
                                             type="checkbox"
@@ -510,30 +512,41 @@ const InlineATSAnalysis = ({
 
                                     {/* MATCHED */}
                                     <td>
-                                        {c.matchingSkills?.length
-                                            ? c.matchingSkills.map(s => (
-                                                <span key={s} className="skill-tag-simple">{s}</span>
-                                            ))
-                                            : <span style={{ color: '#9CA3AF' }}>None</span>
-                                        }
+                                        <div className="ats-skill-tags">
+                                            {c.matchingSkills?.length
+                                                ? c.matchingSkills.slice(0, 2).map(s => (
+                                                    <span key={s} className="skill-tag-simple">{s}</span>
+                                                ))
+                                                : <span style={{ color: '#9CA3AF' }}>None</span>
+                                            }
+                                            {!!c.matchingSkills && c.matchingSkills.length > 2 && (
+                                                <button
+                                                    type="button"
+                                                    className="ats-skill-more-btn match"
+                                                    onClick={() => toggleSkillsExpanded(c.id)}
+                                                >
+                                                    {expandedSkillRowIds.includes(c.id) ? 'Show less' : `+${c.matchingSkills.length - 2} more`}
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
 
                                     {/* MISSING */}
                                     <td>
                                         {c.missingSkills?.length
-                                            ? (expandedMissingSkillIds.includes(c.id) ? c.missingSkills : c.missingSkills.slice(0, 5)).map(s => (
+                                            ? c.missingSkills.slice(0, 2).map(s => (
                                                 <span key={s} className="missing-skill-tag">{s}</span>
                                             ))
                                             : <span style={{ color: '#10B981' }}>✓ All matched</span>
                                         }
 
-                                        {c.missingSkills && c.missingSkills.length > 5 && (
+                                        {c.missingSkills && c.missingSkills.length > 2 && (
                                             <button
                                                 type="button"
-                                                onClick={() => toggleMissingSkillsExpanded(c.id)}
-                                                style={{ color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, marginLeft: '6px' }}
+                                                className="ats-skill-more-btn missing"
+                                                onClick={() => toggleSkillsExpanded(c.id)}
                                             >
-                                                {expandedMissingSkillIds.includes(c.id) ? 'Show less' : `+${c.missingSkills.length - 5} more`}
+                                                {expandedSkillRowIds.includes(c.id) ? 'Show less' : `+${c.missingSkills.length - 2} more`}
                                             </button>
                                         )}
                                     </td>
@@ -542,26 +555,23 @@ const InlineATSAnalysis = ({
                                         <div className="ats-row-actions">
                                             <button
                                                 type="button"
-                                                className="ats-action-btn secondary"
-                                                onClick={() => {
-                                                    const jobId = (job.jobId || job.id || '').toString();
-                                                    if (onEmailSelectedCandidates) {
-                                                        onEmailSelectedCandidates([c], jobId);
-                                                    } else {
-                                                        onEmailSelected([c.id]);
-                                                    }
-                                                }}
+                                                className="ats-icon-action"
+                                                onClick={() => onViewCandidate(c)}
+                                                title="View"
                                             >
-                                                <span className="material-symbols-outlined">mail</span>
-                                                Email
+                                                <span className="material-symbols-outlined">visibility</span>
                                             </button>
                                             <button
                                                 type="button"
-                                                className="ats-action-btn secondary"
-                                                onClick={() => onViewCandidate(c)}
+                                                className="ats-icon-action"
+                                                onClick={() => {
+                                                    if (window.confirm(`Delete ${c.name}?`)) {
+                                                        onDeleteCandidates([c.id]);
+                                                    }
+                                                }}
+                                                title="Delete"
                                             >
-                                                <span className="material-symbols-outlined">visibility</span>
-                                                View
+                                                <span className="material-symbols-outlined">delete</span>
                                             </button>
                                             <button
                                                 type="button"
@@ -574,6 +584,35 @@ const InlineATSAnalysis = ({
                                         </div>
                                     </td>
                                 </tr>
+                                {expandedSkillRowIds.includes(c.id) && (
+                                    <tr className="ats-skills-expanded-row">
+                                        <td colSpan={9}>
+                                            <div className="ats-skills-expanded">
+                                                <div className="expanded-skill-block missing">
+                                                    <h5>Missing Skills:</h5>
+                                                    <div className="ats-skill-tags">
+                                                        {c.missingSkills?.length
+                                                            ? c.missingSkills.map(s => (
+                                                                <span key={`missing-${c.id}-${s}`} className="missing-skill-tag">{s}</span>
+                                                            ))
+                                                            : <span style={{ color: '#10B981' }}>All matched</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="expanded-skill-block matched">
+                                                    <h5>Matched Skills:</h5>
+                                                    <div className="ats-skill-tags">
+                                                        {c.matchingSkills?.length
+                                                            ? c.matchingSkills.map(s => (
+                                                                <span key={`match-${c.id}-${s}`} className="skill-tag-simple">{s}</span>
+                                                            ))
+                                                            : <span style={{ color: '#9CA3AF' }}>None</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                </React.Fragment>
 
                             )) : (
                                 <tr>

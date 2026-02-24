@@ -119,11 +119,8 @@ const AdminReportsPage = ({
                         onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())}
                     />
                 </div>
-                <button className="btn btn-secondary" onClick={loadReport} disabled={isLoading}>
-                    Refresh
-                </button>
                 {showDownload && (
-                    <button className="btn btn-primary" onClick={handleDownload} disabled={isLoading}>
+                    <button className="btn btn-primary report-filter-download" onClick={handleDownload} disabled={isLoading}>
                         Download CSV
                     </button>
                 )}
@@ -226,12 +223,12 @@ const RecruiterReportsPage = ({ candidates, jobs, user }) => {
     
     const MetricCard = ({ title, value, unit = '', icon }) => {
         const iconColorMap = {
-            'avg_time_to_hire': '#8B5CF6',
+            'avg_time_to_hire': '#3B82F6',
             'conversion_rate': '#10B981',
             'emails_sent': '#F59E0B'
         };
         const iconStyle = {
-            '--icon-color': iconColorMap[icon] || '#6D28D9'
+            '--icon-color': iconColorMap[icon] || '#1D4ED8'
         } as React.CSSProperties;
 
         return (

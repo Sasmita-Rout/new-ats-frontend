@@ -24,6 +24,17 @@ export const chatApi = {
         return res.json();
     },
 
+    // 3.1 Delete Session
+    deleteSession: async (sessionId: string, userId: string) => {
+        const res = await fetch(`${API_BASE_URL}/chat/session/${sessionId}?user_id=${encodeURIComponent(userId)}`, {
+            method: 'DELETE'
+        });
+        if (!res.ok) {
+            throw new Error('Failed to delete chat session');
+        }
+        return res.json().catch(() => ({}));
+    },
+
     // 4. Send Message (User -> Backend -> Ollama -> Mongo)
     sendMessage: async (sessionId: string, userId: string, content: string) => {
         const res = await fetch(`${API_BASE_URL}/chat/session/${sessionId}/message`, {

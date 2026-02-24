@@ -26,7 +26,6 @@ import LoginPage from './pages/LoginPage';
 // Import components
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
-import Chatbot from './components/ai/Chatbot';
 
 // Import modals
 import ResumeUploadModal from './modals/ResumeUploadModal';
@@ -45,12 +44,16 @@ import CandidateProfileModal from './modals/CandidateProfileModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-const SSO_API_URL = import.meta.env.VITE_SSO_API_URL || 'http://localhost:8001';
-const ATS_SSO_APP_NAME = (import.meta.env.VITE_SSO_APP_NAME || 'accion_talent_search').toLowerCase();
+//const API_BASE_URL =  'http://localhost:8000';
+//const SSO_API_URL =  'http://localhost:8001';
+const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
+//const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+
+const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+const SSO_API_URL = "https://intranet.accionlabs.com";
+const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -1381,10 +1384,9 @@ ${effectiveUser?.name || 'HR Team'}`;
     };
 
     const handleGenerateJdWithAI = async (prompt: string, projectId: string) => {
-        if (!prompt || !projectId) return;
+        if (!prompt || !projectId) return false;
 
         setIsGeneratingJD(true);
-        setAIGenerateModalOpen(false);
 
         try {
             console.info('[AI JD Generate Payload]', { prompt, project_id: projectId });
@@ -1420,13 +1422,20 @@ ${effectiveUser?.name || 'HR Team'}`;
                 aiFilled: true,
             };
 
+            // Ensure the editor modal always mounts with the latest AI payload on first attempt.
+            setJobEditorModalOpen(false);
+            setJobToEdit(null);
+            await Promise.resolve();
             setJobToEdit(newJobData as JobDescription);
             setJobEditorModalOpen(true);
+            setAIGenerateModalOpen(false);
             notifyInfo('AI JD generated. Please review and save.');
+            return true;
 
         } catch (error) {
             console.error("AI JD generation failed:", error);
             notifyError('AI JD generation failed.');
+            return false;
         } finally {
             setIsGeneratingJD(false);
         }
@@ -2566,7 +2575,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         project={selectedProject}
                         jobsForProject={allJobDescriptions.filter(j => String(j.projectId) === String(selectedProject.project_id))}
                         onBack={() => setSelectedProject(null)}
-                        onJobSelect={(j) => { setSelectedJobForDetail(j); }}
+                        onJobSelect={(j) => { setSelectedProject(null); setSelectedJobForDetail(j); }}
                         onJobEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                         onJobChangeJd={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                         onJobCreateManually={() => { setJobToEdit(null); setJobEditorModalOpen(true); }}
@@ -2742,6 +2751,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} />
             <main className="main-content">
                 <Header 
+                    currentPage={currentPage}
                     user={effectiveUser}
                     impersonatedUser={impersonatedUser} 
                     onStopImpersonation={handleStopImpersonation} 
@@ -2761,7 +2771,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 />
                 {isPageAccessible(currentPage) ? renderContent() : renderAccessDenied()}
             </main>
-            <Chatbot currentUser={effectiveUser} />
             <ToastContainer
                 position="top-center"
                 autoClose={3000}

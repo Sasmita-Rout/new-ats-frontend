@@ -327,7 +327,7 @@ const WorkspaceDataView = ({ onExportData, onImportData, onResetAllData }) => {
                     </button>
                 </div>
                 <div className="workspace-tool-card">
-                    <div className="tool-icon-wrapper" style={{'--tool-color': '#8B5CF6', '--tool-bg': '#F5F3FF'} as React.CSSProperties}>
+                    <div className="tool-icon-wrapper" style={{'--tool-color': '#3B82F6', '--tool-bg': '#EFF6FF'} as React.CSSProperties}>
                         <span className="material-symbols-outlined">upload</span>
                     </div>
                      <div className="workspace-card-info">

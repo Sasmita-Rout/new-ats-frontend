@@ -12,13 +12,14 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
     const [formData, setFormData] = useState<Partial<JobDescription>>({
         title: '',
         location: '',
-        experience: '0 - 2 Years',
+        experience: '0.5 - 2.5 Years',
         description: '',
         requiredSkills: []
     });
     const [skillInput, setSkillInput] = useState('');
-    const [minExp, setMinExp] = useState(0);
-    const [maxExp, setMaxExp] = useState(2);
+    const [minExp, setMinExp] = useState(0.5);
+    const [maxExp, setMaxExp] = useState(2.5);
+    const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -35,20 +36,20 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
                         setMinExp(single);
                         setMaxExp(single + 2);
                     } else {
-                        setMinExp(0);
-                        setMaxExp(2);
+                        setMinExp(0.5);
+                        setMaxExp(2.5);
                     }
                 }
             } else {
                 setFormData({
                     title: '',
                     location: '',
-                    experience: '0 - 2 Years',
+                    experience: '0.5 - 2.5 Years',
                     description: '',
                     requiredSkills: []
                 });
-                setMinExp(0);
-                setMaxExp(2);
+                setMinExp(0.5);
+                setMaxExp(2.5);
             }
         }
     }, [isOpen, jobToEdit]);
@@ -61,10 +62,10 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
     const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'min' | 'max') => {
         const val = parseFloat(e.target.value);
         if (type === 'min') {
-            const newMin = Math.min(val, maxExp - 0.5);
+            const newMin = Math.min(val, maxExp);
             setMinExp(newMin);
         } else {
-            const newMax = Math.max(val, minExp + 0.5);
+            const newMax = Math.max(val, minExp);
             setMaxExp(newMax);
         }
     };
@@ -72,6 +73,12 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
     useEffect(() => {
         setFormData(prev => ({ ...prev, experience: `${minExp} - ${maxExp} Years` }));
     }, [minExp, maxExp]);
+
+    useEffect(() => {
+        if (!descriptionRef.current) return;
+        descriptionRef.current.style.height = 'auto';
+        descriptionRef.current.style.height = `${descriptionRef.current.scrollHeight}px`;
+    }, [formData.description, isOpen]);
 
     const handleAddSkill = () => {
         if (skillInput.trim()) {
@@ -103,27 +110,29 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-content job-editor-modal" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h3>{jobToEdit ? 'Edit Job' : 'Create New Job'}</h3>
                     <button onClick={onClose} className="close-btn">&times;</button>
                 </div>
-                <form onSubmit={handleSubmit}>
+                <form onSubmit={handleSubmit} className="job-editor-form">
                     <div className="modal-body">
-                        <div className="form-group">
-                            <label>Job Title</label>
-                            <input name="title" value={formData.title} onChange={handleChange} required placeholder="e.g. Senior Java Developer" />
+                        <div className="job-editor-top-grid">
+                            <div className="form-group">
+                                <label>Job Title</label>
+                                <input name="title" value={formData.title} onChange={handleChange} required placeholder="e.g. Senior React Developer" />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Location</label>
+                                <input name="location" value={formData.location} onChange={handleChange} required placeholder="e.g. Remote / New York" />
+                            </div>
                         </div>
 
-                        <div className="form-group">
-                            <label>Location</label>
-                            <input name="location" value={formData.location} onChange={handleChange} required placeholder="e.g. New York, Remote" />
-                        </div>
-
-                        <div className="form-group">
-                            <label style={{display: 'flex', justifyContent: 'space-between'}}>
+                        <div className="form-group experience-range-group">
+                            <label className="experience-range-label">
                                 <span>Experience Range</span>
-                                <span style={{fontWeight: 'bold', color: 'var(--primary-color)'}}>{minExp} - {maxExp} Years</span>
+                                <span className="experience-range-pill">{minExp} Years - {maxExp} Years</span>
                             </label>
                             <div className="dual-range-slider-container">
                                 <div className="slider-track-bg"></div>
@@ -131,37 +140,37 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
                                     className="slider-track-fill" 
                                     style={{ left: `${minPercent}%`, width: `${maxPercent - minPercent}%` }}
                                 ></div>
-                                <input type="range" min="0" max="30" step="0.5" value={minExp} onChange={(e) => handleSliderChange(e, 'min')} className="range-input" />
-                                <input type="range" min="0" max="30" step="0.5" value={maxExp} onChange={(e) => handleSliderChange(e, 'max')} className="range-input" />
+                                <input type="range" min="0.5" max="30" step="0.5" value={minExp} onChange={(e) => handleSliderChange(e, 'min')} className="range-input" />
+                                <input type="range" min="0.5" max="30" step="0.5" value={maxExp} onChange={(e) => handleSliderChange(e, 'max')} className="range-input" />
                             </div>
-                            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888'}}>
-                                <span>0 Yrs</span>
-                                <span>30 Yrs</span>
+                            <div className="experience-range-scale">
+                                <span>0.5 Yrs</span>
+                                <span>30+ Yrs</span>
                             </div>
                         </div>
 
                         <div className="form-group">
                             <label>Job Description (JD)</label>
-                            <textarea name="description" value={formData.description} onChange={handleChange} rows={6} required placeholder="Enter the detailed job description..." />
+                            <textarea ref={descriptionRef} name="description" value={formData.description} onChange={handleChange} rows={6} required placeholder="Enter the detailed job description..." />
                         </div>
 
                         <div className="form-group">
                             <label>Required Skills</label>
-                            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                            <div className="skills-input-row">
                                 <input 
                                     value={skillInput} 
                                     onChange={e => setSkillInput(e.target.value)} 
                                     placeholder="Type a skill and press Enter or Add"
                                     onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddSkill())}
                                 />
-                                <button type="button" className="btn btn-secondary" onClick={handleAddSkill}>Add</button>
+                                <button type="button" className="btn btn-primary" onClick={handleAddSkill}>Add</button>
                             </div>
-                            <div className="skills-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            <div className="skills-container job-editor-skills">
                                 {formData.requiredSkills?.map((skill, index) => (
-                                    <span key={index} className="skill-tag" style={{ background: '#EFF6FF', color: '#1D4ED8', padding: '4px 10px', borderRadius: '16px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span key={index} className="job-editor-skill-chip">
                                         {skill}
-                                        <button type="button" onClick={() => handleRemoveSkill(index)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#1D4ED8', padding: 0, display: 'flex' }}>
-                                            <span className="material-symbols-outlined" style={{fontSize: '16px'}}>close</span>
+                                        <button type="button" className="job-editor-skill-remove" onClick={() => handleRemoveSkill(index)}>
+                                            <span className="material-symbols-outlined">close</span>
                                         </button>
                                     </span>
                                 ))}

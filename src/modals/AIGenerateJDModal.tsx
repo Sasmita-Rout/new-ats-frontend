@@ -5,9 +5,12 @@ const AIGenerateJDModal = ({ isOpen, onClose, onGenerate, isGenerating }) => {
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        onGenerate(prompt);
+        const success = await onGenerate(prompt);
+        if (success) {
+            setPrompt('');
+        }
     };
 
     return (

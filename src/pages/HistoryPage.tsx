@@ -81,10 +81,10 @@ const HistoryPage = ({
                     <p>{isSuperAdmin ? "Review actions taken by users across the application." : "A complete log of actions you have taken within the application."}</p>
                 </div>
                 {isSuperAdmin && (
-                    <div className="actions-group">
+                    <div className="actions-group history-actions-group">
                         <div className="filter-group">
                             <label>Filter by User</label>
-                            <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '8px 12px', borderRadius: 'var(--border-radius)', border: '1px solid var(--border-color)', backgroundColor: 'white' }}>
+                            <select className="history-user-select" value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
                                 <option value={currentUser.id.toString()}>My History</option>
                                 <option value="all">All Users</option>
                                 {selectableUsers.filter(u => u.id !== currentUser.id).map(user => (
@@ -92,7 +92,7 @@ const HistoryPage = ({
                                 ))}
                             </select>
                         </div>
-                        <button className="btn btn-secondary" onClick={handleExport}>
+                        <button className="btn history-export-btn" onClick={handleExport}>
                             <span className="material-symbols-outlined">download</span> Export
                         </button>
                     </div>

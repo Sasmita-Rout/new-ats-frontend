@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, UserPermission } from '../../types/types';
+import Chatbot from '../ai/Chatbot';
 
 const Sidebar = ({ currentPage, onNavigate, effectiveUser }) => {
     
@@ -11,23 +12,15 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser }) => {
     const navConfig = useMemo(() => [
         {
             name: 'ATS',
-            icon: 'business_center',
+            icon: 'rocket_launch',
             children: [
-                { name: 'Dashboard', icon: 'dashboard', page: 'Dashboard' },
-                { name: 'Projects', icon: 'work', page: 'Job Matching' },
-                { name: 'All Candidates', icon: 'groups', page: 'Candidates' },
-                { name: 'Calendar', icon: 'calendar_month', page: 'Calendar' },
-                { name: 'Communications', icon: 'mail', page: 'Communications' },
-                { name: 'Reports', icon: 'analytics', page: 'Reports' },
-                { name: 'History', icon: 'history', page: 'History' },
-            ]
-        },
-        {
-            name: 'Settings',
-            icon: 'settings',
-            children: [
-                { name: 'My Profile', icon: 'person', page: 'SettingsMyProfile' },
-                { name: 'Contact Support', icon: 'support_agent', page: 'SettingsContactSupport' },
+                { name: 'Dashboard', icon: 'space_dashboard', page: 'Dashboard' },
+                { name: 'Projects', icon: 'account_tree', page: 'Job Matching' },
+                { name: 'All Candidates', icon: 'person_search', page: 'Candidates' },
+                { name: 'Calendar', icon: 'event_upcoming', page: 'Calendar' },
+                { name: 'Communications', icon: 'forum', page: 'Communications' },
+                { name: 'Reports', icon: 'query_stats', page: 'Reports' },
+                { name: 'History', icon: 'timeline', page: 'History' },
             ]
         },
     ], [effectiveUser.role]);
@@ -109,6 +102,9 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser }) => {
                     ))}
                 </ul>
             </nav>
+            <div className="sidebar-chatbot-slot">
+                <Chatbot currentUser={effectiveUser} launcherVariant="sidebar" />
+            </div>
         </aside>
     );
 };
