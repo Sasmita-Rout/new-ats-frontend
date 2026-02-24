@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+
+# Environment Variables - IMPORTANT: Don't push secrets!
+.env
+.env.local
+.env.*.local
+config.py

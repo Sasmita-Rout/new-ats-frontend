@@ -3,14 +3,9 @@ import { Project } from '../types/types';
 
 const ProjectEditorModal = ({ isOpen, onClose, onSave, projectToEdit }) => {
     const getInitialState = (): Partial<Project> => ({
-        name: '',
-        clientOrDepartment: '',
-        status: 'Active',
-        description: '',
-        priority: 'Medium',
-        startDate: '',
-        endDate: '',
-        budget: '',
+        project_name: '',
+        project_description: '',
+        status: 'active',
     });
 
     const [projectData, setProjectData] = useState(getInitialState());
@@ -18,11 +13,7 @@ const ProjectEditorModal = ({ isOpen, onClose, onSave, projectToEdit }) => {
     useEffect(() => {
         if (isOpen) {
             if (projectToEdit) {
-                 setProjectData({
-                    ...projectToEdit,
-                    startDate: projectToEdit.startDate ? projectToEdit.startDate.split('T')[0] : '', // Format for date input
-                    endDate: projectToEdit.endDate ? projectToEdit.endDate.split('T')[0] : '', // Format for date input
-                });
+                setProjectData({ ...projectToEdit });
             } else {
                 setProjectData(getInitialState());
             }
@@ -55,45 +46,18 @@ const ProjectEditorModal = ({ isOpen, onClose, onSave, projectToEdit }) => {
                     <div className="modal-body">
                          <div className="form-group" style={{ marginBottom: '16px' }}>
                             <label>Project Name</label>
-                            <input name="name" value={projectData.name} onChange={handleChange} required placeholder="e.g., Q3 Frontend Engineering Hiring" />
+                            <input name="project_name" value={projectData.project_name || ''} onChange={handleChange} required placeholder="e.g., Q3 Frontend Engineering Hiring" />
                         </div>
                         <div className="form-group" style={{ marginBottom: '24px' }}>
                             <label>Project Description</label>
-                            <textarea name="description" value={projectData.description} onChange={handleChange} rows={3} placeholder="A short summary of the project goals." />
+                            <textarea name="project_description" value={projectData.project_description || ''} onChange={handleChange} rows={3} placeholder="A short summary of the project goals." />
                         </div>
-                        <div className="form-grid">
-                            <div className="form-group">
-                                <label>Client / Department</label>
-                                <input name="clientOrDepartment" value={projectData.clientOrDepartment} onChange={handleChange} required placeholder="e.g., Accion Digital" />
-                            </div>
-                            <div className="form-group">
-                                <label>Priority</label>
-                                <select name="priority" value={projectData.priority} onChange={handleChange}>
-                                    <option value="High">High</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="Low">Low</option>
-                                </select>
-                            </div>
-                             <div className="form-group">
-                                <label>Start Date</label>
-                                <input type="date" name="startDate" value={projectData.startDate} onChange={handleChange} />
-                            </div>
-                            <div className="form-group">
-                                <label>End Date</label>
-                                <input type="date" name="endDate" value={projectData.endDate} onChange={handleChange} />
-                            </div>
-                             <div className="form-group">
-                                <label>Budget (Optional)</label>
-                                <input name="budget" value={projectData.budget} onChange={handleChange} placeholder="e.g., $50,000" />
-                            </div>
-                            <div className="form-group">
-                                <label>Status</label>
-                                <select name="status" value={projectData.status} onChange={handleChange}>
-                                    <option value="Active">Active</option>
-                                    <option value="On Hold">On Hold</option>
-                                    <option value="Closed">Closed</option>
-                                </select>
-                            </div>
+                        <div className="form-group" style={{ marginBottom: '24px' }}>
+                            <label>Status</label>
+                            <select name="status" value={projectData.status || 'active'} onChange={handleChange}>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
                         </div>
                     </div>
                     <div className="modal-footer">

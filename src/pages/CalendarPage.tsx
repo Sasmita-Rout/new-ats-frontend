@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Candidate, Interview } from '../types/types';
 import InterviewDetailModal from '../modals/InterviewDetailModal';
 
@@ -9,7 +9,7 @@ type CalendarEvent = {
     candidate: Candidate;
 };
 
-const CalendarView = ({ events, onEventClick, currentDate }) => {
+const CalendarView = ({ events, onEventClick, onMoreClick, currentDate }) => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
 
@@ -31,6 +31,7 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
     while (calendarDays.length % 7 !== 0) {
         calendarDays.push({ key: `next-${calendarDays.length}`, day: null, isOtherMonth: true });
     }
+    const weekCount = calendarDays.length / 7;
 
     const eventsByDate = useMemo(() => {
         const map = new Map<string, CalendarEvent[]>();
@@ -45,7 +46,7 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
     }, [events]);
 
     return (
-        <div className="calendar-grid">
+        <div className="calendar-grid" style={{ gridTemplateRows: `auto repeat(${weekCount}, 1fr)` }}>
             {daysOfWeek.map(day => <div key={day} className="calendar-day-header">{day}</div>)}
             {calendarDays.map(({ key, day, isOtherMonth }) => {
                 const dateKey = day ? new Date(year, month, day).toISOString().split('T')[0] : '';
@@ -56,11 +57,20 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
                     <div key={key} className={`calendar-day ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''}`}>
                         {day && <span className="day-number">{day}</span>}
                         <div className="day-events">
-                            {dayEvents.map(event => (
+                            {dayEvents.slice(0, 3).map(event => (
                                 <div key={event.interview.id} className="event-pill" onClick={() => onEventClick(event)}>
                                     {event.title}
                                 </div>
                             ))}
+                            {dayEvents.length > 3 && (
+                                <button
+                                    type="button"
+                                    className="event-more-btn"
+                                    onClick={() => onMoreClick(new Date(year, month, day), dayEvents)}
+                                >
+                                    +{dayEvents.length - 3} more
+                                </button>
+                            )}
                         </div>
                     </div>
                 );
@@ -70,13 +80,20 @@ const CalendarView = ({ events, onEventClick, currentDate }) => {
 };
 
 
-const CalendarPage = ({ candidates, interviews, onCandidateSelect }) => {
+const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmail }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+    const [backendEvents, setBackendEvents] = useState<CalendarEvent[]>([]);
+    const [moreEventsModal, setMoreEventsModal] = useState<{ dateLabel: string; events: CalendarEvent[] } | null>(null);
+
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
     const allEvents: CalendarEvent[] = useMemo(() => {
         const events: CalendarEvent[] = [];
-        const candidateMap = new Map(candidates.map(c => [c.id, c]));
+
+        if (backendEvents.length > 0) {
+            return backendEvents;
+        }
 
         interviews.forEach(interview => {
             // Find which candidate this interview belongs to
@@ -91,7 +108,78 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect }) => {
             }
         });
         return events;
-    }, [candidates, interviews]);
+    }, [candidates, interviews, backendEvents]);
+
+    useEffect(() => {
+        const fetchEvents = async () => {
+            try {
+                const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                endOfMonth.setHours(23, 59, 59, 0);
+                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                const params = new URLSearchParams({
+                    start_date_time: startOfMonth.toISOString(),
+                    end_date_time: endOfMonth.toISOString(),
+                    timezone,
+                    limit: '500',
+                    offset: '0',
+                });
+                if (organizerEmail) {
+                    params.set('interviewer_email', organizerEmail.trim().toLowerCase());
+                }
+                const response = await fetch(`${API_BASE_URL}/communications/calendar/events-db?${params.toString()}`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data?.detail || 'Failed to fetch calendar events');
+                }
+
+                const toInterviewType = (subject: string | undefined): Interview['type'] => {
+                    const lowered = (subject || '').toLowerCase();
+                    if (lowered.includes('technical')) return 'Technical';
+                    if (lowered.includes('hr')) return 'HR';
+                    if (lowered.includes('final')) return 'Final';
+                    return 'Screening';
+                };
+
+                const derived: CalendarEvent[] = [];
+                for (const event of data?.events || []) {
+                    const candidateEmail = (event?.candidate_email || '').toLowerCase();
+                    const candidate = candidates.find(c => (c.email || '').toLowerCase() === candidateEmail);
+                    if (!candidate) continue;
+
+                    const start = event?.start?.dateTime || event?.start;
+                    const end = event?.end?.dateTime || event?.end;
+                    const startDate = start ? new Date(start) : null;
+                    const endDate = end ? new Date(end) : null;
+                    const duration = startDate && endDate ? Math.max(10, Math.round((endDate.getTime() - startDate.getTime()) / 60000)) : 30;
+
+                    const interview: Interview = {
+                        id: Math.abs((event?.id || '').split('').reduce((acc: number, ch: string) => acc + ch.charCodeAt(0), 0)) || Date.now(),
+                        type: toInterviewType(event?.subject),
+                        date: (startDate || new Date()).toISOString(),
+                        duration,
+                        interviewer: event?.interviewer_email || organizerEmail,
+                        status: 'Scheduled',
+                        meetingLink: event?.meeting_link || event?.meetingLink,
+                        notes: event?.subject || '',
+                        schedulerId: candidate.id,
+                    };
+
+                    derived.push({
+                        date: startDate || new Date(),
+                        title: `${candidate.name}`,
+                        interview,
+                        candidate,
+                    });
+                }
+
+                setBackendEvents(derived);
+            } catch (error) {
+                console.error('Calendar fetch failed:', error);
+            }
+        };
+        fetchEvents();
+    }, [API_BASE_URL, organizerEmail, currentDate, candidates]);
     
     const changeMonth = (offset: number) => {
         setCurrentDate(prev => {
@@ -104,6 +192,18 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect }) => {
     const handleViewProfile = (candidate: Candidate) => {
         setSelectedEvent(null);
         onCandidateSelect(candidate);
+    };
+
+    const handleMoreClick = (date: Date, events: CalendarEvent[]) => {
+        setMoreEventsModal({
+            dateLabel: date.toLocaleDateString(undefined, {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+            }),
+            events,
+        });
     };
 
     return (
@@ -129,8 +229,40 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect }) => {
                     events={allEvents} 
                     currentDate={currentDate} 
                     onEventClick={setSelectedEvent} 
+                    onMoreClick={handleMoreClick}
                 />
             </div>
+
+            {moreEventsModal && (
+                <div className="modal-overlay" onClick={() => setMoreEventsModal(null)}>
+                    <div className="modal-content" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>Interviews on {moreEventsModal.dateLabel}</h3>
+                            <button className="close-btn" onClick={() => setMoreEventsModal(null)}>
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <ul className="calendar-more-list">
+                                {moreEventsModal.events.map((event, index) => (
+                                    <li key={`${event.interview.id}-${index}`} className="calendar-more-item">
+                                        <button
+                                            type="button"
+                                            className="calendar-more-link"
+                                            onClick={() => {
+                                                setMoreEventsModal(null);
+                                                setSelectedEvent(event);
+                                            }}
+                                        >
+                                            {event.candidate.name}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {selectedEvent && (
                 <InterviewDetailModal

@@ -1,49 +1,41 @@
 import React, { useMemo } from 'react';
-import { Project, JobDescription, User } from '../types/types';
+import { Project, JobDescription } from '../types/types';
 
 interface ProjectCardProps {
     project: Project;
     jobs: JobDescription[];
     onSelect: (project: Project) => void;
     onEdit: (project: Project) => void;
-    onDelete: (id: number) => void;
+    showOwner?: boolean;
 }
 
-const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, onDelete }: ProjectCardProps) => {
-    const projectJobs = jobs.filter(j => j.projectId === project.id);
+const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: ProjectCardProps) => {
+    const projectJobs = jobs.filter(j => j.projectId === project.project_id);
     const jobCount = projectJobs.length;
     const activeJobs = projectJobs.filter(j => j.status === 'Active').length;
+    const statusLabel = project.status === 'inactive' ? 'Inactive' : 'Active';
 
     return (
         <div className="card job-card" onClick={() => onSelect(project)}>
             <div className="job-card-main">
-                 <h3 className="job-card-title">{project.name}</h3>
-                 <p className="job-card-company">{project.clientOrDepartment}</p>
-                 <div className="job-card-meta">
+                 <h3 className="job-card-title">{project.project_name}</h3>
+                <div className="job-card-meta">
                     <span><span className="material-symbols-outlined">folder_open</span> {jobCount} Job(s)</span>
                     <span><span className="material-symbols-outlined">fact_check</span> {activeJobs} Active</span>
-                     <span><span className="material-symbols-outlined">priority_high</span> {project.priority} Priority</span>
+                    <span><span className="material-symbols-outlined">toggle_on</span> {statusLabel}</span>
+                    {showOwner && (
+                        <span><span className="material-symbols-outlined">person</span> {project.uploaded_by || 'Unknown'}</span>
+                    )}
                 </div>
                  <p className="job-card-description-snippet">
                     <span className="material-symbols-outlined">notes</span>
-                    {project.description ? `${project.description.substring(0, 100)}...` : 'No description provided.'}
+                    {project.project_description ? `${project.project_description.substring(0, 100)}...` : 'No description provided.'}
                 </p>
             </div>
             <div className="job-card-aside" style={{justifyContent: 'center', gap: '20px'}}>
-                 <span className={`status-pill ${project.status.toLowerCase().replace(' ', '-')}`}>{project.status}</span>
                  <div className="job-card-actions">
                      <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onEdit(project);}}>
                         <span className="material-symbols-outlined">edit</span> Edit
-                    </button>
-                     <button 
-                        className="icon-btn" 
-                        title="Delete Project" 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete(project.id);
-                        }}
-                    >
-                        <span className="material-symbols-outlined">delete</span>
                     </button>
                 </div>
             </div>
@@ -54,17 +46,20 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, onDelete }: P
 ProjectCard.displayName = 'ProjectCard';
 
 
-const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEditProject, onDeleteProject, effectiveUser }) => {
+const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEditProject, effectiveUser }) => {
     
     // Filter projects locally within the component to ensure correct visibility.
     const myProjects = useMemo(() => {
         if (!effectiveUser) return [];
-        if (effectiveUser.role.includes('Admin')) {
+        if (effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm') {
             return projects; // Admins see all projects passed in.
         }
-        // Recruiters filter the full list to see only projects they are a member of.
-        return projects.filter(p => p.team?.some(member => member.userId === effectiveUser.id));
+        // Recruiters see only projects they created.
+        return projects.filter(p => p.uploaded_by === effectiveUser.email);
     }, [projects, effectiveUser]);
+
+    const role = effectiveUser?.role || '';
+    const showOwner = role === 'super_admin' || role === 'admin' || role.includes('Admin');
 
     return (
     <div className="page-content">
@@ -84,12 +79,12 @@ const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEdit
             <div className="job-list-container">
                 {myProjects.map(project => (
                     <ProjectCard
-                        key={project.id}
+                        key={project.project_id}
                         project={project}
                         jobs={jobs}
                         onSelect={onProjectSelect}
                         onEdit={onEditProject}
-                        onDelete={onDeleteProject}
+                        showOwner={showOwner}
                     />
                 ))}
             </div>

@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
-import { Candidate } from '../types/types';
 import { getInitials } from '../utils/helpers';
 
-const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onSendEmail, initialDraft, onClearDraft, onScheduleMeeting }) => {
-    const [fromEmail, setFromEmail] = useState('sarah.johnson@acciontalent.com');
+const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onSendEmail, initialDraft, onClearDraft, senderEmail, onGenerateEmail }) => {
+    const [fromEmail, setFromEmail] = useState(senderEmail || '');
     const [subject, setSubject] = useState('');
     const [body, setBody] = useState('');
     const [cc, setCc] = useState('');
@@ -13,10 +11,11 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     const [showCcBcc, setShowCcBcc] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [showAIPrompt, setShowAIPrompt] = useState(false);
+    const [showSampleTemplates, setShowSampleTemplates] = useState(false);
     const [showSendConfirm, setShowSendConfirm] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
-    const [bulkSendProgress, setBulkSendProgress] = useState({ active: false, index: 0 });
+    const [isSending, setIsSending] = useState(false);
     
     useEffect(() => {
         if (initialDraft) {
@@ -28,7 +27,13 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
             }
             onClearDraft(); 
         }
-    }, [initialDraft, onClearDraft]);
+    }, [initialDraft]);
+
+    useEffect(() => {
+        if (senderEmail && senderEmail !== fromEmail) {
+            setFromEmail(senderEmail);
+        }
+    }, [senderEmail, fromEmail]);
 
     useEffect(() => {
         return () => {
@@ -53,38 +58,8 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         setIsGenerating(true);
         setShowAIPrompt(false);
         try {
-            // Fix: Re-instantiate AI right before the call to ensure up-to-date config if necessary.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const emailSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    subject: { type: Type.STRING, description: "A concise and professional subject line for the email." },
-                    body: { type: Type.STRING, description: "The full body of the email. Use placeholders like '[Candidate Name]' and '[Job Title]' where appropriate. Use line breaks (\\n) for paragraphs." }
-                },
-                required: ['subject', 'body']
-            };
-
-            const fullPrompt = `You are an expert recruitment coordinator. Generate a professional email to a job candidate based on this prompt: "${aiPrompt}". 
-- Use placeholders like [Candidate Name] and [Job Title] where appropriate. 
-- Format the body with paragraphs separated by newlines (\\n).
-- Ensure the tone is professional and engaging.`;
-            
-            // Fix: Updated model name to 'gemini-3-flash-preview' for basic text tasks.
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { parts: [{ text: fullPrompt }] },
-                config: { responseMimeType: 'application/json', responseSchema: emailSchema },
-            });
-            
-            let jsonString = response.text.trim();
-            if (jsonString.startsWith('```json')) {
-                jsonString = jsonString.substring(7).trim();
-            }
-            if (jsonString.endsWith('```')) {
-                jsonString = jsonString.slice(0, -3).trim();
-            }
-            
-            const emailData = JSON.parse(jsonString);
+            if (!onGenerateEmail) throw new Error('AI generation is not configured.');
+            const emailData = await onGenerateEmail(aiPrompt);
             setSubject(emailData.subject || '');
             setBody(emailData.body || '');
         } catch (error) {
@@ -118,7 +93,12 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
             alert("Please provide a subject and a message body before sending.");
             return;
         }
-        const hasInvalidEmails = emailTargets.some(c => !isValidEmail(c.contact.email));
+        if (attachments.length > 0) {
+            alert("File attachments are not supported for API sending yet. Please remove attachments before sending.");
+            return;
+        }
+       
+        const hasInvalidEmails = emailTargets.some(c => !isValidEmail(c.email));
         if (hasInvalidEmails) {
             alert("You have invalid or missing email addresses in your recipient list. Please remove them before sending.");
             return;
@@ -126,58 +106,29 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         setShowSendConfirm(true);
     };
     
-    const handleSendIndividualEmail = (candidate: Candidate) => {
-        if (!isValidEmail(candidate.contact.email)) return;
-    
-        let mailBody = body;
-        if (attachments.length > 0) {
-            const attachmentNote = `--- \nPlease manually attach the following files:\n${attachments.map(f => `- ${f.name}`).join('\n')}\n---\n\n`;
-            mailBody = attachmentNote + body;
-        }
-    
-        const personalizedBody = mailBody.replace(/\[Candidate Name\]/gi, candidate.name);
-        
-        const to = candidate.contact.email;
-        const mailtoLink = `mailto:${to}` +
-                         `?cc=${encodeURIComponent(cc)}` +
-                         `&bcc=${encodeURIComponent(bcc)}` +
-                         `&subject=${encodeURIComponent(subject)}` +
-                         `&body=${encodeURIComponent(personalizedBody)}`;
-    
-        window.open(mailtoLink, '_blank');
-    };
-    
-    const handleSingleSend = () => {
-        onSendEmail(emailTargets.map(c => c.id), subject);
-        setShowSendConfirm(false);
-        handleSendIndividualEmail(emailTargets[0]);
-        setTimeout(() => {
+    const handleConfirmSend = async () => {
+        if (!onSendEmail) return;
+        setIsSending(true);
+        try {
+            await onSendEmail({
+                candidates: emailTargets,
+                subject,
+                body,
+                fromEmail,
+                cc,
+                bcc,
+                contentType: 'Text',
+                saveToSentItems: true,
+            });
+            setShowSendConfirm(false);
             handleClear();
             onClearTargets();
-        }, 500);
-    };
-    
-    const handleStartBulkSend = () => {
-        onSendEmail(emailTargets.map(c => c.id), subject);
-        setBulkSendProgress({ active: true, index: 0 });
-        handleSendIndividualEmail(emailTargets[0]);
-    };
-    
-    const handleBulkSendNext = () => {
-        const nextIndex = bulkSendProgress.index + 1;
-        if (nextIndex < emailTargets.length) {
-            setBulkSendProgress(prev => ({ ...prev, index: nextIndex }));
-            handleSendIndividualEmail(emailTargets[nextIndex]);
+        } catch (error) {
+            console.error('Failed to send email:', error);
+            alert(error instanceof Error ? error.message : 'Failed to send email.');
+        } finally {
+            setIsSending(false);
         }
-    };
-    
-    const handleBulkSendFinish = () => {
-        setShowSendConfirm(false);
-        setBulkSendProgress({ active: false, index: 0 });
-        setTimeout(() => {
-            handleClear();
-            onClearTargets();
-        }, 500);
     };
 
 
@@ -217,11 +168,228 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         }, 0);
     };
 
+    const sampleTemplates = [
+        {
+            category: 'Interview Schedule',
+            title: 'Initial HR Screening',
+            subject: 'Interview Invitation - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for your interest in the [Job Title] role.
+We would like to schedule an initial HR screening with you.
+
+Please confirm your availability for the proposed interview slot.
+
+Best regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Technical Interview Invite',
+            subject: 'Technical Interview Scheduled - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Your technical interview for the [Job Title] role has been scheduled.
+Meeting Link: [Meeting Link]
+
+Please join 5 minutes before the scheduled time.
+
+Regards,
+Talent Acquisition Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Final Round Interview',
+            subject: 'Final Interview Round - [Job Title]',
+            body: `Hi [Candidate Name],
+
+You have been shortlisted for the final interview round for the [Job Title] role.
+Meeting Link: [Meeting Link]
+
+Please be available 10 minutes before the interview.
+
+Regards,
+Hiring Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Interview Reschedule Request',
+            subject: 'Interview Reschedule - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Due to an internal scheduling change, we request to reschedule your interview for the [Job Title] role.
+
+Please share your availability for the next 2-3 business days.
+
+Apologies for the inconvenience.
+
+Regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Interview Schedule',
+            title: 'Panel Interview Confirmation',
+            subject: 'Panel Interview Confirmation - [Job Title]',
+            body: `Hi [Candidate Name],
+
+This is to confirm your panel interview for the [Job Title] role.
+Meeting Link: [Meeting Link]
+
+Panel members will evaluate technical depth and role fit.
+
+Best regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Direct Interview',
+            title: 'Walk-in / Direct Interview',
+            subject: 'Direct Interview Invitation - [Job Title]',
+            body: `Hi [Candidate Name],
+
+You are invited for a direct interview for the [Job Title] position.
+
+Location: [Location]
+Please carry an updated resume and valid ID proof.
+
+Regards,
+HR Team`,
+        },
+        {
+            category: 'Direct Interview',
+            title: 'In-Person Interview Invitation',
+            subject: 'In-Person Interview Invite - [Job Title]',
+            body: `Hi [Candidate Name],
+
+You are invited for an in-person interview for the [Job Title] role.
+
+Location: [Location]
+Please report 15 minutes early at the reception.
+
+Regards,
+Talent Acquisition Team`,
+        },
+        {
+            category: 'Direct Interview',
+            title: 'Same-Day Interview Invite',
+            subject: 'Urgent Interview Opportunity - [Job Title]',
+            body: `Hi [Candidate Name],
+
+We have an immediate interview slot open today for the [Job Title] role.
+
+If interested, please confirm your availability at the earliest.
+
+Regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'Offer & Joining Instructions',
+            subject: 'Welcome Onboard - Joining Details',
+            body: `Hi [Candidate Name],
+
+Congratulations and welcome to the team.
+Your joining for the [Job Title] role is confirmed.
+
+Please report to the office as per the joining instructions shared by HR.
+
+Best wishes,
+People Operations`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'Offer Rollout Email',
+            subject: 'Offer Released - [Job Title]',
+            body: `Hi [Candidate Name],
+
+We are pleased to inform you that your offer for the [Job Title] role has been released.
+
+Kindly review the offer details and confirm your acceptance.
+
+Regards,
+HR Team`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'Pre-Joining Document Request',
+            subject: 'Document Submission Before Joining',
+            body: `Hi [Candidate Name],
+
+Welcome aboard. To complete your onboarding, please share the required documents before your joining date.
+
+If you need any help, feel free to contact us.
+
+Regards,
+People Operations`,
+        },
+        {
+            category: 'Joining / Offer',
+            title: 'First Day Office Instructions',
+            subject: 'Day 1 Office Instructions - [Job Title]',
+            body: `Hi [Candidate Name],
+
+We are excited to welcome you on your first day.
+
+Reporting Location: [Location]
+Please carry valid ID proof and required onboarding documents.
+
+Best regards,
+HR Operations`,
+        },
+        {
+            category: 'Follow-up',
+            title: 'Interview Follow-up',
+            subject: 'Follow-up on Your Interview - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for attending the interview for the [Job Title] role.
+We appreciate your time and interest.
+
+We will share the next update shortly.
+
+Regards,
+Recruitment Team`,
+        },
+        {
+            category: 'Follow-up',
+            title: 'Selection Update',
+            subject: 'Update on Your Application - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for your patience.
+We are pleased to move your profile forward for the [Job Title] role.
+
+Our team will connect with you shortly regarding next steps.
+
+Regards,
+Hiring Team`,
+        },
+        {
+            category: 'Follow-up',
+            title: 'Regret / Not Selected',
+            subject: 'Application Update - [Job Title]',
+            body: `Hi [Candidate Name],
+
+Thank you for your interest in the [Job Title] role and for taking time to interview with us.
+
+After careful consideration, we will not be moving forward at this stage.
+We wish you all the best in your career.
+
+Regards,
+Recruitment Team`,
+        },
+    ];
+
+    const handleUseSampleTemplate = (template: { subject: string; body: string }) => {
+        setSubject(template.subject);
+        setBody(template.body);
+        setShowSampleTemplates(false);
+    };
+
     return (
         <div className="page-content">
             <div className="page-header">
                 <h1>Communications</h1>
-                <p>Compose and send emails to your candidates. Emails are sent via your default mail client.</p>
+                <p>Compose and send emails to your candidates. Emails are sent from your connected account.</p>
             </div>
             <div className="email-composer-container">
                 <div className="composer-sidebar">
@@ -239,7 +407,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                 <div className="candidate-avatar small">{getInitials(candidate.name)}</div>
                                 <div>
                                     <p className="recipient-name">{candidate.name}</p>
-                                    <p className="recipient-email">{candidate.contact.email}</p>
+                                    <p className="recipient-email">{candidate.email}</p>
                                 </div>
                             </div>
                         ))}
@@ -264,9 +432,9 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                 <div id="to" className="recipient-pills-container">
                                     {emailTargets.length > 0 ? (
                                         emailTargets.map(candidate => (
-                                            <div key={candidate.id} className={`recipient-pill ${!isValidEmail(candidate.contact.email) ? 'invalid' : ''}`}>
+                                            <div key={candidate.id} className={`recipient-pill ${!isValidEmail(candidate.email) ? 'invalid' : ''}`}>
                                                 <span className="pill-name">{candidate.name}</span>
-                                                <span className="pill-email">&lt;{candidate.contact.email || 'No Email'}&gt;</span>
+                                                <span className="pill-email">&lt;{candidate.email || 'No Email'}&gt;</span>
                                                 <button onClick={() => handleRemoveTarget(candidate.id)} className="remove-recipient-btn" title={`Remove ${candidate.name}`}>&times;</button>
                                             </div>
                                         ))
@@ -310,13 +478,8 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                     <button title="Bulleted List" onClick={() => applyFormat('list')}><span className="material-symbols-outlined">format_list_bulleted</span></button>
                                 </div>
                                 <div className="actions-toolbar">
-                                     <button 
-                                        className="btn btn-secondary btn-small" 
-                                        onClick={() => onScheduleMeeting(emailTargets[0])} 
-                                        disabled={emailTargets.length !== 1}
-                                        title={emailTargets.length !== 1 ? "Select exactly one recipient to schedule a meeting" : "Schedule a meeting"}
-                                    >
-                                        <span className="material-symbols-outlined">event</span> Schedule Interview
+                                    <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowSampleTemplates(true)}>
+                                        <span className="material-symbols-outlined">menu_book</span> Sample Templates
                                     </button>
                                     <button className="btn btn-secondary btn-small" onClick={() => setShowAIPrompt(true)} disabled={isGenerating}>
                                         <span className="material-symbols-outlined">auto_awesome</span> {isGenerating ? 'Generating...' : 'Generate with AI'}
@@ -387,42 +550,76 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                     </div>
                 </div>
             )}
+            {showSampleTemplates && (
+                <div className="modal-overlay" onClick={() => setShowSampleTemplates(false)}>
+                    <div className="modal-content large" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>Sample Email Templates</h3>
+                            <button onClick={() => setShowSampleTemplates(false)} className="close-btn">&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="modal-subtitle">Select a template to auto-fill subject and message body.</p>
+                            <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
+                                {sampleTemplates.map((template, idx) => (
+                                    <div
+                                        key={`${template.title}-${idx}`}
+                                        style={{
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: '10px',
+                                            padding: '14px',
+                                            background: '#fff'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                            <div>
+                                                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>{template.category}</div>
+                                                <div style={{ fontWeight: 600 }}>{template.title}</div>
+                                            </div>
+                                            <button type="button" className="btn btn-primary btn-small" onClick={() => handleUseSampleTemplate(template)}>
+                                                Use Template
+                                            </button>
+                                        </div>
+                                        <div style={{ marginTop: '10px', fontSize: '13px', color: '#374151' }}>
+                                            <strong>Subject:</strong> {template.subject}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowSampleTemplates(false)}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {showSendConfirm && (
-                <div className="modal-overlay" onClick={() => { if(!bulkSendProgress.active) setShowSendConfirm(false); }}>
+                <div className="modal-overlay" onClick={() => { if(!isSending) setShowSendConfirm(false); }}>
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
                          <div className="modal-header">
-                            <h3>{bulkSendProgress.active ? 'Sending In Progress' : 'Confirm Email'}</h3>
-                             <button onClick={() => setShowSendConfirm(false)} className="close-btn" disabled={bulkSendProgress.active}>&times;</button>
+                            <h3>{isSending ? 'Sending...' : 'Confirm Email'}</h3>
+                             <button onClick={() => setShowSendConfirm(false)} className="close-btn" disabled={isSending}>&times;</button>
                         </div>
-                        {!bulkSendProgress.active ? (
+                        {!isSending ? (
                             <>
                                 <div className="modal-body confirmation-modal">
                                     <span className="material-symbols-outlined confirmation-icon">forward_to_inbox</span>
                                     {emailTargets.length > 1 ? (
                                         <>
-                                            <h3>Send Personalized Emails</h3>
-                                            <p>You are about to generate <strong>{emailTargets.length} individual emails</strong>, one for each recipient.</p>
-                                            <p>Your email client will open a new draft for each person. You must review and send each one manually.</p>
+                                            <h3>Send Emails</h3>
+                                            <p>You are about to send <strong>{emailTargets.length} emails</strong>, one for each recipient.</p>
                                         </>
                                     ) : (
                                         <>
-                                            <h3>Open Email Client</h3>
-                                            <p>This will open your default email application with the email pre-filled.</p>
+                                            <h3>Send Email</h3>
+                                            <p>This will send the email immediately.</p>
                                         </>
-                                    )}
-                                     {attachments.length > 0 && (
-                                        <p className="attachment-reminder">
-                                            <strong>Don't forget to manually attach your {attachments.length} file(s)!</strong>
-                                        </p>
                                     )}
                                 </div>
                                 <div className="modal-footer">
                                     <button type="button" className="btn btn-secondary" onClick={() => setShowSendConfirm(false)}>Cancel</button>
-                                    {emailTargets.length > 1 ? (
-                                        <button type="button" className="btn btn-primary" onClick={handleStartBulkSend}>Start Sending</button>
-                                    ) : (
-                                        <button type="button" className="btn btn-primary" onClick={handleSingleSend}>Continue to Email</button>
-                                    )}
+                                    <button type="button" className="btn btn-primary" onClick={handleConfirmSend} disabled={isSending}>
+                                        Send
+                                    </button>
                                 </div>
                             </>
                         ) : (
@@ -431,31 +628,16 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
                                     <div className="bulk-send-progress">
                                         <span className="material-symbols-outlined">outgoing_mail</span>
                                         <h4>Sending in Progress...</h4>
-                                        <p className="progress-text">
-                                            Email {bulkSendProgress.index + 1} of {emailTargets.length}
-                                        </p>
+                                        <p className="progress-text">Please wait while emails are sent.</p>
                                         <div className="progress-bar-modal">
-                                            <div className="progress-bar-inner-modal" style={{ width: `${((bulkSendProgress.index + 1) / emailTargets.length) * 100}%` }}></div>
+                                            <div className="progress-bar-inner-modal" style={{ width: '100%' }}></div>
                                         </div>
-                                        <p>
-                                            A draft for <strong>{emailTargets[bulkSendProgress.index].name}</strong> should be open.
-                                            <br/>
-                                            Please review and send it from your email client.
-                                        </p>
                                     </div>
                                 </div>
                                 <div className="modal-footer">
-                                    {bulkSendProgress.index < emailTargets.length - 1 ? (
-                                        <button type="button" className="btn btn-primary" onClick={handleBulkSendNext}>
-                                            Next: Email {emailTargets[bulkSendProgress.index + 1].name}
-                                            <span className="material-symbols-outlined">arrow_forward</span>
-                                        </button>
-                                    ) : (
-                                        <button type="button" className="btn btn-primary" onClick={handleBulkSendFinish}>
-                                            <span className="material-symbols-outlined">done_all</span>
-                                            Finish Sending
-                                        </button>
-                                    )}
+                                    <button type="button" className="btn btn-secondary" disabled>
+                                        Sending...
+                                    </button>
                                 </div>
                             </>
                         )}

@@ -1,28 +1,70 @@
 
 
-import React, { useMemo } from 'react';
-import { Candidate, JobDescription, User, Project } from '../types/types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Candidate, JobDescription, User } from '../types/types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ResponsiveContainer } from 'recharts';
 
-const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, onNavigate }) => {
-    const totalCandidates = candidates.length;
-    const activeProjects = projects.filter(p => p.status === 'Active').length;
-    const openPositions = jobs.length;
+const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pendingInvitationCount, onNavigate, apiRequest }) => {
+    const [openPositions, setOpenPositions] = useState<number | null>(null);
+    const totalCandidates = typeof totalCandidatesCount === 'number' ? totalCandidatesCount : candidates.length;
+    const activeProjects = projects.filter(p => p.status !== 'inactive').length;
+    const inactiveProjects = projects.filter(p => p.status === 'inactive').length;
+    const [systemActivity, setSystemActivity] = useState([]);
+    const [recruiterPerformance, setRecruiterPerformance] = useState([]);
+    const [isLoadingCharts, setIsLoadingCharts] = useState(true);
     
-    const avgTimeToHire = useMemo(() => {
-        const hiredCandidates = candidates.filter(c => c.status === 'Hired');
-        if (hiredCandidates.length === 0) return 0;
-        const totalDays = hiredCandidates.reduce((acc, c) => {
-            const applied = new Date(c.appliedDate);
-            const hiredHistory = c.applicationHistory.find(h => h.stage === 'Hired');
-            if (hiredHistory) {
-                const hired = new Date(hiredHistory.date);
-                return acc + (hired.getTime() - applied.getTime()) / (1000 * 3600 * 24);
+    useEffect(() => {
+        const fetchJobStats = async () => {
+            if (!apiRequest) return;
+
+            // Calculate fallback from currently loaded jobs
+            const fallbackCount = jobs.filter(j => j.status === 'Active').length;
+
+            if (!apiRequest) {
+                setOpenPositions(fallbackCount);
+                return;
             }
-            return acc;
-        }, 0);
-        return Math.round(totalDays / hiredCandidates.length);
-    }, [candidates]);
-    
+            try {
+                // This new endpoint will give us the true total count from the database
+                const stats = await apiRequest('/job/stats');
+                if (stats && typeof stats.active_jobs === 'number') {
+                    setOpenPositions(stats.active_jobs);
+                } else {
+                    setOpenPositions(fallbackCount);
+                }
+            } catch (error) {
+                console.error("Failed to fetch job stats:", error);
+                // Fallback to the old method if the API call fails (e.g. 404)
+                setOpenPositions(fallbackCount);
+            }
+        };
+        fetchJobStats();
+
+    }, [jobs, apiRequest]);
+
+    useEffect(() => {
+        const fetchChartData = async () => {
+            if (!apiRequest) {
+                setIsLoadingCharts(false);
+                return;
+            }
+            setIsLoadingCharts(true);
+            try {
+                const [activityData, performanceData] = await Promise.all([
+                    apiRequest('/report/system-activity?days=30'),
+                    apiRequest('/report/recruiter-performance?days=30&limit=10')
+                ]);
+                setSystemActivity(Array.isArray(activityData) ? activityData : []);
+                setRecruiterPerformance(Array.isArray(performanceData) ? performanceData : []);
+            } catch (error) {
+                console.error("Failed to fetch dashboard chart data:", error);
+            } finally {
+                setIsLoadingCharts(false);
+            }
+        };
+        fetchChartData();
+    }, [apiRequest]);
+
     return (
         <>
             <div className="page-header">
@@ -62,82 +104,98 @@ const AdminDashboard = ({ candidates, jobs, projects, pendingInvitationCount, on
                 </div>
                 <div className="stat-card">
                     <div className="icon"><span className="material-symbols-outlined">folder_open</span></div>
-                    <div className="stat-card-info"><h4>Open Positions</h4><p>{openPositions}</p></div>
+                    <div className="stat-card-info"><h4>Open Positions</h4><p>{openPositions ?? '...'}</p></div>
                 </div>
                 <div className="stat-card">
-                    <div className="icon"><span className="material-symbols-outlined">schedule</span></div>
-                    <div className="stat-card-info"><h4>Avg. Time to Hire</h4><p>{avgTimeToHire}d</p></div>
+                    <div className="icon"><span className="material-symbols-outlined">inventory_2</span></div>
+                    <div className="stat-card-info"><h4>Inactive Projects</h4><p>{inactiveProjects}</p></div>
                 </div>
             </div>
             <div className="dashboard-grid single-col">
                 <div className="chart-card">
-                    <h4>System-Wide Activity</h4>
-                    <div className="chart-placeholder">Live system-wide activity graph will be displayed here.</div>
+                    <h4>System-Wide Activity (Last 30 Days)</h4>
+                    {isLoadingCharts ? (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Loading Chart...</div>
+                    ) : systemActivity.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={systemActivity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="day" />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend />
+                                <Line type="monotone" dataKey="searches" stroke="#8884d8" name="Searches" />
+                                <Line type="monotone" dataKey="active_users" stroke="#82ca9d" name="Active Users" />
+                                <Line type="monotone" dataKey="unique_jobs" stroke="#ffc658" name="Unique Jobs" />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>No activity data available.</div>
+                    )}
                 </div>
-                 <div className="chart-card">
-                    <h4>Recruiter Performance</h4>
-                     <div className="chart-placeholder">Recruiter performance metrics will be displayed here.</div>
+                <div className="chart-card">
+                    <h4>Recruiter Performance (Last 30 Days)</h4>
+                    {isLoadingCharts ? (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Loading Chart...</div>
+                    ) : recruiterPerformance.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={recruiterPerformance} layout="vertical" margin={{ top: 5, right: 30, left: 120, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis type="number" />
+                                <YAxis 
+                                    dataKey="ta_email" 
+                                    type="category" 
+                                    width={120}
+                                    tickFormatter={(value) => value.split('@')[0]}
+                                />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="total_searches" name="Total Searches" fill="#8884d8" barSize={15} />
+                                <Bar dataKey="unique_jobs" name="Unique Jobs" fill="#82ca9d" barSize={15} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>No performance data available.</div>
+                    )}
                 </div>
             </div>
         </>
     );
 };
 
+
 // FIX: Removed unused 'interviews' prop from component signature to resolve type error at the call site.
-const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => {
-    const { ownedProjects, sharedProjects } = useMemo(() => {
-        const owned: Project[] = [];
-        const shared: Project[] = [];
+const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, jobs, onProjectSelect, user }) => {
+    const myProjects = useMemo(() => projects, [projects]);
+    const myActiveProjectsCount = myProjects.filter(p => p.status !== 'inactive').length;
+    const myInactiveProjectsCount = myProjects.filter(p => p.status === 'inactive').length;
 
-        projects.forEach(p => {
-            // A user is the owner if they are in the team list with the 'Owner' role.
-            const isOwner = p.team?.some(member => member.userId === user.id && member.role === 'Owner');
-            // A user is a member if they are in the team list with the 'Member' role.
-            const isMember = p.team?.some(member => member.userId === user.id && member.role === 'Member');
+    const activeJobsCount = useMemo(() => {
+        if (!jobs || !myProjects) return 0;
+        
+        // Create a set of *active* project IDs for quick lookup.
+        const myActiveProjectIds = new Set(
+            myProjects.filter(p => p.status !== 'inactive').map(p => String(p.project_id))
+        );
 
-            if (isOwner) {
-                owned.push(p);
-            } else if (isMember) {
-                // This 'else if' ensures that if a user is somehow both Owner and Member, it only shows up in the Owned list.
-                shared.push(p);
-            }
-        });
-
-        return { ownedProjects: owned, sharedProjects: shared };
-    }, [projects, user.id]);
-
-    const myActiveProjectsCount = ownedProjects.filter(p => p.status === 'Active').length;
-    
-    const pendingReviews = candidates.filter(c => ['Applied', 'Screening'].includes(c.status)).length;
-    const hired = candidates.filter(c => c.status === 'Hired').length;
+        // A job is counted as active only if its own status is 'Active' AND it belongs to an active project.
+        return jobs.filter(j => j.status === 'Active' && myActiveProjectIds.has(String(j.projectId))).length;
+    }, [jobs, myProjects]);
 
     const statusCounts = useMemo(() => {
-        const counts = { Applied: 0, Screening: 0, Interview: 0, Offer: 0, Hired: 0 };
+        const counts = { Screening: 0, Interview: 0, Offer: 0, Hired: 0 };
         candidates.forEach(c => {
             if (c.status in counts) counts[c.status]++;
         });
         return Object.entries(counts);
     }, [candidates]);
     
-    const upcomingInterviews = useMemo(() => {
-        const today = new Date();
-        const upcoming: { candidate: Candidate, interview: any }[] = [];
-        candidates.forEach(candidate => {
-            candidate.interviews?.forEach(interview => {
-                if (interview.schedulerId === user.id && new Date(interview.date) >= today && interview.status === 'Scheduled') {
-                    upcoming.push({ candidate, interview });
-                }
-            });
-        });
-        return upcoming.sort((a, b) => new Date(a.interview.date).getTime() - new Date(b.interview.date).getTime()).slice(0, 5);
-    }, [candidates, user.id]);
-
     const ProjectList = ({ title, projectList }) => (
         <div className="chart-card">
             <h4>{title} ({projectList.length})</h4>
             <div className="jobs-list-placeholder">
                 {projectList.length > 0 ? (
-                    projectList.map(p => <a href="#" key={p.id} onClick={(e) => {e.preventDefault(); onProjectSelect(p)}}>{p.name}</a>)
+                    projectList.map(p => <a href="#" key={p.project_id} onClick={(e) => {e.preventDefault(); onProjectSelect(p)}}>{p.project_name}</a>)
                 ) : (
                     <p className="placeholder-text">No projects in this category.</p>
                 )}
@@ -154,19 +212,19 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
              <div className="stats-grid">
                 <div className="stat-card">
                     <div className="icon"><span className="material-symbols-outlined">groups</span></div>
-                    <div className="stat-card-info"><h4>Total Candidates</h4><p>{candidates.length}</p></div>
+                    <div className="stat-card-info"><h4>Total Candidates</h4><p>{typeof totalCandidatesCount === 'number' ? totalCandidatesCount : candidates.length}</p></div>
                 </div>
                 <div className="stat-card">
                     <div className="icon"><span className="material-symbols-outlined">workspaces</span></div>
                     <div className="stat-card-info"><h4>Your Active Projects</h4><p>{myActiveProjectsCount}</p></div>
                 </div>
                 <div className="stat-card">
-                    <div className="icon"><span className="material-symbols-outlined">pending_actions</span></div>
-                    <div className="stat-card-info"><h4>Pending Reviews</h4><p>{pendingReviews}</p></div>
+                    <div className="icon"><span className="material-symbols-outlined">work</span></div>
+                    <div className="stat-card-info"><h4>Active Jobs</h4><p>{activeJobsCount}</p></div>
                 </div>
                 <div className="stat-card">
-                    <div className="icon"><span className="material-symbols-outlined">thumb_up</span></div>
-                    <div className="stat-card-info"><h4>Candidates Hired</h4><p>{hired}</p></div>
+                    <div className="icon"><span className="material-symbols-outlined">inventory_2</span></div>
+                    <div className="stat-card-info"><h4>Inactive Projects</h4><p>{myInactiveProjectsCount}</p></div>
                 </div>
             </div>
             <div className="dashboard-grid">
@@ -183,35 +241,17 @@ const RecruiterDashboard = ({ candidates, projects, onProjectSelect, user }) => 
                       ))}
                   </div>
                </div>
-               <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr', gridTemplateRows: 'auto auto auto', gap: '24px' }}>
-                    <ProjectList title="My Owned Projects" projectList={ownedProjects} />
-                    <ProjectList title="Shared With Me" projectList={sharedProjects} />
-                     <div className="chart-card">
-                        <h4>Upcoming Interviews</h4>
-                        {upcomingInterviews.length > 0 ? (
-                            <div className="upcoming-interviews-list">
-                                {upcomingInterviews.map(({ candidate, interview }) => (
-                                    <div key={interview.id} className="upcoming-interview-item">
-                                        <span className="material-symbols-outlined icon">event</span>
-                                        <div className="interview-item-details">
-                                            <p className="name">{candidate.name} - {interview.type}</p>
-                                            <p className="date">{new Date(interview.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="placeholder-text">No upcoming interviews scheduled.</p>
-                        )}
-                    </div>
+               <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr', gridTemplateRows: 'auto', gap: '24px' }}>
+                    <ProjectList title="My Projects" projectList={myProjects} />
                 </div>
             </div>
         </>
     );
 }
 
-const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate }) => {
-    const isAdminView = effectiveUser.role.includes('Admin');
+
+const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, projects, onProjectSelect, pendingInvitationCount, onNavigate, apiRequest }) => {
+    const isAdminView = effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm';
     
     // Centralized filtering logic for this page.
     // This ensures the correct list of projects is used for either dashboard view.
@@ -219,24 +259,30 @@ const DashboardPage = ({ effectiveUser, candidates, jobs, projects, onProjectSel
         if (isAdminView) {
             return projects; // Admins see all projects passed down.
         }
-        // Recruiters see only projects they are a member of.
-        return projects.filter(p => p.team?.some(member => member.userId === effectiveUser.id));
+        // Recruiters see only projects they created.
+        return projects.filter(p => p.uploaded_by === effectiveUser.email);
     }, [projects, effectiveUser, isAdminView]);
+
     
     return (
         <div className="page-content">
             {isAdminView ? (
                 <AdminDashboard 
                     candidates={candidates} 
+                    totalCandidatesCount={totalCandidatesCount}
                     jobs={jobs} 
                     projects={myProjects}
                     pendingInvitationCount={pendingInvitationCount}
                     onNavigate={onNavigate}
+
+                    apiRequest={apiRequest}
                 />
             ) : (
                 <RecruiterDashboard 
                     candidates={candidates} 
+                    totalCandidatesCount={totalCandidatesCount}
                     projects={myProjects} 
+                    jobs={jobs}
                     onProjectSelect={onProjectSelect} 
                     user={effectiveUser} 
                 />

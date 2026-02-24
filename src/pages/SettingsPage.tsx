@@ -1,39 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, UserRole, CompanyProfile, Invitation, InvitationStatus } from '../types/types';
+import { User, UserRole, Invitation, InvitationStatus } from '../types/types';
 import { getInitials } from '../utils/helpers';
 
-
-// --- SUB-COMPONENTS FOR SETTINGS PAGE ---
-interface SettingsSidebarButtonProps {
-    view: string;
-    activeView: string;
-    setView: (view: string) => void;
-    icon: string;
-    children: React.ReactNode;
-}
-const SettingsSidebarButton = React.memo(({ view, activeView, setView, icon, children }: SettingsSidebarButtonProps) => (
-    <button
-        onClick={() => setView(view)}
-        className={`${activeView === view ? 'active' : ''}`}
-    >
-        <span className="material-symbols-outlined">{icon}</span>
-        {children}
-    </button>
-));
-SettingsSidebarButton.displayName = 'SettingsSidebarButton';
 
 const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
     const [profileData, setProfileData] = useState({
         name: effectiveUser.name,
         email: effectiveUser.email,
         title: 'Senior Recruiter', // Placeholder
-        avatar: effectiveUser.avatar,
-        newPassword: '',
-        confirmPassword: ''
+        avatar: effectiveUser.avatar
     });
     const [isEditing, setIsEditing] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
+    const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const isAvatarImage = (avatar?: string) =>
+        !!avatar && /^(data:image\/|https?:\/\/|blob:|\/)/i.test(avatar);
 
     useEffect(() => {
         // This effect syncs local state with props when editing is not active.
@@ -45,9 +28,7 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
                 name: effectiveUser.name,
                 email: effectiveUser.email,
                 title: 'Senior Recruiter',
-                avatar: effectiveUser.avatar,
-                newPassword: '',
-                confirmPassword: '',
+                avatar: effectiveUser.avatar
             });
         }
     }, [effectiveUser]);
@@ -60,6 +41,10 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Please upload a valid image file.');
+                return;
+            }
             const reader = new FileReader();
             reader.onloadend = () => {
                 setProfileData(prev => ({ ...prev, avatar: reader.result as string }));
@@ -68,17 +53,13 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
         }
     };
 
+    useEffect(() => {
+        setAvatarLoadFailed(false);
+    }, [profileData.avatar]);
+
 
     const handleSave = () => {
-        if (profileData.newPassword && profileData.newPassword !== profileData.confirmPassword) {
-            alert("New passwords do not match.");
-            return;
-        }
-        
         const userUpdatePayload: Partial<User> = { name: profileData.name, email: profileData.email, avatar: profileData.avatar };
-        if (profileData.newPassword) {
-            userUpdatePayload.password = profileData.newPassword;
-        }
 
         onUpdateUser(effectiveUser.id, userUpdatePayload);
         setShowSuccess(true);
@@ -93,9 +74,7 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
             name: effectiveUser.name,
             email: effectiveUser.email,
             title: 'Senior Recruiter',
-            avatar: effectiveUser.avatar,
-            newPassword: '',
-            confirmPassword: '',
+            avatar: effectiveUser.avatar
         });
     };
 
@@ -104,7 +83,7 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
              <div className="page-header with-action" style={{borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px'}}>
                 <div>
                     <h4>My Profile</h4>
-                    <p className="subtitle">Update your personal information and password.</p>
+                    <p className="subtitle">Update your personal information and professional profile photo.</p>
                 </div>
                  {isEditing ? (
                     <div className="actions-group">
@@ -122,8 +101,13 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
             <div style={{marginTop: '24px'}}>
                  <div className="profile-avatar-section">
                     <div className="user-avatar large">
-                        {profileData.avatar && profileData.avatar.startsWith('data:image') ? (
-                            <img src={profileData.avatar} alt={profileData.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                        {isAvatarImage(profileData.avatar) && !avatarLoadFailed ? (
+                            <img
+                                src={profileData.avatar}
+                                alt={profileData.name}
+                                onError={() => setAvatarLoadFailed(true)}
+                                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                            />
                         ) : (
                             getInitials(profileData.name)
                         )}
@@ -135,7 +119,7 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
                             <button type="button" className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
                                 <span className="material-symbols-outlined">upload</span> Update Profile Picture
                             </button>
-                            <button type="button" className="btn btn-danger" onClick={() => setProfileData(prev => ({...prev, avatar: ''}))} disabled={!profileData.avatar || !profileData.avatar.startsWith('data:image')}>
+                            <button type="button" className="btn btn-danger" onClick={() => setProfileData(prev => ({...prev, avatar: ''}))} disabled={!profileData.avatar}>
                                 <span className="material-symbols-outlined">delete</span> Remove Profile Picture
                             </button>
                         </div>
@@ -151,20 +135,8 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
                     </div>
                     <div className="form-group">
                         <label>Email Address</label>
-                        <input type="email" name="email" value={profileData.email} onChange={handleChange} disabled={!isEditing} />
+                        <input type="email" name="email" value={profileData.email} onChange={handleChange} disabled />
                     </div>
-                    {isEditing && (
-                        <>
-                            <div className="form-group">
-                                <label>New Password</label>
-                                <input type="password" name="newPassword" value={profileData.newPassword} onChange={handleChange} placeholder="Leave blank to keep current password" />
-                            </div>
-                            <div className="form-group">
-                                <label>Confirm New Password</label>
-                                <input type="password" name="confirmPassword" value={profileData.confirmPassword} onChange={handleChange} />
-                            </div>
-                        </>
-                    )}
                  </div>
                  {showSuccess && !isEditing && (
                     <div style={{textAlign: 'right', marginTop: '24px'}}>
@@ -172,92 +144,6 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
                     </div>
                  )}
             </div>
-        </div>
-    );
-};
-
-const CompanyProfileView = ({ companyProfile, onUpdateCompanyProfile, currentUser }) => {
-    const [formData, setFormData] = useState<CompanyProfile | null>(companyProfile);
-    const [isEditing, setIsEditing] = useState(false);
-    const isAdmin = currentUser?.role.includes('Admin');
-
-    useEffect(() => { setFormData(companyProfile); }, [companyProfile]);
-    if (!formData) return <p>Loading...</p>;
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => prev ? { ...prev, [name]: value } : null);
-    };
-
-    const handleSave = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formData || !isAdmin) return;
-        onUpdateCompanyProfile(formData);
-        setIsEditing(false);
-    };
-
-    return (
-         <div className="info-card">
-            <div className="page-header with-action" style={{borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px'}}>
-                <div>
-                    <h4>Company Profile</h4>
-                    <p className="subtitle">Manage your organization's public information.</p>
-                </div>
-                 {isAdmin && (isEditing ? (
-                    <div className="actions-group">
-                        <button className="btn btn-secondary" onClick={() => { setIsEditing(false); setFormData(companyProfile); }}>Cancel</button>
-                        <button className="btn btn-primary" onClick={handleSave}>Save Changes</button>
-                    </div>
-                 ) : (
-                    <button className="btn btn-secondary" onClick={() => setIsEditing(true)}>
-                        Edit Profile
-                    </button>
-                 ))}
-            </div>
-            <form onSubmit={handleSave}>
-                <div className="company-profile-header">
-                     <img src={formData.logo || 'https://via.placeholder.com/100'} alt="Company Logo" className="company-logo" />
-                     <div style={{flexGrow: 1}}>
-                        {isEditing ? (
-                            <>
-                                <div className="form-group" style={{marginBottom: '12px'}}><label>Company Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} /></div>
-                                <div className="form-group"><label>Industry</label><input type="text" name="industry" value={formData.industry} onChange={handleChange} /></div>
-                            </>
-                        ) : (
-                            <>
-                                <h1 style={{fontSize: '24px', margin: 0}}>{formData.name}</h1>
-                                <p style={{fontSize: '16px', color: '#555'}}>{formData.industry}</p>
-                            </>
-                        )}
-                     </div>
-                </div>
-                <div className="form-group" style={{marginBottom: '24px'}}>
-                    <label>About Us</label>
-                    {isEditing ? (
-                        <textarea name="description" value={formData.description} onChange={handleChange} rows={4} />
-                    ) : (
-                        <p>{formData.description}</p>
-                    )}
-                </div>
-                <div className="company-profile-grid">
-                    <div className="form-group">
-                        <label>Website</label>
-                        {isEditing ? <input type="text" name="website" value={formData.website} onChange={handleChange} /> : <div className="company-info-item"><span className="material-symbols-outlined">public</span><a href={formData.website} target="_blank" rel="noopener noreferrer">{formData.website}</a></div>}
-                    </div>
-                     <div className="form-group">
-                        <label>Contact Email</label>
-                        {isEditing ? <input type="email" name="email" value={formData.email} onChange={handleChange} /> : <div className="company-info-item"><span className="material-symbols-outlined">mail</span><a href={`mailto:${formData.email}`}>{formData.email}</a></div>}
-                    </div>
-                     <div className="form-group">
-                        <label>LinkedIn</label>
-                        {isEditing ? <input type="text" name="linkedin" value={formData.linkedin} onChange={handleChange} /> : <div className="company-info-item"><span className="material-symbols-outlined">group</span><a href={formData.linkedin} target="_blank" rel="noopener noreferrer">Company Profile</a></div>}
-                    </div>
-                     <div className="form-group">
-                        <label>Address</label>
-                        {isEditing ? <input type="text" name="address" value={formData.address} onChange={handleChange} /> : <div className="company-info-item"><span className="material-symbols-outlined">location_on</span><p>{formData.address}</p></div>}
-                    </div>
-                </div>
-            </form>
         </div>
     );
 };
@@ -441,7 +327,7 @@ const WorkspaceDataView = ({ onExportData, onImportData, onResetAllData }) => {
                     </button>
                 </div>
                 <div className="workspace-tool-card">
-                    <div className="tool-icon-wrapper" style={{'--tool-color': '#8B5CF6', '--tool-bg': '#F5F3FF'} as React.CSSProperties}>
+                    <div className="tool-icon-wrapper" style={{'--tool-color': '#3B82F6', '--tool-bg': '#EFF6FF'} as React.CSSProperties}>
                         <span className="material-symbols-outlined">upload</span>
                     </div>
                      <div className="workspace-card-info">
@@ -470,94 +356,50 @@ const WorkspaceDataView = ({ onExportData, onImportData, onResetAllData }) => {
     );
 };
 
-const ContactUsView = ({ companyProfile }) => {
-    const [isSubmitted, setIsSubmitted] = useState(false);
-
-    if (isSubmitted) {
-        return (
-            <div className="info-card">
-                <div className="empty-state">
-                    <span className="material-symbols-outlined" style={{fontSize: '64px', color: 'var(--primary-color)'}}>check_circle</span>
-                    <h3>Message Sent Successfully!</h3>
-                    <p>Thank you for reaching out. Our support team has received your inquiry and will get back to you shortly.</p>
-                    <button onClick={() => setIsSubmitted(false)} className="btn btn-primary">Send Another Message</button>
-                </div>
-            </div>
-        );
-    }
-
+const ContactSupportView = () => {
     return (
-        <div className="contact-us-container">
-            <div className="contact-form-card">
-                <div className="page-header">
-                    <h4>Get in Touch</h4>
-                    <p className="subtitle">Have an issue or a question? Fill out the form below and we'll help you out.</p>
+        <div className="info-card">
+            <div className="page-header contact-support-header">
+                <div>
+                    <h4>Contact Support</h4>
+                    <p className="subtitle">For reference and doubts, contact any of them below......</p>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); setIsSubmitted(true); }} className="form-grid single-col">
-                    <div className="form-grid" style={{gridTemplateColumns: '1fr 1fr', gap: '20px'}}>
-                        <div className="form-group">
-                            <label>Your Name</label>
-                            <input type="text" placeholder="e.g. John Doe" required />
-                        </div>
-                        <div className="form-group">
-                            <label>Your Email</label>
-                            <input type="email" placeholder="e.g. john@example.com" required />
-                        </div>
-                    </div>
-                    <div className="form-group">
-                        <label>Subject</label>
-                        <input type="text" placeholder="How can we help you?" required />
-                    </div>
-                    <div className="form-group">
-                        <label>Message</label>
-                        <textarea rows={6} placeholder="Please describe your issue or inquiry in detail..." required></textarea>
-                    </div>
-                    <div style={{textAlign: 'right', marginTop: '8px'}}>
-                        <button type="submit" className="btn btn-primary" style={{padding: '12px 24px'}}>
-                            <span className="material-symbols-outlined">send</span> Send Message
-                        </button>
-                    </div>
-                </form>
             </div>
-
-            <div className="contact-info-sidebar">
-                <div className="contact-info-card">
-                    <h4>Contact Information</h4>
-                    
-                    <div className="contact-detail-item">
-                        <span className="material-symbols-outlined">mail</span>
-                        <div className="contact-detail-content">
-                            <label>Email</label>
-                            <a href={`mailto:${companyProfile.email}`}>{companyProfile.email}</a>
-                        </div>
+            <div className="contact-support-grid">
+                <div className="contact-support-card">
+                    <div className="contact-support-icon">
+                        <span className="material-symbols-outlined">person</span>
                     </div>
-
-                    <div className="contact-detail-item">
-                        <span className="material-symbols-outlined">public</span>
-                        <div className="contact-detail-content">
-                            <label>Website</label>
-                            <a href={companyProfile.website} target="_blank" rel="noopener noreferrer">{companyProfile.website}</a>
-                        </div>
-                    </div>
-
-                    <div className="contact-detail-item">
-                        <span className="material-symbols-outlined">group</span>
-                        <div className="contact-detail-content">
-                            <label>Social</label>
-                            <a href={companyProfile.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn Profile</a>
-                        </div>
+                    <div className="contact-support-content">
+                        <strong>Kokila Umasankar</strong>
+                        <a href="mailto:kokila.umasankar@accionlabs.com">kokila.umasankar@accionlabs.com</a>
                     </div>
                 </div>
-
-                <div className="faq-card">
-                    <h4 style={{marginBottom: '16px', fontSize: '16px'}}>Frequently Asked Questions</h4>
-                    <div className="faq-item">
-                        <h5>How do I reset my password?</h5>
-                        <p>Go to "My Profile" settings and enter a new password in the change password section.</p>
+                <div className="contact-support-card">
+                    <div className="contact-support-icon">
+                        <span className="material-symbols-outlined">person</span>
                     </div>
-                    <div className="faq-item">
-                        <h5>Where can I find user guides?</h5>
-                        <p>Check our internal documentation portal or contact support for specific guides.</p>
+                    <div className="contact-support-content">
+                        <strong>Sandhiya G</strong>
+                        <a href="mailto:sandhiya.g@accionlabs.com">sandhiya.g@accionlabs.com</a>
+                    </div>
+                </div>
+                <div className="contact-support-card">
+                    <div className="contact-support-icon">
+                        <span className="material-symbols-outlined">person</span>
+                    </div>
+                    <div className="contact-support-content">
+                        <strong>Sasmita Rout</strong>
+                        <a href="mailto:sasmita.rout@accionlabs.com">sasmita.rout@accionlabs.com</a>
+                    </div>
+                </div>
+                <div className="contact-support-card">
+                    <div className="contact-support-icon">
+                        <span className="material-symbols-outlined">person</span>
+                    </div>
+                    <div className="contact-support-content">
+                        <strong>Baburaj R</strong>
+                        <a href="mailto:baburaj.r@accionlabs.com">baburaj.r@accionlabs.com</a>
                     </div>
                 </div>
             </div>
@@ -565,55 +407,26 @@ const ContactUsView = ({ companyProfile }) => {
     );
 };
 
-const SettingsPage = ({ effectiveUser, onUpdateUser, onResetAllData, companyProfile, onUpdateCompanyProfile, allUsers, onUpdateAllUsers, onExportData, onImportData, invitations, onInviteUser, onAddUser }) => {
-    const [activeTab, setActiveTab] = useState('My Profile');
-    
-    const isAdmin = effectiveUser.role.includes('Admin');
-
-    const navTabs = [
-        { view: 'My Profile', icon: 'person', label: 'My Profile' },
-        { view: 'Team Members', icon: 'groups', label: 'Team Members' },
-        { view: 'Company Profile', icon: 'apartment', label: 'Company Profile' },
-        { view: 'Permissions', icon: 'verified_user', label: 'Permissions' },
-        { view: 'Workspace', icon: 'database', label: 'Workspace' },
-        { view: 'Contact Us', icon: 'support_agent', label: 'Contact Us' },
-    ];
+const SettingsPage = ({ effectiveUser, onUpdateUser, allUsers, invitations, onInviteUser, activeView = 'My Profile' }) => {
+    const renderCentered = (content: React.ReactNode) => (
+        <div className="settings-view-wrapper">
+            {content}
+        </div>
+    );
 
     const renderContent = () => {
-        switch (activeTab) {
-            case 'My Profile': return <MyProfileView effectiveUser={effectiveUser} onUpdateUser={onUpdateUser} />;
-            case 'Company Profile': return <CompanyProfileView companyProfile={companyProfile} onUpdateCompanyProfile={onUpdateCompanyProfile} currentUser={effectiveUser} />;
+        switch (activeView) {
+            case 'My Profile': return renderCentered(<MyProfileView effectiveUser={effectiveUser} onUpdateUser={onUpdateUser} />);
             case 'Team Members': return <RecruiterTeamView invitations={invitations.filter(i => i.inviterId === effectiveUser.id)} onInviteUser={onInviteUser} allUsers={allUsers} />;
-            case 'Permissions': return <PermissionsView users={allUsers} onUpdateAllUsers={onUpdateAllUsers} currentUser={effectiveUser} onAddUser={onAddUser} />;
-            case 'Workspace': return <WorkspaceDataView onExportData={onExportData} onImportData={onImportData} onResetAllData={onResetAllData} />;
-            case 'Contact Us': return <ContactUsView companyProfile={companyProfile} />;
-            default: return <MyProfileView effectiveUser={effectiveUser} onUpdateUser={onUpdateUser} />;
+            case 'Contact Support': return renderCentered(<ContactSupportView />);
+            default: return renderCentered(<MyProfileView effectiveUser={effectiveUser} onUpdateUser={onUpdateUser} />);
         }
     };
 
     return (
         <div className="page-content">
-            <div className="page-header"><h1>Settings</h1></div>
-            <div className="settings-layout">
-                <nav className="settings-nav">
-                    {navTabs.map(tab => {
-                        const isTeamTabForAdmin = tab.view === 'Team Members' && isAdmin;
-                        const isAdminOnlyTab = ['Company Profile', 'Permissions', 'Workspace'].includes(tab.view) && !isAdmin;
-
-                        if (isTeamTabForAdmin || isAdminOnlyTab) {
-                            return null;
-                        }
-
-                        return (
-                            <SettingsSidebarButton key={tab.view} view={tab.view} activeView={activeTab} setView={setActiveTab} icon={tab.icon}>
-                                {tab.label}
-                            </SettingsSidebarButton>
-                        );
-                    })}
-                </nav>
-                <div className="settings-content">
-                    {renderContent()}
-                </div>
+            <div className="settings-content">
+                {renderContent()}
             </div>
         </div>
     );

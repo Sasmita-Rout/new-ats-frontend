@@ -93,8 +93,6 @@ First, determine the user's intent.
 *   **AI Job Generation (in Projects):** When creating a job, you can choose "Generate with AI". Give it a simple prompt (e.g., "senior react developer with AWS experience"), and it will generate a full, detailed job description for you to edit and save.
 
 **4. Admin-Specific Features**
-*   **Manage Users:** Admins can view all users, edit their roles, delete them, or manually create new ones. They also approve invitations sent by Recruiters.
-*   **Impersonation:** An Admin can view the app from another user's perspective to help them or troubleshoot issues. A yellow banner appears at the top during impersonation.
 *   **Settings > Workspace:** Admins can export a full backup of all application data, import a backup (which overwrites everything), or reset the entire application to its default state.
 ---`,
         }

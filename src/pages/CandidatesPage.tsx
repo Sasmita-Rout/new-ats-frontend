@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Candidate, JobDescription } from '../types/types';
+import { Candidate } from '../types/types';
 import FilterBar from '../components/candidates/FilterBar';
 import ProcessingQueue from '../components/common/ProcessingQueue';
 import SkillTag from '../components/common/SkillTag';
@@ -7,11 +7,12 @@ import { exportToCSV } from '../utils/helpers';
 
 const BATCH_SIZE = 10;
 
-const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected }) => {
+const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected, onViewCandidate, onScheduleSelected, confirmActionToast }) => {
     const [displayLimit, setDisplayLimit] = useState(10);
     const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
     const [isFiltersVisible, setIsFiltersVisible] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [expandedSkillIds, setExpandedSkillIds] = useState<number[]>([]);
 
     useEffect(() => {
         setVisibleCount(BATCH_SIZE);
@@ -46,8 +47,18 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         );
     };
 
-    const handleDeleteSelected = () => {
-        if (window.confirm(`Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`)) {
+    const toggleSkillsExpanded = (id: number) => {
+        setExpandedSkillIds(prev =>
+            prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
+        );
+    };
+
+    const handleDeleteSelected = async () => {
+        const message = `Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`;
+        const shouldDelete = confirmActionToast
+            ? await confirmActionToast(message, 'Delete', 'Cancel')
+            : window.confirm(message);
+        if (shouldDelete) {
             onDeleteCandidates(selectedIds);
             setSelectedIds([]);
         }
@@ -55,6 +66,13 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
     const handleEmailClick = () => {
         onEmailSelected(selectedIds);
+        setSelectedIds([]);
+    };
+
+    const handleScheduleSelected = () => {
+        if (!onScheduleSelected) return;
+        const selectedCandidates = candidates.filter(c => selectedIds.includes(c.id));
+        onScheduleSelected(selectedCandidates);
         setSelectedIds([]);
     };
     
@@ -74,12 +92,10 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
         const formattedData = dataToExport.map(c => ({
             'Name': c.name,
-            'Title': c.title,
             'Category': c.category,
-            'Email': c.contact.email,
-            'Phone': c.contact.phone,
-            'Location': c.contact.location,
-            'Status': c.status,
+            'Email': c.email,
+            'Phone': c.phone,
+            'Location': c.location,
             'Applied Date': c.appliedDate,
             'Salary Expectation': c.salaryExpectation,
             'Skills': c.skills.join('; '),
@@ -125,6 +141,9 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                              <button className="btn btn-secondary" onClick={handleEmailClick}>
                                 <span className="material-symbols-outlined">mail</span> Email Selected
                             </button>
+                            <button className="btn btn-secondary" onClick={handleScheduleSelected} disabled={!onScheduleSelected}>
+                                <span className="material-symbols-outlined">event_available</span> Schedule Interview
+                            </button>
                             <button className="btn btn-secondary" onClick={handleExportCSV}>
                                 <span className="material-symbols-outlined">download</span> Export Selected
                             </button>
@@ -133,7 +152,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             </button>
                         </>
                     ) : (
-                        <>
+                        <div className="candidates-main-actions-row">
                             <div className="page-size-selector">
                                 <label htmlFor="displayLimit">Show up to:</label>
                                 <select id="displayLimit" value={displayLimit === Number.MAX_SAFE_INTEGER ? 'all' : displayLimit} onChange={handleDisplayLimitChange}>
@@ -153,7 +172,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             <button className="btn btn-primary" onClick={onUpload}>
                                 <span className="material-symbols-outlined">upload</span> Add Resumes
                             </button>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
@@ -181,18 +200,23 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     />
                                 </th>
                                 <th>Candidate</th>
-                                <th>Contact & Location</th>
-                                <th>Current Role</th>
+                                <th>Email</th>
+                                <th>Contact</th>
+                                <th>Location</th>
                                 <th>Skills</th>
                                 {selectedJob && <th>Match Score</th>}
-                                <th>Status</th>
                                 <th>Applied</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {visibleCandidates.map(candidate => (
-                                <tr key={candidate.id}>
+                            {visibleCandidates.map(candidate => {
+                                const isSkillsExpanded = expandedSkillIds.includes(candidate.id);
+                                const totalColumns = selectedJob ? 9 : 8;
+
+                                return (
+                                <React.Fragment key={candidate.id}>
+                                <tr>
                                     <td>
                                         <input
                                             type="checkbox"
@@ -203,43 +227,48 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     </td>
                                     <td>
                                         <div className="candidate-cell">
-                                            <div className="candidate-avatar">{candidate.avatar}</div>
                                             <div>
                                                 <a href="#" className="candidate-name" onClick={(e) => { e.preventDefault(); onCandidateSelect(candidate); }}>{candidate.name}</a>
-                                                <p className="candidate-title">{candidate.category}</p>
                                             </div>
                                         </div>
                                     </td>
-                                    <td>
-                                        <p>{candidate.contact.email}</p>
-                                        <p>{candidate.contact.location}</p>
-                                    </td>
-                                    <td><p><strong>{candidate.title}</strong></p></td>
+                                    <td>{candidate.email}</td>
+                                    <td>{candidate.phone}</td>
+                                    <td>{candidate.location}</td>
                                     <td>
                                         <div className="skills-container">
-                                            {candidate.skills.slice(0, 3).map(skill => <SkillTag key={skill} tag={skill} />)}
+                                            {candidate.skills.slice(0, 3)
+                                                .map(skill => <SkillTag key={skill} tag={skill} />)}
                                             {candidate.skills.length > 3 && (
-                                                <span className="skill-tag bg-gray-200 text-gray-800 border-gray-300">
-                                                    +{candidate.skills.length - 3}
-                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="skill-tag bg-gray-200 text-gray-800 border-gray-300"
+                                                    onClick={() => toggleSkillsExpanded(candidate.id)}
+                                                    aria-label={isSkillsExpanded ? "Show fewer skills" : "Show all skills"}
+                                                >
+                                                    {`+${candidate.skills.length - 3} more`}
+                                                </button>
                                             )}
                                         </div>
                                     </td>
                                     {selectedJob && (
                                         <td><span className={`match-score`}>{(candidate.jobSpecificMatchScore || 0)}%</span></td>
                                     )}
-                                    <td><span className={`status-pill ${candidate.status.toLowerCase()}`}>{candidate.status}</span></td>
                                     <td>{candidate.appliedDate}</td>
                                     <td>
                                         <div className="action-buttons">
-                                            <button className="icon-btn" title="View Details" onClick={() => onCandidateSelect(candidate)}>
+                                            <button className="icon-btn" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
                                                 <span className="material-symbols-outlined">visibility</span>
                                             </button>
                                             <button 
                                                 className="icon-btn" 
                                                 title="Delete Candidate" 
-                                                onClick={() => {
-                                                    if (window.confirm(`Are you sure you want to delete ${candidate.name}? This action cannot be undone.`)) {
+                                                onClick={async () => {
+                                                    const message = `Are you sure you want to delete ${candidate.name}? This action cannot be undone.`;
+                                                    const shouldDelete = confirmActionToast
+                                                        ? await confirmActionToast(message, 'Delete', 'Cancel')
+                                                        : window.confirm(message);
+                                                    if (shouldDelete) {
                                                         onDeleteCandidates([candidate.id]);
                                                     }
                                                 }}
@@ -249,7 +278,20 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                {isSkillsExpanded && (
+                                    <tr className="candidate-skill-expanded-row">
+                                        <td colSpan={totalColumns}>
+                                            <div className="candidate-skill-expanded-panel">
+                                                <strong>All Skills:</strong>
+                                                <div className="skills-container">
+                                                    {candidate.skills.map(skill => <SkillTag key={`${candidate.id}-${skill}`} tag={skill} />)}
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                </React.Fragment>
+                            )})}
                         </tbody>
                     </table>
                     {canLoadMore && (

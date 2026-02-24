@@ -9,8 +9,14 @@ if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 }
 
+//const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
+const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
+
 export const downloadResumeText = (candidate: Candidate) => {
-  const blob = new Blob([candidate.resumeContent], { type: 'text/plain' });
+  const textContent = candidate.resumeContent && candidate.resumeContent.trim().length > 0
+    ? candidate.resumeContent
+    : JSON.stringify(candidate, (key, value) => (key === 'originalResumeFile' ? undefined : value), 2);
+  const blob = new Blob([textContent], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -22,15 +28,22 @@ export const downloadResumeText = (candidate: Candidate) => {
 };
 
 export const downloadOriginalResume = (candidate: Candidate) => {
-    if (!candidate.originalResumeFile) return;
-    const url = URL.createObjectURL(candidate.originalResumeFile);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = candidate.originalResumeFile.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (candidate.originalResumeFile) {
+        const url = URL.createObjectURL(candidate.originalResumeFile);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = candidate.originalResumeFile.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
+    }
+
+    if (candidate.email) {
+        const vaultUrl = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/download/${encodeURIComponent(candidate.email)}`;
+        window.open(vaultUrl, '_blank');
+    }
 };
 
 export const getTextFromFile = async (file: File, ai?: GoogleGenAI): Promise<string> => {

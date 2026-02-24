@@ -4,13 +4,10 @@ import { getInitials } from '../../utils/helpers';
 
 interface ProfilePopoverProps {
     user: User;
-    onClose: () => void;
     onUpdate: (data: Partial<User>) => void;
-    onLogout: () => void;
-    onNavigate: (page: string) => void;
 }
 
-const ProfilePopover: React.FC<ProfilePopoverProps> = ({ user, onClose, onUpdate, onLogout, onNavigate }) => {
+const ProfilePopover: React.FC<ProfilePopoverProps> = ({ user, onUpdate }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [name, setName] = useState(user.name);
     const [avatar, setAvatar] = useState(user.avatar);
@@ -42,11 +39,6 @@ const ProfilePopover: React.FC<ProfilePopoverProps> = ({ user, onClose, onUpdate
         setName(user.name);
         setAvatar(user.avatar);
         setIsEditing(false);
-    };
-
-    const navigateToSettings = () => {
-        onNavigate('Settings');
-        onClose();
     };
 
     const AvatarDisplay = ({ src, name, sizeClass = 'large' }) => (
@@ -110,16 +102,6 @@ const ProfilePopover: React.FC<ProfilePopoverProps> = ({ user, onClose, onUpdate
                 )}
             </div>
 
-            <div className="popover-footer">
-                <button className="popover-link" onClick={navigateToSettings}>
-                    <span className="material-symbols-outlined">settings</span>
-                    <span>Account Settings</span>
-                </button>
-                <button className="popover-link" onClick={onLogout}>
-                    <span className="material-symbols-outlined">logout</span>
-                    <span>Logout</span>
-                </button>
-            </div>
         </div>
     );
 };

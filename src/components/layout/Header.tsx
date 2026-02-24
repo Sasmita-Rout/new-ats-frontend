@@ -46,7 +46,7 @@ const GlobalSearchResults = ({ candidates, jobs, onCandidateSelect, onJobSelect 
     );
 };
 
-const Header = ({ user, impersonatedUser, onStopImpersonation, globalSearchTerm, onSearchChange, candidates, jobs, onCandidateSelect, onJobSelect, onUpdateCurrentUser, onLogout, onNavigate, notifications, onMarkAsRead, onMarkAllAsRead, onNotificationNavigate }) => {
+const Header = ({ currentPage, user, impersonatedUser, onStopImpersonation, globalSearchTerm, onSearchChange, candidates, jobs, onCandidateSelect, onJobSelect, onUpdateCurrentUser, onLogout, onNavigate, notifications, onMarkAsRead, onMarkAllAsRead, onNotificationNavigate }) => {
     const [isResultsVisible, setIsResultsVisible] = useState(false);
     const [isProfilePopoverVisible, setProfilePopoverVisible] = useState(false);
     const [isNotificationPopoverVisible, setNotificationPopoverVisible] = useState(false);
@@ -97,6 +97,7 @@ const Header = ({ user, impersonatedUser, onStopImpersonation, globalSearchTerm,
     };
 
     const unreadCount = notifications.filter(n => !n.read).length;
+    const isContactSupportOpen = currentPage === 'SettingsContactSupport';
     
     return (
     <>
@@ -129,6 +130,15 @@ const Header = ({ user, impersonatedUser, onStopImpersonation, globalSearchTerm,
                 )}
             </div>
             <div className="header-actions" ref={actionsRef}>
+                <button
+                    type="button"
+                    className="contact-support-button"
+                    onClick={() => onNavigate(isContactSupportOpen ? 'Dashboard' : 'SettingsContactSupport')}
+                    title="Contact Support"
+                    aria-label="Contact support"
+                >
+                    <span className="material-symbols-outlined">headset</span>
+                </button>
                 <div className="notification-bell" onClick={handleNotificationBellClick}>
                     <span className="material-symbols-outlined">notifications</span>
                     {unreadCount > 0 && <span className="notification-badge">{unreadCount}</span>}
@@ -160,10 +170,7 @@ const Header = ({ user, impersonatedUser, onStopImpersonation, globalSearchTerm,
                  {isProfilePopoverVisible && user && (
                     <ProfilePopover 
                         user={user}
-                        onClose={() => setProfilePopoverVisible(false)}
                         onUpdate={onUpdateCurrentUser}
-                        onLogout={onLogout}
-                        onNavigate={onNavigate}
                     />
                 )}
             </div>

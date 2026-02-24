@@ -7,7 +7,6 @@ const MeetingSchedulerModal = ({ isOpen, onClose, onSchedule, candidate }) => {
     const [dateTime, setDateTime] = useState('');
     const [duration, setDuration] = useState(30);
     const [interviewer, setInterviewer] = useState('');
-    const [meetingLink, setMeetingLink] = useState('');
     const [description, setDescription] = useState('');
 
     useEffect(() => {
@@ -21,17 +20,6 @@ const MeetingSchedulerModal = ({ isOpen, onClose, onSchedule, candidate }) => {
             setDateTime(formattedDateTime);
 
             setDescription(`- Introduction\n- Discuss experience related to the role\n- Candidate questions`);
-            
-            // Generate a dummy meeting link
-            const generateMeetLink = () => {
-                const chars = 'abcdefghijklmnopqrstuvwxyz';
-                const part1 = Array(3).fill(null).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
-                const part2 = Array(4).fill(null).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
-                const part3 = Array(3).fill(null).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
-                return `https://meet.google.com/lookup/${part1}-${part2}-${part3}`;
-            };
-            setMeetingLink(generateMeetLink());
-            
         }
     }, [isOpen, candidate]);
 
@@ -39,7 +27,7 @@ const MeetingSchedulerModal = ({ isOpen, onClose, onSchedule, candidate }) => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSchedule({ title, type, dateTime, duration, interviewer, meetingLink, description });
+        onSchedule({ title, type, dateTime, duration, interviewer, description });
     };
 
     return (
@@ -84,10 +72,6 @@ const MeetingSchedulerModal = ({ isOpen, onClose, onSchedule, candidate }) => {
                                     <option value={60}>60 minutes</option>
                                 </select>
                             </div>
-                        </div>
-                         <div className="form-group" style={{ marginBottom: '16px' }}>
-                            <label>Meeting Link</label>
-                            <input type="text" value={meetingLink} onChange={e => setMeetingLink(e.target.value)} placeholder="e.g., https://meet.google.com/..." />
                         </div>
                         <div className="form-group">
                             <label>Description / Agenda</label>

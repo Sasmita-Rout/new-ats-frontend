@@ -13,7 +13,7 @@ const CandidateMatchDetailPage = ({ candidate, job, onBack, onUpdateCandidate })
         return { matchingSkills: matching, missingSkills: missing };
     }, [candidate.skills, job.requiredSkills]);
 
-    const statuses: Candidate['status'][] = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected'];
+    const statuses: Candidate['status'][] = ['Screening', 'Interview', 'Offer', 'Hired', 'Rejected'];
     const handleUpdate = (field, value) => {
         onUpdateCandidate({ ...candidate, [field]: value });
     };
@@ -31,9 +31,9 @@ const CandidateMatchDetailPage = ({ candidate, job, onBack, onUpdateCandidate })
                     <h1>{candidate.name}</h1>
                     <p className="candidate-title">Match for: <strong>{job.title}</strong></p>
                     <div className="contact-info-bar">
-                        <span><span className="material-symbols-outlined">mail</span>{candidate.contact.email || 'N/A'}</span>
-                        <span><span className="material-symbols-outlined">phone</span>{candidate.contact.phone || 'N/A'}</span>
-                        <span><span className="material-symbols-outlined">location_on</span>{candidate.contact.location || 'N/A'}</span>
+                        <span><span className="material-symbols-outlined">mail</span>{candidate.email || 'N/A'}</span>
+                        <span><span className="material-symbols-outlined">phone</span>{candidate.phone || 'N/A'}</span>
+                        <span><span className="material-symbols-outlined">location_on</span>{candidate.location || 'N/A'}</span>
                     </div>
                 </div>
                 <div className="match-score-display">
@@ -41,7 +41,7 @@ const CandidateMatchDetailPage = ({ candidate, job, onBack, onUpdateCandidate })
                          <svg viewBox="0 0 36 36" className="circular-chart">
                             <defs>
                                 <linearGradient id="score-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#8B5CF6" />
+                                <stop offset="0%" stopColor="#2563EB" />
                                 <stop offset="100%" stopColor="#3B82F6" />
                                 </linearGradient>
                             </defs>
@@ -66,11 +66,6 @@ const CandidateMatchDetailPage = ({ candidate, job, onBack, onUpdateCandidate })
 
             <div className="detail-body-grid">
                 <main className="detail-main-content">
-                    <div className="info-card">
-                        <h4>Professional Summary</h4>
-                        <p>{candidate.summary}</p>
-                    </div>
-
                     <div className="info-card skills-comparison-card">
                         <h4>Skill Alignment</h4>
                         <div className="skills-comparison-grid">

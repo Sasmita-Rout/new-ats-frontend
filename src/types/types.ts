@@ -1,5 +1,13 @@
 
-export type UserRole = 'Main Admin' | 'Admin' | 'Recruiter';
+export type UserRole =
+  | 'Main Admin'
+  | 'Admin'
+  | 'Recruiter'
+  | 'super_admin'
+  | 'admin'
+  | 'head_dd'
+  | 'pdm'
+  | 'user';
 
 export type UserPermission = 'Dashboard' | 'Job Matching' | 'All Candidates' | 'Calendar' | 'Communications' | 'Reports' | 'Settings' | 'History';
 
@@ -9,6 +17,7 @@ export type User = {
   email: string;
   password?: string; // This should be handled securely on a server
   role: UserRole;
+  intranetRole?: string;
   avatar: string;
   permissions: UserPermission[];
 };
@@ -23,7 +32,7 @@ export type Invitation = {
   status: InvitationStatus;
   createdAt: string; // ISO string
   type: 'User' | 'ProjectTeam';
-  projectId?: number;
+  projectId?: string;
   projectName?: string;
 };
 
@@ -50,25 +59,12 @@ export type CompanyProfile = {
   address: string;
 };
 
-export type ProjectTeamMember = {
-  userId: number;
-  role: 'Owner' | 'Member';
-};
-
 export type Project = {
-  id: number;
-  name: string;
-  description: string;
-  clientOrDepartment: string;
-  ownerId: number;
-  status: 'Active' | 'On Hold' | 'Closed';
-  priority: 'High' | 'Medium' | 'Low';
-  startDate: string; // ISO string for date
-  endDate: string; // ISO string for date
-  budget?: string;
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
-  team: ProjectTeamMember[];
+  project_id: string;
+  project_name: string;
+  project_description?: string;
+  uploaded_by: string;
+  status?: 'active' | 'inactive';
 };
 
 export type Experience = {
@@ -120,11 +116,17 @@ export type Candidate = {
   title: string;
   avatar: string;
   summary: string;
-  contact: {
+  // Legacy shape still seen in some API responses
+  contact?: {
     email: string;
     phone: string;
     location: string;
   };
+  // Current normalized shape used across the app
+  email: string;
+  phone: string;
+  location: string;
+  dob?: string;
   experience: Experience[];
   education: Education[];
   skills: string[];
@@ -132,7 +134,7 @@ export type Candidate = {
   languages: string[];
   certifications: string[];
   links: Link[];
-  status: 'Interview' | 'Hired' | 'Screening' | 'Offer' | 'Rejected' | 'Applied';
+  status: 'Interview' | 'Hired' | 'Screening' | 'Offer' | 'Rejected';
   appliedDate: string;
   salaryExpectation: number | null;
   resumeContent: string;
@@ -148,11 +150,17 @@ export type Candidate = {
   communicationHistory: { type: 'email' | 'call'; date: string; subject: string }[];
   interviews?: Interview[];
   totalExperienceYears?: number;
+  originalSkills?: string;
+  originalContact?: string;
+  originalLocation?: string;
+  originalExperience?: string;
+  originalDob?: string;
 };
 
 export type JobDescription = {
     id: number;
-    projectId: number;
+    jobId?: string;
+    projectId: string;
     title: string;
     companyName: string;
     companyLogo: string;
@@ -176,9 +184,11 @@ export type JobDescription = {
     industry: string;
     ownerId: number;
     numberOfPositions: number;
+    uploadedBy?: string;
     analysisKeywords?: string[];
     // Added to store the raw text content of the JD
     jdContent?: string;
+    aiFilled?: boolean;
 };
 
 export type CandidateWithScore = Candidate & { 
@@ -186,7 +196,10 @@ export type CandidateWithScore = Candidate & {
     overallScore?: number;
     expMatch?: boolean;
     eduMatch?: boolean;
+    matchingSkills?: string[];
     missingSkills?: string[];
+    location_matched?: boolean;
+     location?: string;   
 };
 
 export type JobRequirements = {
@@ -199,7 +212,7 @@ export type HistoryEntry = {
   timestamp: string;
   userId: number;
   userName: string;
-  userRole: UserRole;
+  userRole?: UserRole;
   impersonatingUserName?: string;
   action: string;
   targetType?: 'Candidate' | 'Job' | 'User' | 'Project';
@@ -223,4 +236,5 @@ export type MatchResult = {
   summary: string;
   matchingSkills: string[];
   missingSkills: string[];
+  location_matched?: boolean;
 };

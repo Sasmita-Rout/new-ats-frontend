@@ -1,8 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, UserPermission } from '../../types/types';
+import Chatbot from '../ai/Chatbot';
 
-const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
+const Sidebar = ({ currentPage, onNavigate, effectiveUser }) => {
     
     const [expandedSections, setExpandedSections] = useState({ 
         'ATS': true 
@@ -11,19 +12,17 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
     const navConfig = useMemo(() => [
         {
             name: 'ATS',
-            icon: 'business_center',
+            icon: 'rocket_launch',
             children: [
-                { name: 'Dashboard', icon: 'dashboard', page: 'Dashboard' },
-                { name: 'Projects', icon: 'work', page: 'Job Matching' },
-                { name: 'All Candidates', icon: 'groups', page: 'Candidates' },
-                { name: 'Calendar', icon: 'calendar_month', page: 'Calendar' },
-                { name: 'Communications', icon: 'mail', page: 'Communications' },
-                { name: 'Reports', icon: 'analytics', page: 'Reports' },
-                { name: 'History', icon: 'history', page: 'History' },
+                { name: 'Dashboard', icon: 'space_dashboard', page: 'Dashboard' },
+                { name: 'Projects', icon: 'account_tree', page: 'Job Matching' },
+                { name: 'All Candidates', icon: 'person_search', page: 'Candidates' },
+                { name: 'Calendar', icon: 'event_upcoming', page: 'Calendar' },
+                { name: 'Communications', icon: 'forum', page: 'Communications' },
+                { name: 'Reports', icon: 'query_stats', page: 'Reports' },
+                { name: 'History', icon: 'timeline', page: 'History' },
             ]
         },
-        ...(effectiveUser.role.includes('Admin') ? [{ name: 'Manage Users', icon: 'manage_accounts', page: 'Manage Users' }] : []),
-        { name: 'Settings', icon: 'settings', page: 'Settings' },
     ], [effectiveUser.role]);
 
     const toggleSection = (sectionName: string) => {
@@ -37,6 +36,22 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
         if (!item.children) return false;
         return item.children.some(child => child.page === currentPage);
     };
+
+    useEffect(() => {
+        const activeParents = navConfig
+            .filter(item => item.children && item.children.some(child => child.page === currentPage))
+            .map(item => item.name);
+
+        if (activeParents.length > 0) {
+            setExpandedSections(prev => {
+                const next = { ...prev };
+                activeParents.forEach(name => {
+                    next[name] = true;
+                });
+                return next;
+            });
+        }
+    }, [currentPage, navConfig]);
 
     return (
         <aside className="sidebar">
@@ -87,11 +102,8 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser, onLogout }) => {
                     ))}
                 </ul>
             </nav>
-            <div className="sidebar-logout">
-                 <button className="btn btn-secondary" style={{width: '100%'}} onClick={onLogout}>
-                    <span className="material-symbols-outlined">logout</span>
-                    Logout
-                </button>
+            <div className="sidebar-chatbot-slot">
+                <Chatbot currentUser={effectiveUser} launcherVariant="sidebar" />
             </div>
         </aside>
     );
