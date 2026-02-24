@@ -1,0 +1,23 @@
+name: Trigger Jenkins deploy to Server
+ 
+on:
+  push:
+    branches:
+      - main
+ 
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: Trigger Jenkins job
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}         # e.g. http://13.233.241.103/jenkins
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}       # e.g. admin
+          JENKINS_TOKEN: ${{ secrets.JENKINS_TOKEN }}  # your Jenkins API token
+          JENKINS_JOB: new_ats_frontend
+        run: |
+          AUTH=$(echo -n "$JENKINS_USER:$JENKINS_TOKEN" | base64)
+          curl --location --request POST \
+            "$JENKINS_URL/job/$JENKINS_JOB/build?=null" \
+            --header "Authorization: Basic $AUTH"
