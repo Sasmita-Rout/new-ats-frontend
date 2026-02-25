@@ -7,7 +7,7 @@ import { PaperAirplaneIcon, XCircleIcon, LogoIcon, PencilSquareIcon, TrashIcon }
 import { toast } from 'react-toastify';
 
 interface ChatbotProps {
-    currentUser: { id: number | string; name: string; email: string };
+    currentUser: { id: number | string; name: string; email: string; role?: string; isSuperAdmin?: boolean };
     launcherVariant?: 'floating' | 'sidebar';
 }
 
@@ -101,7 +101,13 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser, launcherVariant = 'float
         setIsLoading(true);
 
         try {
-            const res = await chatApi.sendMessage(activeSessionId, currentUser.email, userMsg);
+            const derivedIsSuperAdmin =
+                currentUser.isSuperAdmin ||
+                currentUser.role === 'super_admin' ||
+                currentUser.role === 'admin' ||
+                (currentUser.role || '').includes('Admin');
+
+            const res = await chatApi.sendMessage(activeSessionId, currentUser.email, userMsg, derivedIsSuperAdmin);
 
             // Backend returns the full AI response
             if (res.ai_response) {
@@ -123,6 +129,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser, launcherVariant = 'float
     const handleDeleteSession = async (sessionId: string) => {
         try {
             await chatApi.deleteSession(sessionId, currentUser.email);
+            toast.success("Chat deleted successfully");
             const remaining = sessions.filter(s => s.id !== sessionId);
             setSessions(remaining);
 
@@ -208,15 +215,27 @@ const Chatbot: React.FC<ChatbotProps> = ({ currentUser, launcherVariant = 'float
                                 <h2>AI Assistant (Beta)</h2>
                             </div>
                             <div className="chatbot-window-controls">
-                                <button
-                                    type="button"
-                                    className="chatbot-window-close chatbot-window-minimize"
-                                    onClick={() => setIsMinimized(prev => !prev)}
-                                    aria-label={isMinimized ? 'Restore AI Assistant' : 'Minimize AI Assistant'}
-                                    title={isMinimized ? 'Restore' : 'Minimize'}
-                                >
-                                    <span className="material-symbols-outlined">remove</span>
-                                </button>
+                                {isMinimized ? (
+                                    <button
+                                        type="button"
+                                        className="chatbot-window-close chatbot-window-minimize"
+                                        onClick={() => setIsMinimized(false)}
+                                        aria-label="Maximize AI Assistant"
+                                        title="Maximize"
+                                    >
+                                        <span className="material-symbols-outlined">open_in_full</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        className="chatbot-window-close chatbot-window-minimize"
+                                        onClick={() => setIsMinimized(true)}
+                                        aria-label="Minimize AI Assistant"
+                                        title="Minimize"
+                                    >
+                                        <span className="material-symbols-outlined">remove</span>
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     className="chatbot-window-close"
