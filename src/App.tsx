@@ -52,7 +52,7 @@ const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
 const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-const SSO_API_URL = "https://intranet.accionlabs.com";
+const SSO_API_URL = "https://intranet.accionlabs.com/sso_backend"
 const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
