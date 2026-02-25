@@ -1,5 +1,6 @@
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+//const API_BASE_URL ='http://localhost:8000';
+const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
 
 export const chatApi = {
     // 1. Create New Session
@@ -36,11 +37,15 @@ export const chatApi = {
     },
 
     // 4. Send Message (User -> Backend -> Ollama -> Mongo)
-    sendMessage: async (sessionId: string, userId: string, content: string) => {
+    sendMessage: async (sessionId: string, userId: string, content: string, isSuperAdmin: boolean = false) => {
         const res = await fetch(`${API_BASE_URL}/chat/session/${sessionId}/message`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, content })
+            body: JSON.stringify({
+                user_id: userId,
+                content,
+                is_super_admin: isSuperAdmin,
+            })
         });
         return res.json();
     }

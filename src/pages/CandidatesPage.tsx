@@ -7,7 +7,7 @@ import { exportToCSV } from '../utils/helpers';
 
 const BATCH_SIZE = 10;
 
-const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected, onViewCandidate, onScheduleSelected, confirmActionToast }) => {
+const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected: _onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected: _onScheduleSelected, confirmActionToast }) => {
     const [displayLimit, setDisplayLimit] = useState(10);
     const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
     const [isFiltersVisible, setIsFiltersVisible] = useState(false);
@@ -64,22 +64,6 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         }
     };
 
-    const handleEmailClick = () => {
-        onEmailSelected(selectedIds);
-        setSelectedIds([]);
-    };
-
-    const handleScheduleSelected = () => {
-        if (!onScheduleSelected) return;
-        const selectedCandidates = candidates.filter(c => selectedIds.includes(c.id));
-        onScheduleSelected(selectedCandidates);
-        setSelectedIds([]);
-    };
-    
-    const handleAnalyzeClick = () => {
-        onAnalyzeSelected(selectedIds);
-    };
-    
     const handleExportCSV = () => {
         const dataToExport = selectedIds.length > 0
             ? candidates.filter(c => selectedIds.includes(c.id))
@@ -131,19 +115,10 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                     <span className="material-symbols-outlined">search</span>
                     <input type="text" value={searchTerm} onChange={e => onSearchChange(e.target.value)} placeholder="Search by name, email, or skills..." />
                 </div>
-                <div className="actions">
+                <div className={`actions ${selectedIds.length > 0 ? 'bulk-selected-actions' : ''}`}>
                      {selectedIds.length > 0 ? (
                         <>
                             <span className="selection-count">{selectedIds.length} candidate(s) selected</span>
-                             <button className="btn btn-secondary" onClick={handleAnalyzeClick}>
-                                <span className="material-symbols-outlined">query_stats</span> Analyze Fit
-                            </button>
-                             <button className="btn btn-secondary" onClick={handleEmailClick}>
-                                <span className="material-symbols-outlined">mail</span> Email Selected
-                            </button>
-                            <button className="btn btn-secondary" onClick={handleScheduleSelected} disabled={!onScheduleSelected}>
-                                <span className="material-symbols-outlined">event_available</span> Schedule Interview
-                            </button>
                             <button className="btn btn-secondary" onClick={handleExportCSV}>
                                 <span className="material-symbols-outlined">download</span> Export Selected
                             </button>

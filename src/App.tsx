@@ -2678,7 +2678,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                  const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
                     ? ''
                     : (effectiveUser?.email || '');
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onCandidateSelect={(c) => {setSelectedCandidate(c); setCurrentPage('Candidates');}} />;
+                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onViewCandidate={handleViewCandidate} />;
             case 'History':
                  return <HistoryPage 
                     historyLog={historyLog} 

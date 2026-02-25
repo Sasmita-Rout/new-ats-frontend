@@ -230,6 +230,7 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                         onScheduleBulk={onScheduleBulk}
                                         organizerEmail={organizerEmail}
                                         apiRequest={apiRequest}
+                                        confirmActionToast={confirmActionToast}
                                     />
                                 )}
                             </React.Fragment>

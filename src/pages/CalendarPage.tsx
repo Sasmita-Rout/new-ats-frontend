@@ -80,13 +80,14 @@ const CalendarView = ({ events, onEventClick, onMoreClick, currentDate }) => {
 };
 
 
-const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmail }) => {
+const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [backendEvents, setBackendEvents] = useState<CalendarEvent[]>([]);
     const [moreEventsModal, setMoreEventsModal] = useState<{ dateLabel: string; events: CalendarEvent[] } | null>(null);
 
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    //const API_BASE_URL ='http://localhost:8000';
+    const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
 
     const allEvents: CalendarEvent[] = useMemo(() => {
         const events: CalendarEvent[] = [];
@@ -191,7 +192,7 @@ const CalendarPage = ({ candidates, interviews, onCandidateSelect, organizerEmai
 
     const handleViewProfile = (candidate: Candidate) => {
         setSelectedEvent(null);
-        onCandidateSelect(candidate);
+        onViewCandidate(candidate);
     };
 
     const handleMoreClick = (date: Date, events: CalendarEvent[]) => {
