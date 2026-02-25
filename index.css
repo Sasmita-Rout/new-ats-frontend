@@ -2124,6 +2124,15 @@ body::before {
     gap: 12px;
     flex: 1 1 420px;
 }
+.toolbar .actions.bulk-selected-actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+    flex: 0 1 auto;
+}
+.toolbar .actions.bulk-selected-actions .selection-count,
+.toolbar .actions.bulk-selected-actions .btn {
+    white-space: nowrap;
+}
 
 .candidates-main-actions-row {
     display: flex;

@@ -9,8 +9,9 @@ if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 }
 
-//const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'http://localhost:8002/resume_vault';
+
+//const RESUME_VAULT_BASE_URL ='http://localhost:8002/resume_vault';
+const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 export const downloadResumeText = (candidate: Candidate) => {
   const textContent = candidate.resumeContent && candidate.resumeContent.trim().length > 0

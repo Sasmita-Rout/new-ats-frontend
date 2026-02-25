@@ -30,6 +30,7 @@ const InlineATSAnalysis = ({
     onScheduleBulk,
     organizerEmail,
     apiRequest,
+    confirmActionToast,
 }: {
     job: JobDescription;
     analysisResult: AnalysisResult;
@@ -42,6 +43,7 @@ const InlineATSAnalysis = ({
     onScheduleBulk?: (candidates: Candidate[], jobId?: string) => void;
     organizerEmail?: string;
     apiRequest: (url: string, options?: RequestInit) => Promise<any>;
+    confirmActionToast?: (message: string, yesLabel: string, noLabel: string) => Promise<boolean>;
 }) => {
 
     const [filters, setFilters] = useState(defaultFilters);
@@ -158,7 +160,8 @@ const InlineATSAnalysis = ({
                 let interviewMap: Record<string, boolean> = {};
                 if (organizerEmail) {
                     try {
-                        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+                        //const API_BASE_URL ='http://localhost:8000';
+                        const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
                         const now = new Date();
                         const start = new Date(now);
                         start.setMonth(start.getMonth() - 3);
@@ -256,7 +259,8 @@ const InlineATSAnalysis = ({
         let interview = interviews.slice().reverse().find(i => i.status === 'Scheduled') || interviews.slice().reverse()[0];
         if (!interview && organizerEmail && candidate.email) {
             try {
-                const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+                //const API_BASE_URL ='http://localhost:8000';
+                const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
                 const now = new Date();
                 const start = new Date(now);
                 start.setMonth(start.getMonth() - 3);
@@ -328,11 +332,14 @@ const InlineATSAnalysis = ({
         setIsInterviewDetailOpen(true);
     };
 
-    const handleDeleteSelected = () => {
-        if (window.confirm(`Delete ${selectedIds.length} candidates?`)) {
-            onDeleteCandidates(selectedIds);
-            setSelectedIds([]);
-        }
+    const handleDeleteSelected = async () => {
+        const message = `Delete ${selectedIds.length} candidates?`;
+        const shouldDelete = confirmActionToast
+            ? await confirmActionToast(message, 'Delete', 'Cancel')
+            : window.confirm(message);
+        if (!shouldDelete) return;
+        onDeleteCandidates(selectedIds);
+        setSelectedIds([]);
     };
 
     const handleEmailClick = () => {
@@ -564,10 +571,13 @@ const InlineATSAnalysis = ({
                                             <button
                                                 type="button"
                                                 className="ats-icon-action"
-                                                onClick={() => {
-                                                    if (window.confirm(`Delete ${c.name}?`)) {
-                                                        onDeleteCandidates([c.id]);
-                                                    }
+                                                onClick={async () => {
+                                                    const message = `Delete ${c.name}?`;
+                                                    const shouldDelete = confirmActionToast
+                                                        ? await confirmActionToast(message, 'Delete', 'Cancel')
+                                                        : window.confirm(message);
+                                                    if (!shouldDelete) return;
+                                                    onDeleteCandidates([c.id]);
                                                 }}
                                                 title="Delete"
                                             >
