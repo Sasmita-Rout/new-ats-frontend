@@ -44,19 +44,27 @@ import CandidateProfileModal from './modals/CandidateProfileModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-//const API_BASE_URL =  'http://localhost:8000';
-//const SSO_API_URL =  'http://localhost:8001';
-const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
-//const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-//const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const isIntranet = window.location.hostname === 'intranet.accionlabs.com' || (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1'));
 
-const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-const SSO_API_URL = "https://intranet.accionlabs.com";
-const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+const API_BASE_URL = isIntranet
+    ? "https://intranet.accionlabs.com/recruiter-tool"
+    : 'http://localhost:8001';
+
+const SSO_API_URL = isIntranet
+    ? "https://intranet.accionlabs.com/sso_backend"
+    : 'http://localhost:8000';
+
+const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
+
+const RESUME_VAULT_BASE_URL = isIntranet
+    ? "https://intranet.accionlabs.com/resume_vault"
+    : 'http://localhost:8002/resume_vault';
+
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
+const userPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates'];
 
 const hashStringToInt = (value: string): number => {
     let hash = 0;
@@ -68,17 +76,30 @@ const hashStringToInt = (value: string): number => {
 };
 
 const deriveAtsRoleFromIntranet = (intranetRole?: string, isSuperAdmin?: boolean, accessLevel?: string): UserRole => {
+    // Priority 1: Global Super Admin Flag
     if (isSuperAdmin) return 'super_admin';
-    const role = (intranetRole || '').toLowerCase();
-    if (role === 'admin' || role === 'head_dd' || role === 'pdm') return role as UserRole;
-    if ((accessLevel || '').toLowerCase() === 'admin') return 'admin';
-    if (role === 'user') return 'user';
+
+    const role = (intranetRole || '').toLowerCase().trim();
+    const level = (accessLevel || '').toLowerCase().trim();
+
+    // Priority 2: Admin roles from either 'role' or 'accessLevel'
+    if (role === 'admin' || level === 'admin' || role === 'super_admin' || role === 'main admin') {
+        return 'admin';
+    }
+
+    // Priority 3: Specific Intranet Roles
+    if (role === 'head_dd' || role === 'pdm') return role as UserRole;
+
+    // Priority 4: User/Read roles
+    if (role === 'user' || level === 'read_write' || level === 'read_only') return 'user';
+
     return 'user';
 };
 
 const derivePermissionsFromRole = (role: UserRole): UserPermission[] => {
-    const privileged = role === 'super_admin' || role === 'admin' || role === 'head_dd' || role === 'pdm' || role === 'Main Admin' || role === 'Admin';
-    return privileged ? allPermissions : allPermissions;
+    const r = (role || '').toLowerCase();
+    const privileged = r === 'super_admin' || r === 'admin' || r === 'head_dd' || r === 'pdm' || r === 'main admin';
+    return privileged ? allPermissions : userPermissions;
 };
 
 const createUserFromSession = (session: { email: string; name?: string; role?: string; isSuperAdmin?: boolean; accessLevel?: string; }): User => {
@@ -89,6 +110,7 @@ const createUserFromSession = (session: { email: string; name?: string; role?: s
         .filter(Boolean)
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
+
     const intranetRole = deriveAtsRoleFromIntranet(session.role, session.isSuperAdmin, session.accessLevel);
 
     return {
@@ -104,35 +126,55 @@ const createUserFromSession = (session: { email: string; name?: string; role?: s
 
 async function getCurrentUserSession(): Promise<{ email: string; name?: string; role?: string; isSuperAdmin?: boolean; accessLevel?: string; }> {
     try {
+        console.log(`🔐 Checking SSO session at: ${SSO_API_URL}/api/auth/session-status`);
         const response = await fetch(`${SSO_API_URL}/api/auth/session-status`, {
             credentials: 'include',
         });
 
         if (response.ok) {
             const data = await response.json();
+            console.log('👤 Authenticated User Data:', data);
+
             if (data.authenticated && data.email) {
                 const apps = Array.isArray(data.apps) ? data.apps : [];
+
+                // Identify the ATS application with flexible name matching
                 const atsApp = apps.find((app: any) => {
-                    const name = String(app?.app_name || '').toLowerCase();
-                    return name === ATS_SSO_APP_NAME;
+                    const name = String(app?.app_name || app?.name || '').toLowerCase();
+                    return name === ATS_SSO_APP_NAME ||
+                        name.includes('talent_search') ||
+                        name.includes('ats') ||
+                        name.includes('recruiter_tool');
                 });
-                const role = atsApp?.role || undefined;
+
+                if (atsApp) {
+                    console.log('✅ Found ATS application data:', atsApp);
+                } else {
+                    console.warn('⚠️ ATS application not explicitly found in user apps list. Defaulting permissions.');
+                }
+
                 localStorage.setItem('userEmail', data.email);
+
                 return {
                     email: data.email,
                     name: data.name,
-                    role,
+                    role: atsApp?.role,
                     isSuperAdmin: data.is_super_admin,
                     accessLevel: atsApp?.access_level,
                 };
             }
+        } else {
+            console.error(`❌ SSO fetch failed with status ${response.status}`);
         }
     } catch (error) {
-        console.warn('SSO session check failed; falling back to local storage.', error);
+        console.warn('❌ SSO session check error; falling back to local storage context.', error);
     }
 
     const localEmail = localStorage.getItem('userEmail');
-    if (localEmail) return { email: localEmail };
+    if (localEmail) {
+        console.log('ℹ️ Using local cached user identity:', localEmail);
+        return { email: localEmail };
+    }
 
     throw new Error('User not identified. Please log in via Main SSO.');
 }
@@ -195,7 +237,7 @@ const App = () => {
     const [candidatesForBulkMeeting, setCandidatesForBulkMeeting] = useState<Candidate[]>([]);
     const [bulkMeetingJobId, setBulkMeetingJobId] = useState<string | null>(null);
     const [isBulkMeetingSubmitting, setBulkMeetingSubmitting] = useState(false);
-    const [initialEmailDraft, setInitialEmailDraft] = useState<{subject: string, body: string, cc?: string} | null>(null);
+    const [initialEmailDraft, setInitialEmailDraft] = useState<{ subject: string, body: string, cc?: string } | null>(null);
     const [candidatesForAnalysis, setCandidatesForAnalysis] = useState<Candidate[]>([]);
     const [isUserEditorModalOpen, setUserEditorModalOpen] = useState(false);
     const [userToEdit, setUserToEdit] = useState<Partial<User> | null>(null);
@@ -311,7 +353,7 @@ const App = () => {
             );
         });
     }, []);
-    
+
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
 
@@ -514,7 +556,7 @@ ${effectiveUser?.name || 'HR Team'}`;
 
     // --- DATA PERSISTENCE ---
     // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
-    
+
     // --- CORE HANDLERS ---
     const persistHistoryEntry = useCallback(async (entry: HistoryEntry) => {
         const { id, ...payload } = entry;
@@ -538,7 +580,7 @@ ${effectiveUser?.name || 'HR Team'}`;
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
         const userContext = directUser || effectiveUser;
         if (!userContext) return;
-    
+
         const newLog: HistoryEntry = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
@@ -588,7 +630,7 @@ ${effectiveUser?.name || 'HR Team'}`;
     const handleMarkAllAsRead = () => {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     };
-    
+
     const handleNotificationNavigate = (notification: Notification) => {
         handleMarkAsRead(notification.id);
         if (notification.linkTo) {
@@ -610,10 +652,10 @@ ${effectiveUser?.name || 'HR Team'}`;
         if (impersonatedUser) {
             newLog.action = `User logged out while impersonating`;
         }
-        
+
         setHistoryLog(prev => [newLog, ...prev]);
         persistHistoryEntry(newLog);
-        
+
         setCurrentUser(null);
         setImpersonatedUser(null);
         // TODO: Logout functionality will interact with an authentication API.
@@ -630,7 +672,7 @@ ${effectiveUser?.name || 'HR Team'}`;
             userName: currentUser.name,
             action: `Stopped impersonating`,
         };
-        
+
         const userNoticeLog: HistoryEntry = {
             id: Date.now() + 1,
             timestamp: new Date().toISOString(),
@@ -638,15 +680,15 @@ ${effectiveUser?.name || 'HR Team'}`;
             userName: impersonatedUser.name,
             action: `Impersonation session ended by`,
         };
-        
+
         setHistoryLog(prev => [userNoticeLog, adminLog, ...prev]);
         persistHistoryEntry(adminLog);
         persistHistoryEntry(userNoticeLog);
-        
+
         setImpersonatedUser(null);
         handleNavigate('Dashboard');
     };
-    
+
     const handleOpenMeetingModal = (candidate: Candidate, jobId?: string) => {
         setCandidateForMeeting(candidate);
         setMeetingJobId(jobId || null);
@@ -917,7 +959,7 @@ ${effectiveUser?.name || 'HR Team'}`;
         setUsers(userToKeep ? [userToKeep] : []);
         logAction('Reset all application data');
     };
-    
+
     const handleNavigate = (page: string) => {
         const targetPage = page === 'Settings' ? 'SettingsMyProfile' : page;
         setSelectedCandidate(null);
@@ -931,7 +973,7 @@ ${effectiveUser?.name || 'HR Team'}`;
         }
         setCurrentPage(targetPage);
     };
-    
+
     const handleNavigateTo = (type: HistoryEntry['targetType'], id: number) => {
         if (type === 'Candidate') {
             const candidate = allCandidates.find(c => c.id === id);
@@ -941,7 +983,7 @@ ${effectiveUser?.name || 'HR Team'}`;
             }
         } else if (type === 'Job') {
             const job = allJobDescriptions.find(j => j.id === id);
-             if (job) {
+            if (job) {
                 setSelectedJobForDetail(job);
                 setCurrentPage('Job Matching');
             }
@@ -953,7 +995,7 @@ ${effectiveUser?.name || 'HR Team'}`;
             }
         }
     };
-    
+
     // --- USER MANAGEMENT ---
     const handleSaveUser = (userData: Partial<User> & { invitationId?: number }, userId?: number) => {
         if (userId) {
@@ -965,14 +1007,14 @@ ${effectiveUser?.name || 'HR Team'}`;
             setUsers(users.map(u => u.id === userId ? { ...u, ...userData, password: userData.password || u.password } : u));
             logAction('Updated user', { targetType: 'User', targetName: userData.name, targetId: userId });
         } else {
-             const newUser: User = { 
-                id: Date.now(), 
+            const newUser: User = {
+                id: Date.now(),
                 avatar: getInitials(userData.name),
                 permissions: userData.role === 'Admin' ? allPermissions : [],
-                ...userData 
+                ...userData
             } as User;
             setUsers(prev => [newUser, ...prev]);
-            
+
             const invitation = invitations.find(i => i.id === userData.invitationId);
             if (invitation) {
                 handleUpdateInvitationStatus(invitation.id, 'Approved');
@@ -997,13 +1039,13 @@ ${effectiveUser?.name || 'HR Team'}`;
         }
 
         const updatedUser = { ...currentUser, ...updatedData, avatar: newAvatar };
-        
+
         setCurrentUser(updatedUser);
         // TODO: User session persistence will be handled via API calls.
         setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
         logAction('Updated own profile');
     };
-    
+
     const handleUpdateAllUsers = (updatedUsers: User[]) => {
         setUsers(updatedUsers);
         logAction('Updated multiple user roles/permissions');
@@ -1022,7 +1064,7 @@ ${effectiveUser?.name || 'HR Team'}`;
         };
         setInvitations(prev => [newInvitation, ...prev]);
         logAction(`Sent invitation to ${email}`);
-        
+
         const admins = users.filter(u => u.role.includes('Admin'));
         admins.forEach(admin => {
             addNotification(admin.id, `${effectiveUser.name} has invited a new member: ${email}`, { page: 'Settings' });
@@ -1060,10 +1102,10 @@ ${effectiveUser?.name || 'HR Team'}`;
         URL.revokeObjectURL(url);
         logAction('Exported workspace data');
     };
-    
+
     const handleImportData = (file: File) => {
         if (!window.confirm("Are you sure you want to import data? This will overwrite all existing jobs, candidates, users, and settings.")) return;
-        
+
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
@@ -1119,9 +1161,9 @@ ${effectiveUser?.name || 'HR Team'}`;
                     const apiStatus = projectData.status === 'inactive' ? 'inactive' : 'active';
 
                     const projectJobs = allJobDescriptions.filter(j => String(j.projectId) === String(projectData.project_id));
-                    
+
                     // Optimistic update
-                    setAllJobDescriptions(prev => prev.map(j => 
+                    setAllJobDescriptions(prev => prev.map(j =>
                         String(j.projectId) === String(projectData.project_id) ? { ...j, status: newStatus } : j
                     ));
 
@@ -1189,7 +1231,7 @@ ${effectiveUser?.name || 'HR Team'}`;
             }
         }
     };
-    
+
     const handleSaveJob = async (jobData: Partial<JobDescription>, projectId: string) => {
         const uploadedBy = await getUploadedBy();
         const existing = jobData.jobId
@@ -1294,16 +1336,16 @@ ${effectiveUser?.name || 'HR Team'}`;
             alert("No project selected. Cannot process JDs.");
             return;
         }
-        
+
         setIsProcessingJds(true);
         const totalFiles = stagedJds.length;
         let successCount = 0;
         const uploadedBy = await getUploadedBy();
-        
+
         for (let i = 0; i < totalFiles; i++) {
             const file = stagedJds[i];
             setProcessingJdsStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
-            
+
             try {
                 const formData = new FormData();
                 const jobId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -1325,13 +1367,13 @@ ${effectiveUser?.name || 'HR Team'}`;
                     body: formData,
                 });
                 successCount++;
-    
+
             } catch (error) {
                 console.error(`Failed to process ${file.name}:`, error);
                 notifyError(`JD upload failed: ${file.name}`);
             }
         }
-        
+
         await fetchJobs();
         setProcessingJdsStatus(`Processing complete. ${successCount}/${totalFiles} JDs added successfully.`);
         if (successCount > 0) notifySuccess(`JD upload complete: ${successCount}/${totalFiles}`);
@@ -1354,15 +1396,15 @@ ${effectiveUser?.name || 'HR Team'}`;
                 return { id: job.id, ok: false };
             }
         }));
-            const deletedIds = results.filter(r => r.ok).map(r => r.id);
-            if (deletedIds.length > 0) {
-                setAllJobDescriptions(prev => prev.filter(j => !deletedIds.includes(j.id)));
-                jobsToDelete.filter(j => deletedIds.includes(j.id))
-                    .forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
-                notifySuccess(`Deleted ${deletedIds.length} job(s).`);
-                if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
-                if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
-            }
+        const deletedIds = results.filter(r => r.ok).map(r => r.id);
+        if (deletedIds.length > 0) {
+            setAllJobDescriptions(prev => prev.filter(j => !deletedIds.includes(j.id)));
+            jobsToDelete.filter(j => deletedIds.includes(j.id))
+                .forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
+            notifySuccess(`Deleted ${deletedIds.length} job(s).`);
+            if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
+            if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
+        }
     };
 
     const handleJobStatusUpdate = async (jobId: number, status: JobDescription['status']) => {
@@ -1380,7 +1422,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                 console.error('Failed to update job status:', error);
             }
         }
-        if(jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
+        if (jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
     };
 
     const handleGenerateJdWithAI = async (prompt: string, projectId: string) => {
@@ -1554,85 +1596,85 @@ ${effectiveUser?.name || 'HR Team'}`;
                 };
             });*/
             const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
-    const apiDataNormalized = normalizeCandidate(r);
-    const email = (apiDataNormalized.email || String(r.email || '')).toLowerCase();
-    let existing = email ? byEmail.get(email) : undefined;
+                const apiDataNormalized = normalizeCandidate(r);
+                const email = (apiDataNormalized.email || String(r.email || '')).toLowerCase();
+                let existing = email ? byEmail.get(email) : undefined;
 
-    if (!existing && apiDataNormalized.name) {
-        const nameLower = apiDataNormalized.name.toLowerCase();
-        const nameMatches = allCandidates.filter(c => c.name?.toLowerCase() === nameLower);
-        if (nameMatches.length === 1) {
-            existing = nameMatches[0];
-        } else if (nameMatches.length > 1) {
-            const apiPhone = (apiDataNormalized.phone || '').replace(/\D/g, '');
-            if (apiPhone.length >= 5) {
-                const phoneMatch = nameMatches.find(c => (c.phone || '').replace(/\D/g, '') === apiPhone);
-                if (phoneMatch) existing = phoneMatch;
-            }
-            if (!existing && apiDataNormalized.location) {
-                const locLower = apiDataNormalized.location.toLowerCase();
-                const locMatch = nameMatches.find(c => (c.location || '').toLowerCase() === locLower);
-                if (locMatch) existing = locMatch;
-            }
-        }
-    }
-    const overallScore = typeof r.match_score === 'number'
-        ? Math.round(r.match_score)
-        : Math.round(Number(r.match_score) || 0);
-    
-    // FIX: Properly handle matching_skills and missing_skills arrays
-    const matchingSkills = Array.isArray(r.matching_skills) 
-        ? r.matching_skills 
-        : (typeof r.matching_skills === 'string' && r.matching_skills)
-            ? r.matching_skills.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
-    
-    const missingSkills = Array.isArray(r.missing_skills)
-        ? r.missing_skills
-        : (typeof r.missing_skills === 'string' && r.missing_skills)
-            ? r.missing_skills.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
+                if (!existing && apiDataNormalized.name) {
+                    const nameLower = apiDataNormalized.name.toLowerCase();
+                    const nameMatches = allCandidates.filter(c => c.name?.toLowerCase() === nameLower);
+                    if (nameMatches.length === 1) {
+                        existing = nameMatches[0];
+                    } else if (nameMatches.length > 1) {
+                        const apiPhone = (apiDataNormalized.phone || '').replace(/\D/g, '');
+                        if (apiPhone.length >= 5) {
+                            const phoneMatch = nameMatches.find(c => (c.phone || '').replace(/\D/g, '') === apiPhone);
+                            if (phoneMatch) existing = phoneMatch;
+                        }
+                        if (!existing && apiDataNormalized.location) {
+                            const locLower = apiDataNormalized.location.toLowerCase();
+                            const locMatch = nameMatches.find(c => (c.location || '').toLowerCase() === locLower);
+                            if (locMatch) existing = locMatch;
+                        }
+                    }
+                }
+                const overallScore = typeof r.match_score === 'number'
+                    ? Math.round(r.match_score)
+                    : Math.round(Number(r.match_score) || 0);
 
-    const apiSkills = Array.isArray(r.skills)
-        ? r.skills
-        : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
-    
-    const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
-        ? existing.skills
-        : apiSkills;
-    
-    const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
-    const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
-    const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
-    const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
+                // FIX: Properly handle matching_skills and missing_skills arrays
+                const matchingSkills = Array.isArray(r.matching_skills)
+                    ? r.matching_skills
+                    : (typeof r.matching_skills === 'string' && r.matching_skills)
+                        ? r.matching_skills.split(',').map(s => s.trim()).filter(Boolean)
+                        : [];
 
-    if (existing) {
-        return {
-            ...existing,
-            // Only update fields on the existing candidate if they are empty or 'N/A'
-            phone: existing.phone || apiDataNormalized.phone,
-            location: existing.location || apiDataNormalized.location,
-            dob: (existing.dob && existing.dob !== 'N/A') ? existing.dob : apiDataNormalized.dob,
-            skills: (existing.skills && existing.skills.length > 0) ? existing.skills : apiDataNormalized.skills,
-            totalExperienceYears: existing.totalExperienceYears || apiDataNormalized.totalExperienceYears,
-            // Add scoring info
-            overallScore,
-            matchingSkills: finalMatchingSkills,
-            missingSkills,
-            location_matched: r.location_matched ?? false,
-        };
-    }
+                const missingSkills = Array.isArray(r.missing_skills)
+                    ? r.missing_skills
+                    : (typeof r.missing_skills === 'string' && r.missing_skills)
+                        ? r.missing_skills.split(',').map(s => s.trim()).filter(Boolean)
+                        : [];
 
-    // For a new candidate, just use the normalized API result and add scores
-    const newCandidate = apiDataNormalized;
-    return {
-        ...newCandidate,
-        overallScore,
-        matchingSkills: finalMatchingSkills,
-        missingSkills,
-        location_matched: r.location_matched ?? false,
-    };
-});
+                const apiSkills = Array.isArray(r.skills)
+                    ? r.skills
+                    : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+
+                const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
+                    ? existing.skills
+                    : apiSkills;
+
+                const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
+                const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
+                const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
+                const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
+
+                if (existing) {
+                    return {
+                        ...existing,
+                        // Only update fields on the existing candidate if they are empty or 'N/A'
+                        phone: existing.phone || apiDataNormalized.phone,
+                        location: existing.location || apiDataNormalized.location,
+                        dob: (existing.dob && existing.dob !== 'N/A') ? existing.dob : apiDataNormalized.dob,
+                        skills: (existing.skills && existing.skills.length > 0) ? existing.skills : apiDataNormalized.skills,
+                        totalExperienceYears: existing.totalExperienceYears || apiDataNormalized.totalExperienceYears,
+                        // Add scoring info
+                        overallScore,
+                        matchingSkills: finalMatchingSkills,
+                        missingSkills,
+                        location_matched: r.location_matched ?? false,
+                    };
+                }
+
+                // For a new candidate, just use the normalized API result and add scores
+                const newCandidate = apiDataNormalized;
+                return {
+                    ...newCandidate,
+                    overallScore,
+                    matchingSkills: finalMatchingSkills,
+                    missingSkills,
+                    location_matched: r.location_matched ?? false,
+                };
+            });
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
         } catch (error) {
@@ -1787,15 +1829,15 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         // Standardize contact info from different API response shapes
         // `list-candidates` uses `contact` for phone. `search-db` uses `phone`.
         // Relaxed validation: Accept if it has at least 5 digits, even if it has text
-        const phone = raw.phone 
-            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '') 
-            || raw.contact_no 
-            || raw.mobile 
+        const phone = raw.phone
+            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '')
+            || raw.contact_no
+            || raw.mobile
             || '';
         const location = raw.location || raw.address || '';
 
         const appliedDate = raw.applied_date || raw.appliedDate || raw.file_created || new Date().toISOString().split('T')[0];
-        
+
         // Use email as the primary source for a stable ID. Fallback to other fields if email is missing.
         const idSource = email.toLowerCase() || [
             raw.name || raw.candidate_name,
@@ -2053,8 +2095,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
     const handleViewCandidate = async (candidate: Candidate) => {
         // Try to find the full record in our main list by email or ID
-        const fullCandidate = allCandidates.find(c => 
-            (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) || 
+        const fullCandidate = allCandidates.find(c =>
+            (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
             c.id === candidate.id
         );
 
@@ -2201,7 +2243,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
     const handleClearStagedResumes = () => {
         if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
-            processingRef.current = false; 
+            processingRef.current = false;
             setStagedResumes([]);
             setIsProcessing(false);
             setProcessingStatus('');
@@ -2291,7 +2333,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 console.error('Failed to process batch resumes:', error);
             }
         }
-        
+
         if (processingRef.current) {
             setProcessingStatus(`Processing complete. ${successCount}/${totalFiles} resumes added.`);
             logAction(`Bulk processed ${totalFiles} resumes, added ${successCount} new candidates`);
@@ -2463,7 +2505,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
         setEmailJobIdOverride(null);
     };
-    
+
     const handleAnalyzeSelected = (ids: number[]) => {
         const targets = allCandidates.filter(c => ids.includes(c.id));
         setCandidatesForAnalysis(targets);
@@ -2508,14 +2550,14 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const emailMatch = !mainFilters.email || (c.email || '').toLowerCase().includes(mainFilters.email.toLowerCase());
             const locationMatch = !mainFilters.location || locationValue.toLowerCase().includes(mainFilters.location.toLowerCase());
             const categoryMatch = !mainFilters.roleCategory || c.category.toLowerCase().includes(mainFilters.roleCategory.toLowerCase());
-            const educationMatch = !mainFilters.education || (educationValue.length > 0 && educationValue.some(edu => 
-                edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) || 
+            const educationMatch = !mainFilters.education || (educationValue.length > 0 && educationValue.some(edu =>
+                edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) ||
                 edu.institution.toLowerCase().includes(mainFilters.education.toLowerCase())
             ));
             const salaryMin = parseFloat(mainFilters.salaryMin);
             const salaryMax = parseFloat(mainFilters.salaryMax);
             const salaryMatch = (!mainFilters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
-                                (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
+                (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
             const tagsMatch = !mainFilters.tags || mainFilters.tags.toLowerCase().split(',').every(tag => {
                 const term = tag.trim();
                 if (!term) return true;
@@ -2524,11 +2566,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const experienceMatch = !mainFilters.experience || mainFilters.experience.toLowerCase().split(',').every(expTerm => {
                 const term = expTerm.trim();
                 if (!term) return true;
-                return experienceValue.some(exp => 
+                return experienceValue.some(exp =>
                     `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(term)
                 ) || originalExperienceValue.toLowerCase().includes(term);
             });
-            
+
             return searchMatch && statusMatch && skillsMatch && nameMatch && emailMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
         });
     }, [allCandidates, selectedJob, searchTerm, mainFilters]);
@@ -2536,34 +2578,34 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const globalSearchResults = useMemo(() => {
         if (!globalSearchTerm) return { candidates: [], jobs: [] };
         const lowerTerm = globalSearchTerm.toLowerCase();
-        
+
         const candidates = allCandidates.filter(c =>
             c.name.toLowerCase().includes(lowerTerm) ||
             c.title.toLowerCase().includes(lowerTerm) ||
             c.skills.some(s => s.toLowerCase().includes(lowerTerm))
         ).slice(0, 5);
-        
+
         const jobs = allJobDescriptions.filter(j =>
             j.title.toLowerCase().includes(lowerTerm) ||
             j.companyName.toLowerCase().includes(lowerTerm) ||
             j.requiredSkills.some(s => s.toLowerCase().includes(lowerTerm))
         ).slice(0, 5);
-        
+
         return { candidates, jobs };
     }, [globalSearchTerm, allCandidates, allJobDescriptions]);
-    
+
     const renderContent = () => {
         switch (currentPage) {
             case 'Login':
                 return <LoginPage onLogin={(user) => { setCurrentUser(user); setCurrentPage('Dashboard'); }} error={null} />;
             case 'Dashboard':
                 const pendingCount = invitations.filter(i => i.inviterId === effectiveUser.id && i.status === 'Pending').length;
-                return <DashboardPage 
-                    effectiveUser={effectiveUser} 
-                    candidates={allCandidates} 
+                return <DashboardPage
+                    effectiveUser={effectiveUser}
+                    candidates={allCandidates}
                     totalCandidatesCount={totalCandidatesCount}
-                    jobs={allJobDescriptions} 
-                    projects={allProjects} 
+                    jobs={allJobDescriptions}
+                    projects={allProjects}
                     onProjectSelect={(p) => { setSelectedProject(p); setCurrentPage('Job Matching'); }}
                     pendingInvitationCount={pendingCount}
                     onNavigate={handleNavigate}
@@ -2606,17 +2648,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     />;
                 }
                 if (selectedJobForDetail) {
-                    return <JobDetailPage 
-                        job={selectedJobForDetail} 
+                    return <JobDetailPage
+                        job={selectedJobForDetail}
                         onBack={() => setSelectedJobForDetail(null)}
                         onMatch={(j) => { setSelectedJob(j); setCurrentPage('Candidates'); }}
                         onEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                     />;
                 }
-                 return <ProjectsPage 
-                    projects={allProjects} 
-                    jobs={allJobDescriptions} 
-                    onProjectSelect={(p) => setSelectedProject(p)} 
+                return <ProjectsPage
+                    projects={allProjects}
+                    jobs={allJobDescriptions}
+                    onProjectSelect={(p) => setSelectedProject(p)}
                     onProjectCreate={() => { setProjectToEdit(null); setProjectEditorModalOpen(true); }}
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
                     effectiveUser={effectiveUser}
@@ -2651,10 +2693,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onViewCandidate={handleViewCandidate}
                     onScheduleSelected={handleOpenBulkMeetingModal}
                     confirmActionToast={confirmActionToast}
-                 />;
+                />;
             case 'Communications':
-                return <CommunicationsPage 
-                    emailTargets={emailTargets} 
+                return <CommunicationsPage
+                    emailTargets={emailTargets}
                     onClearTargets={clearEmailTargets}
                     onUpdateTargets={setEmailTargets}
                     onSendEmail={handleSendEmail}
@@ -2673,25 +2715,25 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Reports':
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} apiRequest={apiRequest} />;
             case 'Calendar':
-                 const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 const role = effectiveUser?.role || '';
-                 const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
+                const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
+                const role = effectiveUser?.role || '';
+                const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
                     ? ''
                     : (effectiveUser?.email || '');
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onViewCandidate={handleViewCandidate} />;
+                return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onViewCandidate={handleViewCandidate} />;
             case 'History':
-                 return <HistoryPage 
-                    historyLog={historyLog} 
-                    effectiveUser={effectiveUser} 
-                    onNavigateTo={handleNavigateTo} 
+                return <HistoryPage
+                    historyLog={historyLog}
+                    effectiveUser={effectiveUser}
+                    onNavigateTo={handleNavigateTo}
                     currentUser={currentUser}
                     impersonatedUser={impersonatedUser}
                     allUsers={users}
                 />;
             case 'Settings':
             case 'SettingsMyProfile':
-                return <SettingsPage 
-                    effectiveUser={effectiveUser} 
+                return <SettingsPage
+                    effectiveUser={effectiveUser}
                     onUpdateUser={handleSaveUser}
                     allUsers={users}
                     invitations={invitations}
@@ -2699,8 +2741,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     activeView="My Profile"
                 />;
             case 'SettingsContactSupport':
-                return <SettingsPage 
-                    effectiveUser={effectiveUser} 
+                return <SettingsPage
+                    effectiveUser={effectiveUser}
                     onUpdateUser={handleSaveUser}
                     allUsers={users}
                     invitations={invitations}
@@ -2711,7 +2753,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <div>Page not found</div>;
         }
     };
-    
+
     if (isAuthLoading) return <div className="loading-indicator">Checking SSO session...</div>;
     if (!effectiveUser) return <div className="loading-indicator">Please log in via the intranet application.</div>;
 
@@ -2739,7 +2781,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const renderAccessDenied = () => (
         <div className="page-content">
             <div className="empty-state large">
-                <span className="material-symbols-outlined" style={{fontSize: '64px', color: '#EF4444'}}>lock</span>
+                <span className="material-symbols-outlined" style={{ fontSize: '64px', color: '#EF4444' }}>lock</span>
                 <h3>Access Denied</h3>
                 <p>You do not have permission to view this page.</p>
             </div>
@@ -2750,11 +2792,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         <div className="app-container">
             <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} />
             <main className="main-content">
-                <Header 
+                <Header
                     currentPage={currentPage}
                     user={effectiveUser}
-                    impersonatedUser={impersonatedUser} 
-                    onStopImpersonation={handleStopImpersonation} 
+                    impersonatedUser={impersonatedUser}
+                    onStopImpersonation={handleStopImpersonation}
                     globalSearchTerm={globalSearchTerm}
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}
