@@ -371,6 +371,15 @@ const ContactSupportView = () => {
                         <span className="material-symbols-outlined">person</span>
                     </div>
                     <div className="contact-support-content">
+                        <strong>Baburaj R</strong>
+                        <a href="mailto:baburaj.r@accionlabs.com">baburaj.r@accionlabs.com</a>
+                    </div>
+                </div>
+                <div className="contact-support-card">
+                    <div className="contact-support-icon">
+                        <span className="material-symbols-outlined">person</span>
+                    </div>
+                    <div className="contact-support-content">
                         <strong>Kokila Umasankar</strong>
                         <a href="mailto:kokila.umasankar@accionlabs.com">kokila.umasankar@accionlabs.com</a>
                     </div>
@@ -391,15 +400,6 @@ const ContactSupportView = () => {
                     <div className="contact-support-content">
                         <strong>Sasmita Rout</strong>
                         <a href="mailto:sasmita.rout@accionlabs.com">sasmita.rout@accionlabs.com</a>
-                    </div>
-                </div>
-                <div className="contact-support-card">
-                    <div className="contact-support-icon">
-                        <span className="material-symbols-outlined">person</span>
-                    </div>
-                    <div className="contact-support-content">
-                        <strong>Baburaj R</strong>
-                        <a href="mailto:baburaj.r@accionlabs.com">baburaj.r@accionlabs.com</a>
                     </div>
                 </div>
             </div>

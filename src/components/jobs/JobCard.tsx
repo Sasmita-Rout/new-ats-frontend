@@ -14,7 +14,7 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
             }}
             aria-label={`Select job ${job.title}`}
         />
-        <div className="job-card" onClick={() => onJobSelect(job)}>
+        <div className="job-card" onClick={() => onEdit(job)}>
             <div className="job-card-main">
                 <h3 className="job-card-title">{job.title}</h3>
                 <p className="job-card-company">{job.companyName}</p>

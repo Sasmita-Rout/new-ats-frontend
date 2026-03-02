@@ -44,16 +44,16 @@ import CandidateProfileModal from './modals/CandidateProfileModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-//const API_BASE_URL =  'http://localhost:8000';
-//const SSO_API_URL =  'http://localhost:8001';
+const API_BASE_URL =  'http://localhost:8000';
+const SSO_API_URL =  'http://localhost:8001';
 const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-//const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
+const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-const SSO_API_URL = "https://intranet.accionlabs.com";
-const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+//const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+//const SSO_API_URL = "https://intranet.accionlabs.com";
+//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -403,24 +403,49 @@ const App = () => {
         return name || 'Interviewer';
     }, []);
 
+    const deriveInterviewerRole = useCallback((interviewer: string, interviewType?: string) => {
+        const raw = (interviewer || '').toLowerCase();
+        const type = (interviewType || '').toLowerCase();
+        if (raw.includes('hr') || type.includes('hr')) return 'HR';
+        if (raw.includes('manager') || type.includes('final')) return 'Managerial';
+        return 'Technical';
+    }, []);
+
 
     const sendInterviewerEmail = useCallback(async (params: {
         candidate: Candidate;
         jobTitle: string;
+        roleLabel?: string;
         interviewer: string;
         interviewDate: string;
+        interviewTime?: string;
+        timeZone?: string;
         duration: number;
+        locationText?: string;
         meetingLink: string;
+        interviewMode?: string;
         jobId: string;
         uploadedBy: string;
         fromEmail: string;
+        interviewType?: string;
+        customMessage?: string;
+        customEvaluationInstructions?: string;
     }) => {
         const interviewerEmails = extractEmails(params.interviewer || '');
         if (!interviewerEmails.length) return;
 
         const interviewerName = (params.interviewer || '').split('(')[0].trim() || 'Interviewer';
-        const durationText = params.duration ? `${params.duration} minutes` : 'TBD';
-        const meetingLinkText = params.meetingLink || 'TBD (will be shared)';
+        const meetingLinkText = params.meetingLink || 'TBD';
+        const interviewerRole = deriveInterviewerRole(params.interviewer, params.interviewType);
+        const evaluationInstructions = (params.customEvaluationInstructions || '').trim() || (
+            interviewerRole === 'HR'
+                ? 'Assess communication, culture fit, and role alignment.'
+                : interviewerRole === 'Managerial'
+                    ? 'Assess leadership, ownership, and stakeholder management.'
+                    : 'Assess technical depth, problem-solving, and implementation quality.'
+        );
+        const modeText = params.interviewMode || 'Online';
+        const roleText = params.roleLabel || params.jobTitle || 'N/A';
         let attachments: Array<{ name: string; content_type: string; content_bytes: string }> = [];
         if (params.candidate.email) {
             try {
@@ -452,21 +477,23 @@ const App = () => {
 
         const interviewerBodyTemplate = `Dear ${interviewerName},
 
-An interview has been scheduled with the following candidate:
+You are part of the interview panel for the ${params.jobTitle || '[Job Title]'} position.
 
-Candidate Name: [Candidate Name]
-Role: ${params.jobTitle || 'a relevant position'}
-Interview Date & Time: ${params.interviewDate}
-Mode: Online
-Meeting Link: ${meetingLinkText}
+Candidate: [Candidate Name]
+Date & Time: ${params.interviewDate}${params.interviewTime ? ` | ${params.interviewTime}` : ''}
+Your Role: ${interviewerRole}
+Focus Area: ${evaluationInstructions}
+Mode: ${modeText}
+Location / Meeting Link: ${params.locationText || meetingLinkText}
 
-Candidate Resume: (Attached)
+Please review the candidate profile before the interview.
 
-Kindly confirm your availability.
+${params.customMessage || ''}
 
-Regards,
-${effectiveUser?.name || 'HR Team'}`;
-        const interviewerSubject = applyEmailTemplate('Interview Assignment: [Candidate Name] - [Job Title]', params.candidate, params.jobTitle);
+Best regards,
+${effectiveUser?.name || '[Recruiter Name]'}
+${companyProfile?.name || '[Company Name]'}`;
+        const interviewerSubject = applyEmailTemplate('Interview Scheduled – Interviewer | [Job Title] | [Candidate Name]', params.candidate, params.jobTitle);
         const interviewerBody = applyEmailTemplate(interviewerBodyTemplate, params.candidate, params.jobTitle);
 
         await Promise.all(interviewerEmails.map(interviewerEmail => {
@@ -490,7 +517,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                 body: JSON.stringify(interviewerPayload),
             });
         }));
-    }, [applyEmailTemplate, extractEmails, effectiveUser?.name]);
+    }, [applyEmailTemplate, companyProfile?.name, deriveInterviewerRole, extractEmails, effectiveUser?.name]);
 
 
     useEffect(() => {
@@ -690,6 +717,16 @@ ${effectiveUser?.name || 'HR Team'}`;
                 );
                 if (!shouldSchedule) return;
             }
+            const jobRecord = allJobDescriptions.find(j => String(j.jobId || j.id) === String(jobId));
+            const fallbackTitle = (details.title || '').trim();
+            const resolvedJobTitle =
+                selectedJob?.title ||
+                selectedJobForDetail?.title ||
+                jobRecord?.title ||
+                (fallbackTitle && fallbackTitle.toLowerCase() !== 'interview' ? fallbackTitle : '') ||
+                'N/A';
+            const resolvedRole = selectedJob?.roleCategory || selectedJobForDetail?.roleCategory || resolvedJobTitle;
+
             const payload = {
                 job_id: jobId,
                 candidate_id: candidateForMeeting.id,
@@ -697,7 +734,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                 organizer_email: uploadedBy.trim().toLowerCase(),
                 candidate_email: candidateForMeeting.email.trim().toLowerCase(),
                 candidate_name: candidateForMeeting.name,
-                title: details.title,
+                title: resolvedJobTitle,
                 interview_type: details.type,
                 date_time: details.dateTime,
                 duration: details.duration,
@@ -712,20 +749,32 @@ ${effectiveUser?.name || 'HR Team'}`;
                 body: JSON.stringify(payload),
             });
 
-            const meetingLink = data?.meeting_link || '';
+            const meetingLink = data?.meeting_link || data?.web_link || '';
 
             const interviewDate = new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
+            const interviewDateOnly = new Date(details.dateTime).toLocaleDateString([], { dateStyle: 'full' });
+            const interviewTimeOnly = new Date(details.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+            const interviewMode = meetingLink ? 'Online' : 'In-person';
+            const locationOrLink = meetingLink || selectedJob?.location || selectedJobForDetail?.location || 'To be shared by recruiter';
 
             await sendInterviewerEmail({
                 candidate: candidateForMeeting,
-                jobTitle: selectedJob?.title || selectedJobForDetail?.title || 'a relevant position',
+                jobTitle: resolvedJobTitle,
+                roleLabel: resolvedRole,
                 interviewer: details.interviewer,
                 interviewDate,
+                interviewTime: interviewTimeOnly,
+                timeZone,
                 duration: details.duration,
                 meetingLink,
+                locationText: locationOrLink,
+                interviewMode,
                 jobId,
                 uploadedBy,
                 fromEmail: uploadedBy.trim().toLowerCase(),
+                interviewType: details.type,
+                customMessage: details.description,
             });
 
 
@@ -750,11 +799,31 @@ ${effectiveUser?.name || 'HR Team'}`;
             handleUpdateCandidate(updatedCandidate);
             logAction(`Scheduled ${details.type} interview for candidate`, { targetType: 'Candidate', targetName: candidateForMeeting.name, targetId: candidateForMeeting.id });
 
-            const meetingLine = meetingLink ? `Meeting Link: ${meetingLink}` : 'Meeting Link: TBD (will be shared)';
-            const emailBody = `Hi ${candidateForMeeting.name},\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}\nDuration: ${details.duration} minutes\nInterviewer(s): ${formatInterviewerName(details.interviewer)}\n${meetingLine}\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+            const emailBody = `Dear ${candidateForMeeting.name},
+
+We are pleased to inform you that your interview for the position of ${resolvedJobTitle} at ${companyProfile?.name || 'our company'} has been scheduled.
+
+Interview Details:
+
+Date: ${interviewDateOnly}
+
+Time: ${interviewTimeOnly} (${timeZone})
+
+Mode: ${interviewMode}
+
+Interviewer(s): ${formatInterviewerName(details.interviewer)}
+
+Location / Meeting Link: ${locationOrLink}
+
+Please ensure you are available at the scheduled time. If you face any difficulty or need to reschedule, kindly inform us in advance.
+
+We look forward to speaking with you.
+
+Best regards,
+${effectiveUser.name}`;
 
             setInitialEmailDraft({
-                subject: `Invitation: ${details.type} Interview for ${selectedJob?.title || 'a relevant position'}`,
+                subject: `Interview Scheduled - Candidate | ${resolvedJobTitle}`,
                 body: emailBody,
             });
 
@@ -811,6 +880,15 @@ ${effectiveUser?.name || 'HR Team'}`;
                     if (!interviewer) {
                         throw new Error(`Missing interviewer for ${candidate.name}`);
                     }
+                    const jobRecord = allJobDescriptions.find(j => String(j.jobId || j.id) === String(jobId));
+                    const fallbackTitle = (details.title || '').trim();
+                    const resolvedJobTitle =
+                        selectedJob?.title ||
+                        selectedJobForDetail?.title ||
+                        jobRecord?.title ||
+                        (fallbackTitle && fallbackTitle.toLowerCase() !== 'interview' ? fallbackTitle : '') ||
+                        'N/A';
+
                     const payload = {
                         job_id: jobId,
                         candidate_id: candidate.id,
@@ -818,7 +896,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                         organizer_email: uploadedBy.trim().toLowerCase(),
                         candidate_email: candidate.email.trim().toLowerCase(),
                         candidate_name: candidate.name,
-                        title: details.title,
+                        title: resolvedJobTitle,
                         interview_type: details.type,
                         date_time: details.dateTime,
                         duration: details.duration,
@@ -831,7 +909,7 @@ ${effectiveUser?.name || 'HR Team'}`;
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload),
                     });
-                    return { candidate, meetingLink: data?.meeting_link || '' };
+                    return { candidate, meetingLink: data?.meeting_link || data?.web_link || '' };
                 })
             );
 
@@ -842,16 +920,38 @@ ${effectiveUser?.name || 'HR Team'}`;
             if (successful.length) {
                 await Promise.allSettled(successful.map(s => {
                     const interviewer = (details.interviewerById[s.candidate.id] || details.defaultInterviewer || '').trim();
+                    const meetingDateObj = new Date(details.dateTime);
+                    const meetingDateLabel = meetingDateObj.toLocaleDateString([], { dateStyle: 'full' });
+                    const meetingTimeLabel = meetingDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                    const jobRecord = allJobDescriptions.find(j => String(j.jobId || j.id) === String(jobId));
+                    const fallbackTitle = (details.title || '').trim();
+                    const resolvedJobTitle =
+                        selectedJob?.title ||
+                        selectedJobForDetail?.title ||
+                        jobRecord?.title ||
+                        (fallbackTitle && fallbackTitle.toLowerCase() !== 'interview' ? fallbackTitle : '') ||
+                        'N/A';
+                    const resolvedRole = selectedJob?.roleCategory || selectedJobForDetail?.roleCategory || resolvedJobTitle;
+                    const meetingLink = s.meetingLink || '';
                     return sendInterviewerEmail({
                         candidate: s.candidate,
-                        jobTitle: selectedJob?.title || selectedJobForDetail?.title || 'a relevant position',
+                        jobTitle: resolvedJobTitle,
+                        roleLabel: resolvedRole,
                         interviewer,
-                        interviewDate: new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' }),
+                        interviewDate: meetingDateLabel,
+                        interviewTime: meetingTimeLabel,
+                        timeZone,
                         duration: details.duration,
-                        meetingLink: s.meetingLink || '',
+                        meetingLink,
+                        locationText: meetingLink || selectedJob?.location || selectedJobForDetail?.location || 'To be shared by recruiter',
+                        interviewMode: meetingLink ? 'Online' : 'In-person',
                         jobId,
                         uploadedBy,
                         fromEmail: uploadedBy.trim().toLowerCase(),
+                        interviewType: details.type,
+                        customMessage: details.description,
+                        customEvaluationInstructions: details.description,
                     });
                 }));
                 setAllCandidates(prev => prev.map(c => {
@@ -884,12 +984,43 @@ ${effectiveUser?.name || 'HR Team'}`;
             }
 
             if (details.sendEmailAfter && successful.length > 0) {
-                const jobTitle = selectedJob?.title || selectedJobForDetail?.title || 'a relevant position';
-                const meetingDate = new Date(details.dateTime).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
-                const emailBodyTemplate = `Hi [Candidate Name],\n\nWe would like to invite you for a ${details.type} interview. Please see the details below:\n\nTopic: ${details.title}\nDate & Time: ${meetingDate}\nDuration: ${details.duration} minutes\nInterviewer(s): ${formatInterviewerName(details.defaultInterviewer || '')}\nMeeting Link: [Meeting Link]\n\nAgenda:\n${details.description}\n\nPlease let us know if this time works for you.\n\nBest regards,\n${effectiveUser.name}`;
+                const jobRecord = allJobDescriptions.find(j => String(j.jobId || j.id) === String(jobId));
+                const fallbackTitle = (details.title || '').trim();
+                const jobTitle =
+                    selectedJob?.title ||
+                    selectedJobForDetail?.title ||
+                    jobRecord?.title ||
+                    (fallbackTitle && fallbackTitle.toLowerCase() !== 'interview' ? fallbackTitle : '') ||
+                    'N/A';
+                const meetingDateObj = new Date(details.dateTime);
+                const meetingDate = meetingDateObj.toLocaleDateString([], { dateStyle: 'full' });
+                const meetingTime = meetingDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                const emailBodyTemplate = `Dear [Candidate Name],
+
+We are pleased to inform you that your interview for the position of ${jobTitle} at ${companyProfile?.name || 'our company'} has been scheduled.
+
+Interview Details:
+
+Date: ${meetingDate}
+
+Time: ${meetingTime} (${timeZone})
+
+Mode: Online
+
+Interviewer(s): ${formatInterviewerName(details.defaultInterviewer || '')}
+
+Location / Meeting Link: [Meeting Link]
+
+Please ensure you are available at the scheduled time. If you face any difficulty or need to reschedule, kindly inform us in advance.
+
+We look forward to speaking with you.
+
+Best regards,
+${effectiveUser.name}`;
 
                 setInitialEmailDraft({
-                    subject: `Invitation: ${details.type} Interview for ${jobTitle}`,
+                    subject: `Interview Scheduled - Candidate | ${jobTitle}`,
                     body: emailBodyTemplate,
                 });
                 setEmailTargets(successful.map(s => s.candidate));
@@ -1858,10 +1989,19 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         const requiredSkills = Array.isArray(rawSkills)
             ? rawSkills.map((s: any) => String(s).trim()).filter(Boolean)
             : String(rawSkills).split(',').map(s => s.trim()).filter(Boolean);
-        const expMin = raw.job_experience_min ?? raw.jobExperienceMin;
-        const expMax = raw.job_experience_max ?? raw.jobExperienceMax;
-        const experience = (expMin !== undefined || expMax !== undefined)
-            ? `${expMin ?? 0} - ${expMax ?? 0} Years`
+        const expMinRaw = raw.job_experience_min ?? raw.jobExperienceMin;
+        const expMaxRaw = raw.job_experience_max ?? raw.jobExperienceMax;
+        const expMinParsed = expMinRaw !== undefined && expMinRaw !== null ? Number(expMinRaw) : null;
+        const expMaxParsed = expMaxRaw !== undefined && expMaxRaw !== null ? Number(expMaxRaw) : null;
+        // Keep ATS experience range anchored from 0 years in all views.
+        const expMin = 0;
+        const expMax = Number.isFinite(expMaxParsed)
+            ? Math.max(expMaxParsed as number, 0)
+            : Number.isFinite(expMinParsed)
+                ? Math.max(expMinParsed as number, 0)
+                : 0;
+        const experience = (expMinRaw !== undefined || expMaxRaw !== undefined)
+            ? `${expMin} - ${expMax} Years`
             : (raw.experience || 'N/A');
         const statusRaw = (raw.status || raw.job_status || 'Active').toString().toLowerCase();
         const status = (statusRaw === 'inactive' || statusRaw === 'closed')
@@ -2415,17 +2555,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 if (!candidate.email) {
                     throw new Error(`Missing email for ${candidate.name}`);
                 }
-                const personalizedSubjectBase = applyEmailTemplate(options.subject, candidate, jobTitle);
-                const personalizedSubject =
-                    candidatesToSend.length > 1 && !personalizedSubjectBase.toLowerCase().includes((candidate.name || '').toLowerCase())
-                        ? `${personalizedSubjectBase} - ${candidate.name}`
-                        : personalizedSubjectBase;
+                const personalizedSubject = applyEmailTemplate(options.subject, candidate, jobTitle);
 
                 const personalizedBodyBase = applyEmailTemplate(options.body, candidate, jobTitle);
-                const personalizedBody =
-                    candidatesToSend.length > 1
-                        ? enrichBulkEmailBody(personalizedBodyBase, candidate, index)
-                        : personalizedBodyBase;
+                const personalizedBody = personalizedBodyBase;
                 const payload = {
                     job_id: jobId,
                     candidate_id: candidate.id,
@@ -2649,7 +2782,13 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onEmailSelected={handleEmailSelected}
                     onAnalyzeSelected={handleAnalyzeSelected}
                     onViewCandidate={handleViewCandidate}
+                    onScheduleMeeting={handleOpenMeetingModal}
                     onScheduleSelected={handleOpenBulkMeetingModal}
+                    canDeleteCandidates={
+                        (effectiveUser?.role || '') === 'super_admin' ||
+                        (effectiveUser?.role || '') === 'admin' ||
+                        (effectiveUser?.role || '').includes('Admin')
+                    }
                     confirmActionToast={confirmActionToast}
                  />;
             case 'Communications':

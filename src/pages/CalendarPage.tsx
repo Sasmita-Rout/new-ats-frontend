@@ -7,6 +7,9 @@ type CalendarEvent = {
     title: string;
     interview: Interview;
     candidate: Candidate;
+    eventId?: string;
+    jobId?: string;
+    projectId?: string;
 };
 
 const CalendarView = ({ events, onEventClick, onMoreClick, currentDate }) => {
@@ -57,8 +60,8 @@ const CalendarView = ({ events, onEventClick, onMoreClick, currentDate }) => {
                     <div key={key} className={`calendar-day ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''}`}>
                         {day && <span className="day-number">{day}</span>}
                         <div className="day-events">
-                            {dayEvents.slice(0, 3).map(event => (
-                                <div key={event.interview.id} className="event-pill" onClick={() => onEventClick(event)}>
+                            {dayEvents.slice(0, 3).map((event, index) => (
+                                <div key={`${event.eventId || event.interview.id}-${index}`} className="event-pill" onClick={() => onEventClick(event)}>
                                     {event.title}
                                 </div>
                             ))}
@@ -85,9 +88,10 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [backendEvents, setBackendEvents] = useState<CalendarEvent[]>([]);
     const [moreEventsModal, setMoreEventsModal] = useState<{ dateLabel: string; events: CalendarEvent[] } | null>(null);
+    const [reloadToken, setReloadToken] = useState(0);
 
-    //const API_BASE_URL ='http://localhost:8000';
-    const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+    const API_BASE_URL ='http://localhost:8000';
+    //const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
 
     const allEvents: CalendarEvent[] = useMemo(() => {
         const events: CalendarEvent[] = [];
@@ -128,7 +132,9 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
                 if (organizerEmail) {
                     params.set('interviewer_email', organizerEmail.trim().toLowerCase());
                 }
-                const response = await fetch(`${API_BASE_URL}/communications/calendar/events-db?${params.toString()}`);
+                const response = await fetch(`${API_BASE_URL}/communications/calendar/events-db?${params.toString()}`, {
+                    credentials: 'include',
+                });
                 const data = await response.json();
                 if (!response.ok) {
                     throw new Error(data?.detail || 'Failed to fetch calendar events');
@@ -171,6 +177,9 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
                         title: `${candidate.name}`,
                         interview,
                         candidate,
+                        eventId: event?.id ? String(event.id) : undefined,
+                        jobId: event?.job_id ? String(event.job_id) : (event?.jobId ? String(event.jobId) : undefined),
+                        projectId: event?.project_id ? String(event.project_id) : (event?.projectId ? String(event.projectId) : undefined),
                     });
                 }
 
@@ -180,7 +189,7 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
             }
         };
         fetchEvents();
-    }, [API_BASE_URL, organizerEmail, currentDate, candidates]);
+    }, [API_BASE_URL, organizerEmail, currentDate, candidates, reloadToken]);
     
     const changeMonth = (offset: number) => {
         setCurrentDate(prev => {
@@ -205,6 +214,120 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
             }),
             events,
         });
+    };
+
+    const matchesCalendarEvent = (a: CalendarEvent, b: CalendarEvent) => {
+        if (a.eventId && b.eventId) return a.eventId === b.eventId;
+        return a.interview.id === b.interview.id && a.candidate.id === b.candidate.id;
+    };
+
+    const requestInterviewMutation = async (
+        requests: Array<{ path: string; method?: 'POST' | 'PUT' | 'DELETE'; payload?: Record<string, any> }>
+    ) => {
+        let lastError = 'Request failed';
+        const normalizeError = (value: any): string => {
+            if (!value) return 'Request failed';
+            if (typeof value === 'string') return value;
+            if (Array.isArray(value)) return value.map(v => normalizeError(v)).join(', ');
+            if (typeof value === 'object') {
+                if (typeof value.msg === 'string') return value.msg;
+                if (typeof value.detail === 'string') return value.detail;
+                try {
+                    return JSON.stringify(value);
+                } catch {
+                    return String(value);
+                }
+            }
+            return String(value);
+        };
+        for (const req of requests) {
+            try {
+                const response = await fetch(`${API_BASE_URL}${req.path}`, {
+                    method: req.method || 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: req.method === 'DELETE' ? undefined : JSON.stringify(req.payload || {}),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (response.ok) return data;
+                lastError = normalizeError(data?.detail || data?.message || `${req.path} failed`);
+            } catch (e: any) {
+                lastError = normalizeError(e?.message || e || 'Network error');
+            }
+        }
+        throw new Error(lastError);
+    };
+
+    const handleUpdateInterview = async (
+        targetEvent: CalendarEvent,
+        updates: { dateTime: string; duration: number; interviewer: string; notes: string }
+    ) => {
+        const payload = {
+            event_id: targetEvent.eventId,
+            candidate_email: (targetEvent.candidate.email || '').trim().toLowerCase(),
+            job_id: targetEvent.jobId,
+            project_id: targetEvent.projectId,
+            date_time: updates.dateTime,
+            old_date_time: targetEvent.interview.date,
+            duration: updates.duration,
+            interviewer: updates.interviewer,
+            description: updates.notes,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+        };
+
+        await requestInterviewMutation([
+            { path: '/communications/interview/update', method: 'POST', payload },
+        ]);
+
+        setBackendEvents(prev =>
+            prev.map(ev => {
+                if (!matchesCalendarEvent(ev, targetEvent)) return ev;
+                return {
+                    ...ev,
+                    date: new Date(updates.dateTime),
+                    interview: {
+                        ...ev.interview,
+                        date: updates.dateTime,
+                        duration: updates.duration,
+                        interviewer: updates.interviewer,
+                        notes: updates.notes,
+                    },
+                };
+            })
+        );
+        setSelectedEvent(prev => {
+            if (!prev || !matchesCalendarEvent(prev, targetEvent)) return prev;
+            return {
+                ...prev,
+                date: new Date(updates.dateTime),
+                interview: {
+                    ...prev.interview,
+                    date: updates.dateTime,
+                    duration: updates.duration,
+                    interviewer: updates.interviewer,
+                    notes: updates.notes,
+                },
+            };
+        });
+        setReloadToken(prev => prev + 1);
+    };
+
+    const handleCancelInterview = async (targetEvent: CalendarEvent) => {
+        const payload = {
+            event_id: targetEvent.eventId,
+            candidate_email: (targetEvent.candidate.email || '').trim().toLowerCase(),
+            job_id: targetEvent.jobId,
+            project_id: targetEvent.projectId,
+            old_date_time: targetEvent.interview.date,
+        };
+
+        await requestInterviewMutation([
+            { path: '/communications/interview/cancel', method: 'POST', payload },
+        ]);
+
+        setBackendEvents(prev => prev.filter(ev => !matchesCalendarEvent(ev, targetEvent)));
+        setSelectedEvent(null);
+        setReloadToken(prev => prev + 1);
     };
 
     return (
@@ -271,6 +394,8 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
                     onClose={() => setSelectedEvent(null)}
                     event={selectedEvent}
                     onViewProfile={handleViewProfile}
+                    onUpdateInterview={handleUpdateInterview}
+                    onCancelInterview={handleCancelInterview}
                 />
             )}
         </div>

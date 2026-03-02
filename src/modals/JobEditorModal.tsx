@@ -12,13 +12,13 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
     const [formData, setFormData] = useState<Partial<JobDescription>>({
         title: '',
         location: '',
-        experience: '0.5 - 2.5 Years',
+        experience: '0 - 5 Years',
         description: '',
         requiredSkills: []
     });
     const [skillInput, setSkillInput] = useState('');
-    const [minExp, setMinExp] = useState(0.5);
-    const [maxExp, setMaxExp] = useState(2.5);
+    const [minExp, setMinExp] = useState(0);
+    const [maxExp, setMaxExp] = useState(5);
     const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
 
     useEffect(() => {
@@ -28,28 +28,29 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
                 // Try to parse experience range "min - max"
                 const expParts = jobToEdit.experience?.match(/(\d+(\.\d+)?)\s*-\s*(\d+(\.\d+)?)/);
                 if (expParts) {
-                    setMinExp(parseFloat(expParts[1]));
-                    setMaxExp(parseFloat(expParts[3]));
+                    const parsedMax = parseFloat(expParts[3]);
+                    setMinExp(0);
+                    setMaxExp(Number.isFinite(parsedMax) ? Math.max(parsedMax, 0) : 5);
                 } else {
                     const single = parseFloat(jobToEdit.experience || '0');
                     if (!isNaN(single)) {
-                        setMinExp(single);
-                        setMaxExp(single + 2);
+                        setMinExp(0);
+                        setMaxExp(Math.max(single, 5));
                     } else {
-                        setMinExp(0.5);
-                        setMaxExp(2.5);
+                        setMinExp(0);
+                        setMaxExp(5);
                     }
                 }
             } else {
                 setFormData({
                     title: '',
                     location: '',
-                    experience: '0.5 - 2.5 Years',
+                    experience: '0 - 5 Years',
                     description: '',
                     requiredSkills: []
                 });
-                setMinExp(0.5);
-                setMaxExp(2.5);
+                setMinExp(0);
+                setMaxExp(5);
             }
         }
     }, [isOpen, jobToEdit]);
@@ -140,11 +141,11 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
                                     className="slider-track-fill" 
                                     style={{ left: `${minPercent}%`, width: `${maxPercent - minPercent}%` }}
                                 ></div>
-                                <input type="range" min="0.5" max="30" step="0.5" value={minExp} onChange={(e) => handleSliderChange(e, 'min')} className="range-input" />
-                                <input type="range" min="0.5" max="30" step="0.5" value={maxExp} onChange={(e) => handleSliderChange(e, 'max')} className="range-input" />
+                                <input type="range" min="0" max="30" step="0.5" value={minExp} onChange={(e) => handleSliderChange(e, 'min')} className="range-input" />
+                                <input type="range" min="0" max="30" step="0.5" value={maxExp} onChange={(e) => handleSliderChange(e, 'max')} className="range-input" />
                             </div>
                             <div className="experience-range-scale">
-                                <span>0.5 Yrs</span>
+                                <span>0 Years</span>
                                 <span>30+ Yrs</span>
                             </div>
                         </div>

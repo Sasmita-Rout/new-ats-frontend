@@ -2125,9 +2125,9 @@ body::before {
     flex: 1 1 420px;
 }
 .toolbar .actions.bulk-selected-actions {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 8px;
-    flex: 0 1 auto;
+    flex: 1 1 420px;
 }
 .toolbar .actions.bulk-selected-actions .selection-count,
 .toolbar .actions.bulk-selected-actions .btn {
@@ -2290,7 +2290,8 @@ body::before {
 
 /* Candidates Table */
 .candidates-table-container {
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     padding: 0;
     background: rgba(255,255,255,0.9);
     /* Card styles */
@@ -2303,6 +2304,7 @@ body::before {
 }
 .candidates-table {
     width: 100%;
+    min-width: 1080px;
     table-layout: fixed;
     border-collapse: collapse;
 }
@@ -2335,7 +2337,12 @@ body::before {
 .action-buttons {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.action-buttons .btn {
+    white-space: nowrap;
 }
 
 .candidates-table th:first-child, .candidates-table td:first-child {
@@ -2839,8 +2846,9 @@ body::before {
 
 .chatbot-window-new {
     position: fixed;
-    right: 24px;
-    bottom: 24px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     z-index: 1099;
     width: min(90vw, 700px);
     height: min(76vh, 760px);
@@ -5722,7 +5730,7 @@ body::before {
     color: #1F2937;
 }
 
-.job-editor-modal .form-group input,
+.job-editor-modal .form-group input:not([type="range"]),
 .job-editor-modal .form-group textarea {
     border-radius: 12px;
     border: 1px solid #CBD5E1;
@@ -5733,7 +5741,7 @@ body::before {
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
-.job-editor-modal .form-group input:focus,
+.job-editor-modal .form-group input:not([type="range"]):focus,
 .job-editor-modal .form-group textarea:focus {
     border-color: #818CF8;
     box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
@@ -5759,67 +5767,104 @@ body::before {
 .experience-range-pill {
     font-size: 16px;
     font-weight: 700;
-    color: #1D4ED8;
-    background: linear-gradient(180deg, #EFF6FF, #DBEAFE);
-    border: 1px solid #BFDBFE;
+    color: #2563EB;
+    background: #E5E7EB;
+    border: 1px solid #CBD5E1;
     border-radius: 16px;
-    padding: 10px 18px;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(-2px);
-    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
-}
-
-.experience-range-group:hover .experience-range-pill,
-.experience-range-group:focus-within .experience-range-pill {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
+    padding: 8px 18px;
 }
 
 .job-editor-modal .dual-range-slider-container {
     margin: 10px 0 8px;
-    height: 28px;
+    height: 16px;
+}
+
+.interview-detail-modal-body a {
+    word-break: break-all;
+}
+
+.interview-edit-panel {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    background: #F8FAFC;
+    display: grid;
+    gap: 10px;
+}
+
+.interview-edit-panel .form-group {
+    margin: 0;
+}
+
+.interview-edit-panel .form-group label {
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: #374151;
 }
 
 .job-editor-modal .slider-track-bg {
-    height: 8px;
+    height: 12px;
     border-radius: 999px;
-    background: linear-gradient(90deg, #E5E7EB, #D1D5DB);
+    background: #C7D2FE;
 }
 
 .job-editor-modal .slider-track-fill {
-    height: 8px;
+    height: 12px;
     border-radius: 999px;
-    background: linear-gradient(90deg, #3B82F6, #2563EB);
-    box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.1), 0 2px 8px rgba(79, 70, 229, 0.24);
+    background: #4F46E5;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .job-editor-modal .range-input::-webkit-slider-runnable-track {
-    height: 8px;
+    height: 12px;
+    background: transparent;
 }
 
 .job-editor-modal .range-input::-webkit-slider-thumb {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: #FFFFFF;
-    border: 3px solid #2563EB;
-    box-shadow: 0 2px 10px rgba(79, 70, 229, 0.28);
-    margin-top: -7px;
+    background: #4F46E5;
+    border: 0;
+    box-shadow: none;
+    opacity: 0;
+    margin-top: -3px;
+    transition: opacity 0.2s ease, box-shadow 0.2s ease;
 }
 
 .job-editor-modal .range-input::-moz-range-track {
-    height: 8px;
+    height: 12px;
+    background: transparent;
 }
 
 .job-editor-modal .range-input::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: #FFFFFF;
-    border: 3px solid #2563EB;
-    box-shadow: 0 2px 10px rgba(79, 70, 229, 0.28);
+    background: #4F46E5;
+    border: 0;
+    box-shadow: none;
+    opacity: 0;
+    transition: opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.job-editor-modal .experience-range-group:hover .slider-track-fill,
+.job-editor-modal .experience-range-group:focus-within .slider-track-fill {
+    background: #4338CA;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+
+.job-editor-modal .experience-range-group:hover .range-input::-webkit-slider-thumb,
+.job-editor-modal .experience-range-group:focus-within .range-input::-webkit-slider-thumb {
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.18);
+}
+
+.job-editor-modal .experience-range-group:hover .range-input::-moz-range-thumb,
+.job-editor-modal .experience-range-group:focus-within .range-input::-moz-range-thumb {
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.18);
 }
 
 .experience-range-scale {
