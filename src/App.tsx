@@ -2510,6 +2510,47 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         setCurrentPage('Communications');
     };
 
+    const handleContactSupportEmailSelected = (contacts: Array<{ name: string; email: string }>) => {
+        const baseId = Date.now();
+        const targets: Candidate[] = contacts
+            .filter(c => c.email && c.email.trim())
+            .map((contact, idx) => ({
+                id: baseId + idx + 1,
+                name: contact.name || contact.email,
+                title: 'Support',
+                avatar: '',
+                summary: '',
+                email: contact.email.trim().toLowerCase(),
+                phone: '',
+                location: '',
+                experience: [],
+                education: [],
+                skills: [],
+                softSkills: [],
+                languages: [],
+                certifications: [],
+                links: [],
+                status: 'Screening',
+                appliedDate: new Date().toISOString(),
+                salaryExpectation: null,
+                resumeContent: '',
+                originalResumeFile: null,
+                applicationHistory: [],
+                tasks: [],
+                notes: [],
+                category: 'Support',
+                tags: ['Support'],
+                source: 'Contact Support',
+                rejectionReason: null,
+                communicationHistory: [],
+                interviews: [],
+            }));
+
+        setEmailTargets(targets);
+        setEmailJobIdOverride(null);
+        setCurrentPage('Communications');
+    };
+
     const clearEmailTargets = useCallback(() => {
         setEmailTargets([]);
         setEmailJobIdOverride(null);
@@ -2518,33 +2559,39 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const handleSendEmail = async (options: { candidates: Candidate[]; subject: string; body: string; fromEmail: string; cc: string; bcc: string; contentType: 'Text' | 'HTML'; saveToSentItems: boolean; }) => {
         if (!options.candidates.length) return;
         const uploadedBy = await getUploadedBy();
-        const jobId = emailJobIdOverride || resolveJobId(null);
+        const isSupportCompose = options.candidates.every(
+            c => (c.source || '').toLowerCase() === 'contact support' || (c.category || '').toLowerCase() === 'support'
+        );
+        const jobId = isSupportCompose ? null : (emailJobIdOverride || resolveJobId(null));
         const jobTitle = selectedJob?.title || selectedJobForDetail?.title || '';
         const ccList = options.cc ? options.cc.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) : [];
         const bccList = options.bcc ? options.bcc.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) : [];
 
-        const emailExistsList = await Promise.all(
-            options.candidates.map(async (candidate) => {
-                if (!candidate.email) return false;
-                const data = await apiRequest(
-                    `/communications/email/exists?candidate_email=${encodeURIComponent(candidate.email.trim().toLowerCase())}&job_id=${encodeURIComponent(jobId)}`
-                );
-                return !!data?.exists;
-            })
-        );
-        const alreadySent = options.candidates.filter((_, index) => emailExistsList[index]);
         let candidatesToSend = options.candidates;
-        if (alreadySent.length > 0) {
-            const shouldSend = await confirmActionToast(
-                `${alreadySent.length} candidate(s) already received an email. Send again to all?`,
-                'Send again',
-                'Skip duplicates'
+        if (!isSupportCompose) {
+            const emailExistsList = await Promise.all(
+                options.candidates.map(async (candidate) => {
+                    if (!candidate.email) return false;
+                    const existsPath = jobId
+                        ? `/communications/email/exists?candidate_email=${encodeURIComponent(candidate.email.trim().toLowerCase())}&job_id=${encodeURIComponent(jobId)}`
+                        : `/communications/email/exists?candidate_email=${encodeURIComponent(candidate.email.trim().toLowerCase())}`;
+                    const data = await apiRequest(existsPath);
+                    return !!data?.exists;
+                })
             );
-            if (!shouldSend) {
-                candidatesToSend = options.candidates.filter((_, index) => !emailExistsList[index]);
-                if (!candidatesToSend.length) {
-                    notifyInfo('No emails sent.');
-                    return;
+            const alreadySent = options.candidates.filter((_, index) => emailExistsList[index]);
+            if (alreadySent.length > 0) {
+                const shouldSend = await confirmActionToast(
+                    `${alreadySent.length} candidate(s) already received an email. Send again to all?`,
+                    'Send again',
+                    'Skip duplicates'
+                );
+                if (!shouldSend) {
+                    candidatesToSend = options.candidates.filter((_, index) => !emailExistsList[index]);
+                    if (!candidatesToSend.length) {
+                        notifyInfo('No emails sent.');
+                        return;
+                    }
                 }
             }
         }
@@ -2588,7 +2635,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         if (failureCount > 0) {
             notifyError(`Email sent to ${successCount} candidate(s). ${failureCount} failed.`);
         } else {
-            notifySuccess(`Email sent to ${successCount} candidate(s).`);
+            notifySuccess(isSupportCompose ? 'Email sent successfully.' : `Email sent to ${successCount} candidate(s).`);
         }
 
         if (successCount > 0) {
@@ -2836,6 +2883,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     invitations={invitations}
                     onInviteUser={() => setInviteModalOpen(true)}
                     activeView="My Profile"
+                    onComposeSupportEmail={handleContactSupportEmailSelected}
                 />;
             case 'SettingsContactSupport':
                 return <SettingsPage 
@@ -2845,6 +2893,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     invitations={invitations}
                     onInviteUser={() => setInviteModalOpen(true)}
                     activeView="Contact Support"
+                    onComposeSupportEmail={handleContactSupportEmailSelected}
                 />;
             default:
                 return <div>Page not found</div>;
@@ -2898,7 +2947,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}
                     jobs={globalSearchResults.jobs}
-                    onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); setCurrentPage('Candidates'); setGlobalSearchTerm(''); }}
+                    onCandidateSelect={(c) => {
+                        setCandidateBackPage(null);
+                        setGlobalSearchTerm('');
+                        handleViewCandidate(c);
+                    }}
                     onJobSelect={(j) => { setSelectedJobForDetail(j); setCurrentPage('Job Matching'); setGlobalSearchTerm(''); }}
                     onUpdateCurrentUser={handleUpdateCurrentUser}
                     onLogout={handleLogout}

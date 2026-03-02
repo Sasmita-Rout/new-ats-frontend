@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, UserRole, Invitation, InvitationStatus } from '../types/types';
+import { User, UserRole, Invitation } from '../types/types';
 import { getInitials } from '../utils/helpers';
 
 
@@ -356,7 +356,42 @@ const WorkspaceDataView = ({ onExportData, onImportData, onResetAllData }) => {
     );
 };
 
-const ContactSupportView = () => {
+type SupportContact = {
+    name: string;
+    email: string;
+};
+
+const ContactSupportView = ({ onComposeSupportEmail }: { onComposeSupportEmail?: (contacts: SupportContact[]) => void }) => {
+    const supportContacts: SupportContact[] = [
+        { name: 'Baburaj R', email: 'baburaj.r@accionlabs.com' },
+        { name: 'Kokila Umasankar', email: 'kokila.umasankar@accionlabs.com' },
+        { name: 'Sandhiya G', email: 'sandhiya.g@accionlabs.com' },
+        { name: 'Sasmita Rout', email: 'sasmita.rout@accionlabs.com' },
+    ];
+    const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
+
+    const isAllSelected = selectedEmails.length === supportContacts.length;
+
+    const toggleSelect = (email: string) => {
+        setSelectedEmails(prev =>
+            prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]
+        );
+    };
+
+    const handleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedEmails([]);
+            return;
+        }
+        setSelectedEmails(supportContacts.map(c => c.email));
+    };
+
+    const handleComposeSelected = () => {
+        if (!onComposeSupportEmail || selectedEmails.length === 0) return;
+        const selectedContacts = supportContacts.filter(c => selectedEmails.includes(c.email));
+        onComposeSupportEmail(selectedContacts);
+    };
+
     return (
         <div className="info-card">
             <div className="page-header contact-support-header">
@@ -364,50 +399,54 @@ const ContactSupportView = () => {
                     <h4>Contact Support</h4>
                     <p className="subtitle">For reference and doubts, contact any of them below......</p>
                 </div>
+                <div className="actions-group">
+                    <button type="button" className="btn btn-secondary" onClick={handleSelectAll}>
+                        {isAllSelected ? 'Clear All' : 'Select All'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleComposeSelected}
+                        disabled={selectedEmails.length === 0}
+                    >
+                        Email Selected
+                    </button>
+                </div>
             </div>
             <div className="contact-support-grid">
-                <div className="contact-support-card">
-                    <div className="contact-support-icon">
-                        <span className="material-symbols-outlined">person</span>
+                {supportContacts.map(contact => (
+                    <div className="contact-support-card" key={contact.email}>
+                        <div className="contact-support-icon">
+                            <span className="material-symbols-outlined">person</span>
+                        </div>
+                        <div className="contact-support-content">
+                            <strong>{contact.name}</strong>
+                            <a
+                                href="#"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    onComposeSupportEmail?.([contact]);
+                                }}
+                            >
+                                {contact.email}
+                            </a>
+                        </div>
+                        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+                            <input
+                                type="checkbox"
+                                checked={selectedEmails.includes(contact.email)}
+                                onChange={() => toggleSelect(contact.email)}
+                                aria-label={`Select ${contact.email}`}
+                            />
+                        </div>
                     </div>
-                    <div className="contact-support-content">
-                        <strong>Baburaj R</strong>
-                        <a href="mailto:baburaj.r@accionlabs.com">baburaj.r@accionlabs.com</a>
-                    </div>
-                </div>
-                <div className="contact-support-card">
-                    <div className="contact-support-icon">
-                        <span className="material-symbols-outlined">person</span>
-                    </div>
-                    <div className="contact-support-content">
-                        <strong>Kokila Umasankar</strong>
-                        <a href="mailto:kokila.umasankar@accionlabs.com">kokila.umasankar@accionlabs.com</a>
-                    </div>
-                </div>
-                <div className="contact-support-card">
-                    <div className="contact-support-icon">
-                        <span className="material-symbols-outlined">person</span>
-                    </div>
-                    <div className="contact-support-content">
-                        <strong>Sandhiya G</strong>
-                        <a href="mailto:sandhiya.g@accionlabs.com">sandhiya.g@accionlabs.com</a>
-                    </div>
-                </div>
-                <div className="contact-support-card">
-                    <div className="contact-support-icon">
-                        <span className="material-symbols-outlined">person</span>
-                    </div>
-                    <div className="contact-support-content">
-                        <strong>Sasmita Rout</strong>
-                        <a href="mailto:sasmita.rout@accionlabs.com">sasmita.rout@accionlabs.com</a>
-                    </div>
-                </div>
+                ))}
             </div>
         </div>
     );
 };
 
-const SettingsPage = ({ effectiveUser, onUpdateUser, allUsers, invitations, onInviteUser, activeView = 'My Profile' }) => {
+const SettingsPage = ({ effectiveUser, onUpdateUser, allUsers, invitations, onInviteUser, activeView = 'My Profile', onComposeSupportEmail }) => {
     const renderCentered = (content: React.ReactNode) => (
         <div className="settings-view-wrapper">
             {content}
@@ -418,7 +457,7 @@ const SettingsPage = ({ effectiveUser, onUpdateUser, allUsers, invitations, onIn
         switch (activeView) {
             case 'My Profile': return renderCentered(<MyProfileView effectiveUser={effectiveUser} onUpdateUser={onUpdateUser} />);
             case 'Team Members': return <RecruiterTeamView invitations={invitations.filter(i => i.inviterId === effectiveUser.id)} onInviteUser={onInviteUser} allUsers={allUsers} />;
-            case 'Contact Support': return renderCentered(<ContactSupportView />);
+            case 'Contact Support': return renderCentered(<ContactSupportView onComposeSupportEmail={onComposeSupportEmail} />);
             default: return renderCentered(<MyProfileView effectiveUser={effectiveUser} onUpdateUser={onUpdateUser} />);
         }
     };

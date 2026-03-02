@@ -16,6 +16,9 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     const [aiPrompt, setAiPrompt] = useState('');
     const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
     const [isSending, setIsSending] = useState(false);
+    const isSupportCompose = emailTargets.length > 0 && emailTargets.every(
+        c => (c.source || '').toLowerCase() === 'contact support' || (c.category || '').toLowerCase() === 'support'
+    );
     
     useEffect(() => {
         if (initialDraft) {
@@ -101,6 +104,10 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
         const hasInvalidEmails = emailTargets.some(c => !isValidEmail(c.email));
         if (hasInvalidEmails) {
             alert("You have invalid or missing email addresses in your recipient list. Please remove them before sending.");
+            return;
+        }
+        if (isSupportCompose) {
+            handleConfirmSend();
             return;
         }
         setShowSendConfirm(true);
