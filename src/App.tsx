@@ -1595,7 +1595,7 @@ ${effectiveUser.name}`;
             const uploadedBy = await getUploadedBy();
             const jobId = job.jobId || String(job.id);
 
-            const data = await apiRequest('/matching/search-db', {
+            const data = await apiRequest('/matching/analyze-fit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
