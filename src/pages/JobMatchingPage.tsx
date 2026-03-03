@@ -6,10 +6,13 @@ interface ProjectCardProps {
     jobs: JobDescription[];
     onSelect: (project: Project) => void;
     onEdit: (project: Project) => void;
+    onAddTeamMember: (project: Project) => void;
+    canManageTeamMembers: boolean;
+    onViewTeamMembers: (project: Project) => void;
     showOwner?: boolean;
 }
 
-const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: ProjectCardProps) => {
+const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, onAddTeamMember, canManageTeamMembers, onViewTeamMembers, showOwner }: ProjectCardProps) => {
     const projectJobs = jobs.filter(j => j.projectId === project.project_id);
     const jobCount = projectJobs.length;
     const activeJobs = projectJobs.filter(j => j.status === 'Active').length;
@@ -37,6 +40,14 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: 
                      <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onEdit(project);}}>
                         <span className="material-symbols-outlined">edit</span> Edit
                     </button>
+                    {canManageTeamMembers && (
+                        <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onAddTeamMember(project);}}>
+                            <span className="material-symbols-outlined">group_add</span> Add Team Member
+                        </button>
+                    )}
+                    <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onViewTeamMembers(project);}}>
+                        <span className="material-symbols-outlined">groups</span> View Team
+                    </button>
                 </div>
             </div>
         </div>
@@ -46,20 +57,17 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: 
 ProjectCard.displayName = 'ProjectCard';
 
 
-const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEditProject, effectiveUser }) => {
+const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEditProject, onAddTeamMember, onViewTeamMembers, effectiveUser }) => {
     
     // Filter projects locally within the component to ensure correct visibility.
     const myProjects = useMemo(() => {
         if (!effectiveUser) return [];
-        if (effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm') {
-            return projects; // Admins see all projects passed in.
-        }
-        // Recruiters see only projects they created.
-        return projects.filter(p => p.uploaded_by === effectiveUser.email);
+        return projects;
     }, [projects, effectiveUser]);
 
     const role = effectiveUser?.role || '';
     const showOwner = role === 'super_admin' || role === 'admin' || role.includes('Admin');
+    const canManageTeamMembers = role === 'super_admin' || role === 'admin' || role.includes('Admin');
 
     return (
     <div className="page-content">
@@ -84,6 +92,9 @@ const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEdit
                         jobs={jobs}
                         onSelect={onProjectSelect}
                         onEdit={onEditProject}
+                        onAddTeamMember={onAddTeamMember}
+                        canManageTeamMembers={canManageTeamMembers}
+                        onViewTeamMembers={onViewTeamMembers}
                         showOwner={showOwner}
                     />
                 ))}

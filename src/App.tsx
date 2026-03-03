@@ -38,6 +38,8 @@ import ProjectEditorModal from './modals/ProjectEditorModal';
 import AIGenerateJDModal from './modals/AIGenerateJDModal';
 import InviteMemberModal from './modals/InviteMemberModal';
 import CandidateProfileModal from './modals/CandidateProfileModal';
+import AddTeamMemberModal from './modals/AddTeamMemberModal';
+import ViewTeamMembersModal from './modals/ViewTeamMembersModal';
 
 
 // Import utils
@@ -207,6 +209,11 @@ const App = () => {
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
     const [previewCandidate, setPreviewCandidate] = useState<Candidate | null>(null);
     const [candidateBackPage, setCandidateBackPage] = useState<string | null>(null);
+    const [isAddTeamMemberModalOpen, setAddTeamMemberModalOpen] = useState(false);
+    const [projectForTeamMember, setProjectForTeamMember] = useState<Project | null>(null);
+    const [isViewTeamMembersModalOpen, setViewTeamMembersModalOpen] = useState(false);
+    const [projectForViewTeam, setProjectForViewTeam] = useState<Project | null>(null);
+    const [projectTeamMembers, setProjectTeamMembers] = useState<any[]>([]);
 
     const upsertCandidatesByEmail = useCallback((prev: Candidate[], incoming: Candidate[]) => {
         const next = [...prev];
@@ -2140,6 +2147,41 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [apiRequest, getUploadedBy, normalizeJobFromApi, effectiveUser?.role]);
 
+    const handleOpenAddTeamMember = useCallback((project: Project) => {
+        setProjectForTeamMember(project);
+        setAddTeamMemberModalOpen(true);
+    }, []);
+
+    const handleAddTeamMember = useCallback(async (email: string) => {
+        if (!projectForTeamMember) return;
+        try {
+            const requestedBy = await getUploadedBy();
+            await apiRequest(`/project/${encodeURIComponent(projectForTeamMember.project_id)}/team`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_email: email, requested_by: requestedBy }),
+            });
+            toast.success('Team member added.');
+            setAddTeamMemberModalOpen(false);
+            setProjectForTeamMember(null);
+        } catch (error) {
+            console.error('Failed to add team member:', error);
+            toast.error(`Failed to add team member. ${error?.message || ''}`.trim());
+        }
+    }, [apiRequest, projectForTeamMember]);
+
+    const handleViewTeamMembers = useCallback(async (project: Project) => {
+        try {
+            const data = await apiRequest(`/project/${encodeURIComponent(project.project_id)}/team`);
+            setProjectTeamMembers(Array.isArray(data) ? data : []);
+            setProjectForViewTeam(project);
+            setViewTeamMembersModalOpen(true);
+        } catch (error) {
+            console.error('Failed to load team members:', error);
+            toast.error(`Failed to load team members. ${error?.message || ''}`.trim());
+        }
+    }, [apiRequest]);
+
     // --- SMART VIEW HANDLER ---
     // This ensures we show the FULL candidate profile (from allCandidates) 
     // even if the current view (like Analyze Fit) only has partial data.
@@ -2810,6 +2852,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onProjectSelect={(p) => setSelectedProject(p)} 
                     onProjectCreate={() => { setProjectToEdit(null); setProjectEditorModalOpen(true); }}
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
+                    onAddTeamMember={handleOpenAddTeamMember}
+                    onViewTeamMembers={handleViewTeamMembers}
                     effectiveUser={effectiveUser}
                 />;
             case 'Candidates':
@@ -3007,6 +3051,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             <AIGenerateJDModal isOpen={isAIGenerateModalOpen} onClose={() => setAIGenerateModalOpen(false)} onGenerate={(prompt) => handleGenerateJdWithAI(prompt, selectedProject!.project_id)} isGenerating={isGeneratingJD} />
             <InviteMemberModal isOpen={isInviteModalOpen} onClose={() => setInviteModalOpen(false)} onInvite={handleInviteUser} />
             <CandidateProfileModal isOpen={!!previewCandidate} onClose={() => setPreviewCandidate(null)} candidate={previewCandidate} />
+            <AddTeamMemberModal
+                isOpen={isAddTeamMemberModalOpen}
+                onClose={() => { setAddTeamMemberModalOpen(false); setProjectForTeamMember(null); }}
+                onAdd={handleAddTeamMember}
+            />
+            <ViewTeamMembersModal
+                isOpen={isViewTeamMembersModalOpen}
+                onClose={() => { setViewTeamMembersModalOpen(false); setProjectForViewTeam(null); setProjectTeamMembers([]); }}
+                members={projectTeamMembers}
+                projectName={projectForViewTeam?.project_name || ''}
+            />
         </div>
     );
 };
