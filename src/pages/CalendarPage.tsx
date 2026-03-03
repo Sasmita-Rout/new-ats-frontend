@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Candidate, Interview } from '../types/types';
 import InterviewDetailModal from '../modals/InterviewDetailModal';
+import { toast } from 'react-toastify';
 
 type CalendarEvent = {
     date: Date;
@@ -328,6 +329,7 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
         setBackendEvents(prev => prev.filter(ev => !matchesCalendarEvent(ev, targetEvent)));
         setSelectedEvent(null);
         setReloadToken(prev => prev + 1);
+        toast.success('Interview cancelled successfully.');
     };
 
     return (

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Candidate, Interview } from '../types/types';
+import { toast } from 'react-toastify';
 
 type InterviewEvent = {
     candidate: Candidate;
@@ -59,7 +60,7 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
         if (!onUpdateInterview) return;
         if (!event) return;
         if (!editDateTime || Number.isNaN(new Date(editDateTime).getTime())) {
-            alert('Please enter a valid date and time.');
+            toast.error('Please enter a valid date and time.');
             return;
         }
         try {
@@ -72,7 +73,7 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
             });
             setIsEditing(false);
         } catch (error: any) {
-            alert(error?.message || 'Failed to update interview.');
+            toast.error(error?.message || 'Failed to update interview.');
         } finally {
             setIsSubmitting(false);
         }
@@ -85,7 +86,7 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
             setIsSubmitting(true);
             await onCancelInterview(event);
         } catch (error: any) {
-            alert(error?.message || 'Failed to cancel interview.');
+            toast.error(error?.message || 'Failed to cancel interview.');
         } finally {
             setIsSubmitting(false);
         }

@@ -3,6 +3,7 @@ import { Candidate, JobDescription, CandidateWithScore, Interview } from '../../
 import FilterBar from '../candidates/FilterBar';
 import { exportToCSV } from '../../utils/helpers';
 import InterviewDetailModal from '../../modals/InterviewDetailModal';
+import { toast } from 'react-toastify';
 
 const defaultFilters = {
     skills: '',
@@ -336,7 +337,7 @@ const InlineATSAnalysis = ({
         const message = `Delete ${selectedIds.length} candidates?`;
         const shouldDelete = confirmActionToast
             ? await confirmActionToast(message, 'Delete', 'Cancel')
-            : window.confirm(message);
+            : false;
         if (!shouldDelete) return;
         onDeleteCandidates(selectedIds);
         setSelectedIds([]);
@@ -366,7 +367,10 @@ const InlineATSAnalysis = ({
             ? filteredCandidates.filter(c => selectedIds.includes(c.id))
             : filteredCandidates;
 
-        if (!data.length) return alert("No candidates");
+        if (!data.length) {
+            toast.info('No candidates');
+            return;
+        }
 
         const formatted = data.map(c => ({
             'Candidate Name': c.name,
@@ -575,7 +579,7 @@ const InlineATSAnalysis = ({
                                                     const message = `Delete ${c.name}?`;
                                                     const shouldDelete = confirmActionToast
                                                         ? await confirmActionToast(message, 'Delete', 'Cancel')
-                                                        : window.confirm(message);
+                                                        : false;
                                                     if (!shouldDelete) return;
                                                     onDeleteCandidates([c.id]);
                                                 }}

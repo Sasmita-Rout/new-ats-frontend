@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getInitials } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onSendEmail, initialDraft, onClearDraft, senderEmail, onGenerateEmail }) => {
     const [fromEmail, setFromEmail] = useState(senderEmail || '');
@@ -67,7 +68,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
             setBody(emailData.body || '');
         } catch (error) {
             console.error("AI email generation failed:", error);
-            alert(`Sorry, the AI failed to generate an email. This might be a temporary issue. Please check the console for more details.\nError: ${error.message}`);
+            toast.error(`AI failed to generate email. ${error?.message || ''}`.trim());
         } finally {
             setIsGenerating(false);
             setAiPrompt('');
@@ -85,25 +86,25 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
     
     const handleSendAttempt = () => {
         if (emailTargets.length === 0) {
-            alert("Please add recipients before sending.");
+            toast.info('Please add recipients before sending.');
             return;
         }
         if (!fromEmail) {
-            alert("Please provide a 'From' email address before sending.");
+            toast.info("Please provide a 'From' email address before sending.");
             return;
         }
         if (!subject || !body) {
-            alert("Please provide a subject and a message body before sending.");
+            toast.info('Please provide a subject and a message body before sending.');
             return;
         }
         if (attachments.length > 0) {
-            alert("File attachments are not supported for API sending yet. Please remove attachments before sending.");
+            toast.info('File attachments are not supported for API sending yet. Please remove attachments before sending.');
             return;
         }
        
         const hasInvalidEmails = emailTargets.some(c => !isValidEmail(c.email));
         if (hasInvalidEmails) {
-            alert("You have invalid or missing email addresses in your recipient list. Please remove them before sending.");
+            toast.error('You have invalid or missing email addresses in your recipient list.');
             return;
         }
         if (isSupportCompose) {
@@ -132,7 +133,7 @@ const CommunicationsPage = ({ emailTargets, onClearTargets, onUpdateTargets, onS
             onClearTargets();
         } catch (error) {
             console.error('Failed to send email:', error);
-            alert(error instanceof Error ? error.message : 'Failed to send email.');
+            toast.error(error instanceof Error ? error.message : 'Failed to send email.');
         } finally {
             setIsSending(false);
         }

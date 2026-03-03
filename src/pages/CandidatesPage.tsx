@@ -4,8 +4,10 @@ import FilterBar from '../components/candidates/FilterBar';
 import ProcessingQueue from '../components/common/ProcessingQueue';
 import SkillTag from '../components/common/SkillTag';
 import { exportToCSV } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 const BATCH_SIZE = 10;
+const RECENT_CANDIDATE_DAYS = 7;
 
 const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected, onScheduleMeeting, canDeleteCandidates = false, confirmActionToast }) => {
     const [displayLimit, setDisplayLimit] = useState(10);
@@ -58,7 +60,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         const message = `Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`;
         const shouldDelete = confirmActionToast
             ? await confirmActionToast(message, 'Delete', 'Cancel')
-            : window.confirm(message);
+            : false;
         if (shouldDelete) {
             onDeleteCandidates(selectedIds);
             setSelectedIds([]);
@@ -82,7 +84,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
             : candidates;
 
         if (dataToExport.length === 0) {
-            alert("No candidates to export.");
+            toast.info('No candidates to export.');
             return;
         }
 
@@ -105,6 +107,14 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
     const canLoadMore = visibleCount < candidates.length && visibleCount < displayLimit;
     const visibleCandidates = candidates.slice(0, visibleCount);
     const selectedVisibleCount = visibleCandidates.filter(c => selectedIds.includes(c.id)).length;
+
+    const isRecentCandidate = (appliedDate: string) => {
+        const applied = new Date(appliedDate);
+        if (Number.isNaN(applied.getTime())) return false;
+        const now = new Date();
+        const diffDays = (now.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays <= RECENT_CANDIDATE_DAYS;
+    };
     
     return (
         <div className="page-content">
@@ -211,7 +221,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
                                 return (
                                 <React.Fragment key={candidate.id}>
-                                <tr>
+                                <tr className={isRecentCandidate(candidate.appliedDate) ? 'candidate-row-recent' : 'candidate-row-stale'}>
                                     <td>
                                         <input
                                             type="checkbox"
@@ -265,11 +275,28 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     <td>{candidate.appliedDate}</td>
                                     <td>
                                         <div className="action-buttons">
-                                            <button className="icon-btn" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
+                                            <button className="icon-btn candidate-action-icon" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
                                                 <span className="material-symbols-outlined">visibility</span>
                                             </button>
+                                            {canDeleteCandidates && (
+                                                <button
+                                                    className="icon-btn candidate-action-icon"
+                                                    title="Delete Candidate"
+                                                    onClick={async () => {
+                                                        const message = `Are you sure you want to delete ${candidate.name}? This action cannot be undone.`;
+                                                        const shouldDelete = confirmActionToast
+                                                            ? await confirmActionToast(message, 'Delete', 'Cancel')
+                                                            : false;
+                                                        if (shouldDelete) {
+                                                            onDeleteCandidates([candidate.id]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <span className="material-symbols-outlined">delete</span>
+                                                </button>
+                                            )}
                                             <button
-                                                className="btn btn-secondary btn-small"
+                                                className="btn btn-small candidate-schedule-btn"
                                                 title="Schedule Interview"
                                                 onClick={() => {
                                                     if (onScheduleMeeting) {
@@ -283,23 +310,6 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                             >
                                                 <span className="material-symbols-outlined">event</span> Schedule Interview
                                             </button>
-                                            {canDeleteCandidates && (
-                                                <button 
-                                                    className="icon-btn" 
-                                                    title="Delete Candidate" 
-                                                    onClick={async () => {
-                                                        const message = `Are you sure you want to delete ${candidate.name}? This action cannot be undone.`;
-                                                        const shouldDelete = confirmActionToast
-                                                            ? await confirmActionToast(message, 'Delete', 'Cancel')
-                                                            : window.confirm(message);
-                                                        if (shouldDelete) {
-                                                            onDeleteCandidates([candidate.id]);
-                                                        }
-                                                    }}
-                                                >
-                                                    <span className="material-symbols-outlined">delete</span>
-                                                </button>
-                                            )}
                                         </div>
                                     </td>
                                 </tr>

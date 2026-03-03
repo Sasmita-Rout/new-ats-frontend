@@ -3,6 +3,7 @@ import { JobDescription, Candidate, Project, CandidateWithScore } from '../types
 import JobCard from '../components/jobs/JobCard';
 import InlineATSAnalysis from '../components/jobs/InlineATSAnalysis';
 import ProcessingQueue from '../components/common/ProcessingQueue';
+import { toast } from 'react-toastify';
 
 type AnalysisResult = {
     loading: boolean;
@@ -47,7 +48,10 @@ type ProjectDetailPageProps = {
 const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner = false, confirmActionToast }: ProjectDetailPageProps) => {
     const confirmAction = useMemo(() => {
         if (confirmActionToast) return confirmActionToast;
-        return async (message: string) => window.confirm(message);
+        return async (message: string) => {
+            toast.info(message);
+            return false;
+        };
     }, [confirmActionToast]);
     const [analyzingJobId, setAnalyzingJobId] = useState<number | null>(null);
     const [selectedJobIds, setSelectedJobIds] = useState<number[]>([]);

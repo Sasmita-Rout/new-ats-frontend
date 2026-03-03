@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole, Invitation } from '../types/types';
 import { getInitials } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 
 const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
@@ -42,7 +43,7 @@ const MyProfileView = ({ effectiveUser, onUpdateUser }) => {
         const file = e.target.files?.[0];
         if (file) {
             if (!file.type.startsWith('image/')) {
-                alert('Please upload a valid image file.');
+                toast.error('Please upload a valid image file.');
                 return;
             }
             const reader = new FileReader();
@@ -399,23 +400,26 @@ const ContactSupportView = ({ onComposeSupportEmail }: { onComposeSupportEmail?:
                     <h4>Contact Support</h4>
                     <p className="subtitle">For reference and doubts, contact any of them below......</p>
                 </div>
-                <div className="actions-group">
-                    <button type="button" className="btn btn-secondary" onClick={handleSelectAll}>
+                <div className="contact-support-actions">
+                    <span className="contact-support-selected-count">{selectedEmails.length} selected</span>
+                    <button type="button" className="btn contact-support-toggle-btn" onClick={handleSelectAll}>
+                        <span className="material-symbols-outlined">{isAllSelected ? 'deselect' : 'select_all'}</span>
                         {isAllSelected ? 'Clear All' : 'Select All'}
                     </button>
                     <button
                         type="button"
-                        className="btn btn-primary"
+                        className="btn contact-support-email-btn"
                         onClick={handleComposeSelected}
                         disabled={selectedEmails.length === 0}
                     >
+                        <span className="material-symbols-outlined">forward_to_inbox</span>
                         Email Selected
                     </button>
                 </div>
             </div>
             <div className="contact-support-grid">
                 {supportContacts.map(contact => (
-                    <div className="contact-support-card" key={contact.email}>
+                    <div className={`contact-support-card ${selectedEmails.includes(contact.email) ? 'selected' : ''}`} key={contact.email}>
                         <div className="contact-support-icon">
                             <span className="material-symbols-outlined">person</span>
                         </div>
@@ -431,7 +435,7 @@ const ContactSupportView = ({ onComposeSupportEmail }: { onComposeSupportEmail?:
                                 {contact.email}
                             </a>
                         </div>
-                        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+                        <div className="contact-support-select">
                             <input
                                 type="checkbox"
                                 checked={selectedEmails.includes(contact.email)}

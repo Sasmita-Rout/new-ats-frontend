@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { HistoryEntry, User } from '../types/types';
 import { exportToCSV } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 const HistoryPage = ({ 
     historyLog, 
@@ -50,7 +51,7 @@ const HistoryPage = ({
 
     const handleExport = () => {
         if (visibleLogs.length === 0) {
-            alert("No history records to export.");
+            toast.info('No history records to export.');
             return;
         }
         const dataToExport = visibleLogs.map(log => ({

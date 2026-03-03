@@ -360,7 +360,8 @@ const App = () => {
         });
 
         const hasNameToken = /\[Candidate Name\]|\{\{candidate_name\}\}/i.test(safeTemplate);
-        if (!hasNameToken) {
+        const alreadyHasGreeting = /^\s*(dear|hi|hello)\b/i.test(rendered);
+        if (!hasNameToken && !alreadyHasGreeting) {
             rendered = `Hi ${candidate.name || 'Candidate'},\n\n${rendered}`;
         }
 
@@ -481,7 +482,7 @@ You are part of the interview panel for the ${params.jobTitle || '[Job Title]'} 
 
 Candidate: [Candidate Name]
 Date & Time: ${params.interviewDate}${params.interviewTime ? ` | ${params.interviewTime}` : ''}
-Your Role: ${interviewerRole}
+Role: ${interviewerRole}
 Focus Area: ${evaluationInstructions}
 Mode: ${modeText}
 Location / Meeting Link: ${params.locationText || meetingLinkText}
@@ -1192,8 +1193,13 @@ ${effectiveUser.name}`;
         logAction('Exported workspace data');
     };
     
-    const handleImportData = (file: File) => {
-        if (!window.confirm("Are you sure you want to import data? This will overwrite all existing jobs, candidates, users, and settings.")) return;
+    const handleImportData = async (file: File) => {
+        const shouldImport = await confirmActionToast(
+            'Import will overwrite all existing jobs, candidates, users, and settings. Continue?',
+            'Import',
+            'Cancel'
+        );
+        if (!shouldImport) return;
         
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -1207,14 +1213,14 @@ ${effectiveUser.name}`;
                     setHistoryLog(data.historyLog || []);
                     setCompanyProfile(data.companyProfile);
                     logAction('Imported workspace data');
-                    alert("Data imported successfully. The application will now reload.");
+                    notifySuccess('Data imported successfully. Reloading...');
                     window.location.reload();
                 } else {
                     throw new Error("Invalid data file structure.");
                 }
             } catch (error) {
                 console.error("Import failed:", error);
-                alert(`Failed to import data: ${error.message}`);
+                notifyError(`Failed to import data: ${error.message}`);
             }
         };
         reader.readAsText(file);
@@ -1422,7 +1428,7 @@ ${effectiveUser.name}`;
 
     const handleProcessJds = async () => {
         if (!selectedProject) {
-            alert("No project selected. Cannot process JDs.");
+            notifyError('No project selected. Cannot process JDs.');
             return;
         }
         
@@ -1769,7 +1775,7 @@ ${effectiveUser.name}`;
         } catch (error) {
             console.error("AI-powered analysis failed:", error);
             console.error("AI-powered analysis failed:", error);
-            alert(`An error occurred during AI analysis.`);
+            notifyError('An error occurred during AI analysis.');
             return { rankedCandidates: [], keywords: [] };
         } finally {
             setIsAnalyzingJobId(null);
@@ -2254,8 +2260,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     name: updatedCandidate.name,
                     phone: updatedCandidate.phone,
                     location: updatedCandidate.location,
-                    skills: updatedCandidate.skills,
-                    experience: updatedCandidate.experience,
+                    skills: (updatedCandidate.skills || []).join(','),
+                    experience: (updatedCandidate.totalExperienceYears ?? 0).toString(),
                 };
                 await apiRequest(`/resume/update?uploaded_by=${encodeURIComponent(uploadedBy)}`, {
                     method: 'PUT',
@@ -2264,7 +2270,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 });
             } catch (error) {
                 console.error('Failed to update candidate:', error);
-                alert('Failed to update candidate.');
+                notifyError('Failed to update candidate.');
             }
         }
 
@@ -2334,13 +2340,18 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
         } catch (error) {
             console.error("Failed to parse resume:", error);
-            alert(`Failed to parse resume.`);
+            notifyError('Failed to parse resume.');
             return null;
         }
     }, [apiRequest, allCandidates, confirmReplaceToast, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault, upsertCandidatesByEmail]);
 
-    const handleClearStagedResumes = () => {
-        if (window.confirm("Are you sure you want to clear all resumes from the queue?")) {
+    const handleClearStagedResumes = async () => {
+        const shouldClear = await confirmActionToast(
+            'Are you sure you want to clear all resumes from the queue?',
+            'Clear',
+            'Cancel'
+        );
+        if (shouldClear) {
             processingRef.current = false; 
             setStagedResumes([]);
             setIsProcessing(false);
