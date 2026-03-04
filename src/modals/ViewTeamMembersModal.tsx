@@ -1,6 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
-const ViewTeamMembersModal = ({ isOpen, onClose, members, projectName }) => {
+const ViewTeamMembersModal = ({ isOpen, onClose, members, projectName, canManage, onUpdateEmail, onDelete }) => {
+    const [editingEmail, setEditingEmail] = useState('');
+    const [draftEmail, setDraftEmail] = useState('');
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setEditingEmail('');
+        setDraftEmail('');
+    }, [isOpen, members]);
+
     if (!isOpen) return null;
 
     return (
@@ -15,8 +24,65 @@ const ViewTeamMembersModal = ({ isOpen, onClose, members, projectName }) => {
                         <div className="form-grid single-col" style={{ gap: '12px' }}>
                             {members.map(member => (
                                 <div key={`${member.project_id}-${member.user_email}`} className="workspace-card">
-                                    <strong>{member.user_email}</strong>
-                                    {member.role ? <span style={{ marginLeft: '8px', color: '#555' }}>({member.role})</span> : null}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                                        <div>
+                                            <strong>{member.user_email}</strong>
+                                        </div>
+                                        {canManage && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {editingEmail === member.user_email ? (
+                                                    <>
+                                                        <input
+                                                            type="email"
+                                                            value={draftEmail}
+                                                            onChange={e => setDraftEmail(e.target.value)}
+                                                            placeholder="New email"
+                                                            style={{ maxWidth: '220px' }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-secondary btn-small"
+                                                            onClick={() => {
+                                                                onUpdateEmail(member.user_email, draftEmail);
+                                                                setEditingEmail('');
+                                                                setDraftEmail('');
+                                                            }}
+                                                        >
+                                                            Save
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-secondary btn-small"
+                                                            onClick={() => {
+                                                                setEditingEmail('');
+                                                                setDraftEmail('');
+                                                            }}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-small"
+                                                        onClick={() => {
+                                                            setEditingEmail(member.user_email);
+                                                            setDraftEmail(member.user_email);
+                                                        }}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-danger btn-small"
+                                                    onClick={() => onDelete(member.user_email)}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>

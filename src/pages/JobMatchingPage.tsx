@@ -36,17 +36,23 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, onAddTeamMemb
                 </p>
             </div>
             <div className="job-card-aside" style={{justifyContent: 'center', gap: '20px'}}>
-                 <div className="job-card-actions">
+                 <div className="job-card-actions" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                      <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onEdit(project);}}>
                         <span className="material-symbols-outlined">edit</span> Edit
                     </button>
                     {canManageTeamMembers && (
                         <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onAddTeamMember(project);}}>
-                            <span className="material-symbols-outlined">group_add</span> Add Team Member
+                            <span className="material-symbols-outlined">group_add</span>
+                            <span style={{ display: 'block', textAlign: 'center', lineHeight: 1.1 }}>
+                                Add<br />Team<br />Member
+                            </span>
                         </button>
                     )}
                     <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onViewTeamMembers(project);}}>
-                        <span className="material-symbols-outlined">groups</span> View Team
+                        <span className="material-symbols-outlined">groups</span>
+                        <span style={{ display: 'block', textAlign: 'center', lineHeight: 1.1 }}>
+                            View<br />Team
+                        </span>
                     </button>
                 </div>
             </div>

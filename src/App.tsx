@@ -2170,17 +2170,56 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [apiRequest, projectForTeamMember]);
 
+    const fetchProjectTeamMembers = useCallback(async (projectId: string) => {
+        const data = await apiRequest(`/project/${encodeURIComponent(projectId)}/team`);
+        return Array.isArray(data) ? data : [];
+    }, [apiRequest]);
+
     const handleViewTeamMembers = useCallback(async (project: Project) => {
         try {
-            const data = await apiRequest(`/project/${encodeURIComponent(project.project_id)}/team`);
-            setProjectTeamMembers(Array.isArray(data) ? data : []);
+            const members = await fetchProjectTeamMembers(project.project_id);
+            setProjectTeamMembers(members);
             setProjectForViewTeam(project);
             setViewTeamMembersModalOpen(true);
         } catch (error) {
             console.error('Failed to load team members:', error);
             toast.error(`Failed to load team members. ${error?.message || ''}`.trim());
         }
-    }, [apiRequest]);
+    }, [fetchProjectTeamMembers]);
+
+    const handleUpdateTeamMemberEmail = useCallback(async (userEmail: string, newEmail: string) => {
+        if (!projectForViewTeam) return;
+        try {
+            const requestedBy = await getUploadedBy();
+            await apiRequest(`/project/${encodeURIComponent(projectForViewTeam.project_id)}/team/${encodeURIComponent(userEmail)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requested_by: requestedBy, new_email: newEmail }),
+            });
+            const members = await fetchProjectTeamMembers(projectForViewTeam.project_id);
+            setProjectTeamMembers(members);
+            toast.success('Team member updated.');
+        } catch (error) {
+            console.error('Failed to update team member:', error);
+            toast.error(`Failed to update team member. ${error?.message || ''}`.trim());
+        }
+    }, [fetchProjectTeamMembers, getUploadedBy, projectForViewTeam, apiRequest]);
+
+    const handleDeleteTeamMember = useCallback(async (userEmail: string) => {
+        if (!projectForViewTeam) return;
+        try {
+            const requestedBy = await getUploadedBy();
+            await apiRequest(`/project/${encodeURIComponent(projectForViewTeam.project_id)}/team/${encodeURIComponent(userEmail)}?requested_by=${encodeURIComponent(requestedBy)}`, {
+                method: 'DELETE',
+            });
+            const members = await fetchProjectTeamMembers(projectForViewTeam.project_id);
+            setProjectTeamMembers(members);
+            toast.success('Team member removed.');
+        } catch (error) {
+            console.error('Failed to remove team member:', error);
+            toast.error(`Failed to remove team member. ${error?.message || ''}`.trim());
+        }
+    }, [fetchProjectTeamMembers, getUploadedBy, projectForViewTeam, apiRequest]);
 
     // --- SMART VIEW HANDLER ---
     // This ensures we show the FULL candidate profile (from allCandidates) 
@@ -3061,6 +3100,12 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 onClose={() => { setViewTeamMembersModalOpen(false); setProjectForViewTeam(null); setProjectTeamMembers([]); }}
                 members={projectTeamMembers}
                 projectName={projectForViewTeam?.project_name || ''}
+                canManage={(() => {
+                    const role = effectiveUser?.role || '';
+                    return role === 'super_admin' || role === 'admin' || role.includes('Admin');
+                })()}
+                onUpdateEmail={handleUpdateTeamMemberEmail}
+                onDelete={handleDeleteTeamMember}
             />
         </div>
     );
