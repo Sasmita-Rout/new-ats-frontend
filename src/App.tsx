@@ -183,6 +183,7 @@ const App = () => {
     const [isJdUploadModalOpen, setJdUploadModalOpen] = useState(false);
     const [isJobEditorModalOpen, setJobEditorModalOpen] = useState(false);
     const [jobToEdit, setJobToEdit] = useState<JobDescription | null>(null);
+    const [autoAnalyzeJobId, setAutoAnalyzeJobId] = useState<number | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [processingStatus, setProcessingStatus] = useState('');
     const processingRef = useRef(false);
@@ -211,6 +212,7 @@ const App = () => {
     const [candidateBackPage, setCandidateBackPage] = useState<string | null>(null);
     const [isAddTeamMemberModalOpen, setAddTeamMemberModalOpen] = useState(false);
     const [projectForTeamMember, setProjectForTeamMember] = useState<Project | null>(null);
+    const [atsUsers, setAtsUsers] = useState<any[]>([]);
     const [isViewTeamMembersModalOpen, setViewTeamMembersModalOpen] = useState(false);
     const [projectForViewTeam, setProjectForViewTeam] = useState<Project | null>(null);
     const [projectTeamMembers, setProjectTeamMembers] = useState<any[]>([]);
@@ -1063,6 +1065,7 @@ ${effectiveUser.name}`;
         setSelectedJob(null);
         setSelectedJobForDetail(null);
         setSelectedProject(null);
+        setAutoAnalyzeJobId(null);
         setCandidatesForAnalysis([]);
         if (targetPage !== 'Communications') {
             setEmailTargets([]);
@@ -2170,6 +2173,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [apiRequest, projectForTeamMember]);
 
+    const loadAtsUsers = useCallback(async () => {
+        try {
+            const requestedBy = await getUploadedBy();
+            const data = await apiRequest(`/project/team/eligible-users?requested_by=${encodeURIComponent(requestedBy)}`);
+            setAtsUsers(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error('Failed to load ATS users:', error);
+            toast.error(`Failed to load ATS users. ${error?.message || ''}`.trim());
+        }
+    }, [apiRequest, getUploadedBy]);
+
+    useEffect(() => {
+        if (isAddTeamMemberModalOpen) {
+            loadAtsUsers();
+        }
+    }, [isAddTeamMemberModalOpen, loadAtsUsers]);
+
     const fetchProjectTeamMembers = useCallback(async (projectId: string) => {
         const data = await apiRequest(`/project/${encodeURIComponent(projectId)}/team`);
         return Array.isArray(data) ? data : [];
@@ -2806,13 +2826,19 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     }, [allCandidates, selectedJob, searchTerm, mainFilters]);
 
     const globalSearchResults = useMemo(() => {
-        if (!globalSearchTerm) return { candidates: [], jobs: [] };
+        if (!globalSearchTerm) return { candidates: [], projects: [], jobs: [] };
         const lowerTerm = globalSearchTerm.toLowerCase();
         
         const candidates = allCandidates.filter(c =>
             c.name.toLowerCase().includes(lowerTerm) ||
             c.title.toLowerCase().includes(lowerTerm) ||
             c.skills.some(s => s.toLowerCase().includes(lowerTerm))
+        ).slice(0, 5);
+
+        const projects = allProjects.filter(p =>
+            p.project_name.toLowerCase().includes(lowerTerm) ||
+            p.project_id.toLowerCase().includes(lowerTerm) ||
+            (p.project_description || '').toLowerCase().includes(lowerTerm)
         ).slice(0, 5);
         
         const jobs = allJobDescriptions.filter(j =>
@@ -2821,8 +2847,24 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             j.requiredSkills.some(s => s.toLowerCase().includes(lowerTerm))
         ).slice(0, 5);
         
-        return { candidates, jobs };
-    }, [globalSearchTerm, allCandidates, allJobDescriptions]);
+        return { candidates, projects, jobs };
+    }, [globalSearchTerm, allCandidates, allProjects, allJobDescriptions]);
+
+    const resolveProjectForJob = useCallback((job: Partial<JobDescription> | null): Project | null => {
+        if (!job) return null;
+        const normalize = (val: any) => String(val ?? '').trim().toLowerCase();
+        const candidateProjectIds = new Set<string>();
+        if (job.projectId) candidateProjectIds.add(normalize(job.projectId));
+
+        const sameJob = allJobDescriptions.find(j =>
+            (job.jobId && j.jobId && String(j.jobId) === String(job.jobId)) ||
+            (job.id && j.id === job.id)
+        );
+        if (sameJob?.projectId) candidateProjectIds.add(normalize(sameJob.projectId));
+
+        const project = allProjects.find(p => candidateProjectIds.has(normalize(p.project_id)));
+        return project || null;
+    }, [allJobDescriptions, allProjects]);
     
     const renderContent = () => {
         switch (currentPage) {
@@ -2875,6 +2917,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         apiRequest={apiRequest}
                         showOwner={(effectiveUser?.role || '') === 'super_admin' || (effectiveUser?.role || '') === 'admin' || (effectiveUser?.role || '').includes('Admin')}
                         confirmActionToast={confirmActionToast}
+                        autoAnalyzeJobId={autoAnalyzeJobId}
+                        onAutoAnalyzeHandled={() => setAutoAnalyzeJobId(null)}
                     />;
                 }
                 if (selectedJobForDetail) {
@@ -3040,13 +3084,35 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     globalSearchTerm={globalSearchTerm}
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}
+                    projects={globalSearchResults.projects}
                     jobs={globalSearchResults.jobs}
                     onCandidateSelect={(c) => {
-                        setCandidateBackPage(null);
+                        setCurrentPage('Candidates');
+                        setSelectedCandidate(null);
+                        setSelectedJob(null);
+                        setSelectedJobForDetail(null);
+                        setCandidateBackPage('Candidates');
+                        setSearchTerm(c.name || '');
                         setGlobalSearchTerm('');
-                        handleViewCandidate(c);
                     }}
-                    onJobSelect={(j) => { setSelectedJobForDetail(j); setCurrentPage('Job Matching'); setGlobalSearchTerm(''); }}
+                    onProjectSelect={() => {
+                        setCurrentPage('Job Matching');
+                        setSelectedProject(null);
+                        setSelectedJob(null);
+                        setSelectedJobForDetail(null);
+                        setGlobalSearchTerm('');
+                    }}
+                    onJobSelect={(j) => {
+                        const project = resolveProjectForJob(j);
+                        setSelectedProject(project);
+                        setSelectedJob(null);
+                        setSelectedJobForDetail(null);
+                        setAutoAnalyzeJobId(null);
+                        setJobToEdit(j);
+                        setJobEditorModalOpen(true);
+                        setCurrentPage('Job Matching');
+                        setGlobalSearchTerm('');
+                    }}
                     onUpdateCurrentUser={handleUpdateCurrentUser}
                     onLogout={handleLogout}
                     onNavigate={handleNavigate}
@@ -3071,7 +3137,19 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             />
             <ResumeUploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedResumes(prev => [...prev, ...Array.from(files)])} />
             <JDUploadModal isOpen={isJdUploadModalOpen} onClose={() => setJdUploadModalOpen(false)} onAddFiles={(files: FileList) => setStagedJds(prev => [...prev, ...Array.from(files)])} />
-            <JobEditorModal isOpen={isJobEditorModalOpen} onClose={() => setJobEditorModalOpen(false)} onSave={(jobData) => handleSaveJob(jobData, selectedProject!.project_id)} jobToEdit={jobToEdit} />
+            <JobEditorModal
+                isOpen={isJobEditorModalOpen}
+                onClose={() => setJobEditorModalOpen(false)}
+                onSave={(jobData) => {
+                    const projectId = selectedProject?.project_id || resolveProjectForJob(jobToEdit)?.project_id || jobToEdit?.projectId || '';
+                    if (!projectId) {
+                        notifyError('Unable to save job. Missing project context.');
+                        return;
+                    }
+                    handleSaveJob(jobData, projectId);
+                }}
+                jobToEdit={jobToEdit}
+            />
             <MeetingSchedulerModal isOpen={isMeetingModalOpen} onClose={() => setMeetingModalOpen(false)} onSchedule={handleScheduleMeeting} candidate={candidateForMeeting} />
             <BulkMeetingSchedulerModal
                 isOpen={isBulkMeetingModalOpen}
@@ -3094,6 +3172,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 isOpen={isAddTeamMemberModalOpen}
                 onClose={() => { setAddTeamMemberModalOpen(false); setProjectForTeamMember(null); }}
                 onAdd={handleAddTeamMember}
+                users={atsUsers}
             />
             <ViewTeamMembersModal
                 isOpen={isViewTeamMembersModalOpen}

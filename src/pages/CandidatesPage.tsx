@@ -278,6 +278,13 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                             <button className="icon-btn candidate-action-icon" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
                                                 <span className="material-symbols-outlined">visibility</span>
                                             </button>
+                                            <button
+                                                className="icon-btn candidate-action-icon"
+                                                title="Send Email"
+                                                onClick={() => onEmailSelected?.([candidate.id])}
+                                            >
+                                                <span className="material-symbols-outlined">mail</span>
+                                            </button>
                                             {canDeleteCandidates && (
                                                 <button
                                                     className="icon-btn candidate-action-icon"

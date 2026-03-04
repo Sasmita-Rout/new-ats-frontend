@@ -43,9 +43,11 @@ type ProjectDetailPageProps = {
     apiRequest: (path: string, options?: RequestInit) => Promise<any>;
     showOwner?: boolean;
     confirmActionToast?: (message: string, yesLabel: string, noLabel: string) => Promise<boolean>;
+    autoAnalyzeJobId?: number | null;
+    onAutoAnalyzeHandled?: () => void;
 };
 
-const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner = false, confirmActionToast }: ProjectDetailPageProps) => {
+const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner = false, confirmActionToast, autoAnalyzeJobId = null, onAutoAnalyzeHandled }: ProjectDetailPageProps) => {
     const confirmAction = useMemo(() => {
         if (confirmActionToast) return confirmActionToast;
         return async (message: string) => {
@@ -124,6 +126,20 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
         if (!shouldDelete) return;
         onDeleteJobs([jobId]);
     };
+
+    useEffect(() => {
+        if (!autoAnalyzeJobId) return;
+        const targetJob = jobsForProject.find(j => j.id === autoAnalyzeJobId);
+        if (!targetJob) return;
+        setAnalyzingJobId(targetJob.id);
+        if (!analysisData[targetJob.id]) {
+            setAnalysisData(prev => ({ ...prev, [targetJob.id]: { loading: true, candidates: [], keywords: [] } }));
+            onAnalyzeJobFit(targetJob).then(({ rankedCandidates, keywords }) => {
+                setAnalysisData(prev => ({ ...prev, [targetJob.id]: { loading: false, candidates: rankedCandidates, keywords } }));
+            });
+        }
+        onAutoAnalyzeHandled?.();
+    }, [autoAnalyzeJobId, jobsForProject, analysisData, onAnalyzeJobFit, onAutoAnalyzeHandled]);
     
     return (
     <div className="page-content">

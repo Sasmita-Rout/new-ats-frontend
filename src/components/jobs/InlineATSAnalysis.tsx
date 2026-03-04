@@ -354,6 +354,15 @@ const InlineATSAnalysis = ({
         setSelectedIds([]);
     };
 
+    const handleSingleCandidateEmail = (candidate: Candidate) => {
+        if (onEmailSelectedCandidates) {
+            const jobId = (job.jobId || job.id || '').toString();
+            onEmailSelectedCandidates([candidate], jobId);
+            return;
+        }
+        onEmailSelected([candidate.id]);
+    };
+
     const handleScheduleBulk = () => {
         if (!onScheduleBulk) return;
         const selectedCandidates = filteredCandidates.filter(c => selectedIds.includes(c.id));
@@ -586,6 +595,14 @@ const InlineATSAnalysis = ({
                                                 title="Delete"
                                             >
                                                 <span className="material-symbols-outlined">delete</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ats-icon-action"
+                                                onClick={() => handleSingleCandidateEmail(c)}
+                                                title="Send Email"
+                                            >
+                                                <span className="material-symbols-outlined">mail</span>
                                             </button>
                                             <button
                                                 type="button"

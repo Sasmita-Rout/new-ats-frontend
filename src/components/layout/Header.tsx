@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Candidate, JobDescription, User, Notification } from '../../types/types';
+import { Candidate, JobDescription, User, Notification, Project } from '../../types/types';
 import { getInitials } from '../../utils/helpers';
 import ProfilePopover from './ProfilePopover';
 import NotificationPopover from './NotificationPopover';
 
-const GlobalSearchResults = ({ candidates, jobs, onCandidateSelect, onJobSelect }) => {
-    const hasResults = candidates.length > 0 || jobs.length > 0;
+const GlobalSearchResults = ({ candidates, jobs, projects, onCandidateSelect, onJobSelect, onProjectSelect }) => {
+    const hasResults = candidates.length > 0 || jobs.length > 0 || projects.length > 0;
     return (
         <div className="global-search-results">
             {hasResults ? (
@@ -19,6 +19,20 @@ const GlobalSearchResults = ({ candidates, jobs, onCandidateSelect, onJobSelect 
                                     <div>
                                         <p className="result-title">{c.name}</p>
                                         <p className="result-subtitle">{c.title}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {projects.length > 0 && (
+                        <div className="search-results-section">
+                            <h4 className="search-results-header">Projects</h4>
+                            {projects.map(p => (
+                                <div key={p.project_id} className="search-result-item" onClick={() => onProjectSelect(p)}>
+                                    <span className="material-symbols-outlined icon">folder</span>
+                                    <div>
+                                        <p className="result-title">{p.project_name}</p>
+                                        <p className="result-subtitle">{p.project_id}</p>
                                     </div>
                                 </div>
                             ))}
@@ -46,7 +60,7 @@ const GlobalSearchResults = ({ candidates, jobs, onCandidateSelect, onJobSelect 
     );
 };
 
-const Header = ({ currentPage, user, impersonatedUser, onStopImpersonation, globalSearchTerm, onSearchChange, candidates, jobs, onCandidateSelect, onJobSelect, onUpdateCurrentUser, onLogout, onNavigate, notifications, onMarkAsRead, onMarkAllAsRead, onNotificationNavigate }) => {
+const Header = ({ currentPage, user, impersonatedUser, onStopImpersonation, globalSearchTerm, onSearchChange, candidates, jobs, projects, onCandidateSelect, onJobSelect, onProjectSelect, onUpdateCurrentUser, onLogout, onNavigate, notifications, onMarkAsRead, onMarkAllAsRead, onNotificationNavigate }) => {
     const [isResultsVisible, setIsResultsVisible] = useState(false);
     const [isProfilePopoverVisible, setProfilePopoverVisible] = useState(false);
     const [isNotificationPopoverVisible, setNotificationPopoverVisible] = useState(false);
@@ -86,6 +100,11 @@ const Header = ({ currentPage, user, impersonatedUser, onStopImpersonation, glob
         setIsResultsVisible(false);
     };
 
+    const handleProjectClick = (project: Project) => {
+        onProjectSelect(project);
+        setIsResultsVisible(false);
+    };
+
     const handleNotificationBellClick = () => {
         setNotificationPopoverVisible(!isNotificationPopoverVisible);
         setProfilePopoverVisible(false);
@@ -114,7 +133,7 @@ const Header = ({ currentPage, user, impersonatedUser, onStopImpersonation, glob
                     <span className="material-symbols-outlined">search</span>
                     <input 
                         type="text" 
-                        placeholder="Global search for candidates, jobs..." 
+                        placeholder="Global search for candidates, projects, jobs..." 
                         value={globalSearchTerm}
                         onChange={handleInputChange}
                         onFocus={() => { if (globalSearchTerm) setIsResultsVisible(true); }}
@@ -124,8 +143,10 @@ const Header = ({ currentPage, user, impersonatedUser, onStopImpersonation, glob
                     <GlobalSearchResults 
                         candidates={candidates}
                         jobs={jobs}
+                        projects={projects}
                         onCandidateSelect={handleCandidateClick}
                         onJobSelect={handleJobClick}
+                        onProjectSelect={handleProjectClick}
                     />
                 )}
             </div>

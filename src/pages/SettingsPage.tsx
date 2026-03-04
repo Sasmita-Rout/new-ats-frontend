@@ -396,15 +396,18 @@ const ContactSupportView = ({ onComposeSupportEmail }: { onComposeSupportEmail?:
     return (
         <div className="info-card">
             <div className="page-header contact-support-header">
-                <div>
+                <div className="contact-support-intro">
                     <h4>Contact Support</h4>
-                    <p className="subtitle">For reference and doubts, contact any of them below......</p>
+                    <p className="subtitle">For questions and support, contact any team member below.</p>
                 </div>
-                <div className="contact-support-actions">
-                    <span className="contact-support-selected-count">{selectedEmails.length} selected</span>
+                <div className="contact-support-actions-panel">
+                    <span className="contact-support-selected-count">
+                        <span className="material-symbols-outlined">group</span>
+                        {selectedEmails.length} selected
+                    </span>
                     <button type="button" className="btn contact-support-toggle-btn" onClick={handleSelectAll}>
                         <span className="material-symbols-outlined">{isAllSelected ? 'deselect' : 'select_all'}</span>
-                        {isAllSelected ? 'Clear All' : 'Select All'}
+                        {isAllSelected ? 'Clear Selection' : 'Select All'}
                     </button>
                     <button
                         type="button"

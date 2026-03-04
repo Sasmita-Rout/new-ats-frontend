@@ -31,12 +31,29 @@ const AdminReportsPage = ({
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const [monthInput, setMonthInput] = useState('');
+  const [yearInput, setYearInput] = useState(String(now.getFullYear()));
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [uniqueJobCountGlobal, setUniqueJobCountGlobal] = useState<number>(0); // global (admin) KPI from backend summary
   const [taCount, setTaCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [jobStats, setJobStats] = useState<JobStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const monthOptions = [
+    { value: 1, label: 'January' },
+    { value: 2, label: 'February' },
+    { value: 3, label: 'March' },
+    { value: 4, label: 'April' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'June' },
+    { value: 7, label: 'July' },
+    { value: 8, label: 'August' },
+    { value: 9, label: 'September' },
+    { value: 10, label: 'October' },
+    { value: 11, label: 'November' },
+    { value: 12, label: 'December' },
+  ];
+  const yearOptions = Array.from({ length: 2100 - 2000 + 1 }, (_, i) => 2000 + i);
  
   const loadReport = async () => {
     setIsLoading(true);
@@ -121,6 +138,36 @@ const AdminReportsPage = ({
     loadReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year]);
+
+  useEffect(() => {
+    const monthLabel = monthOptions.find(m => m.value === month)?.label || String(month);
+    setMonthInput(monthLabel);
+  }, [month]);
+
+  useEffect(() => {
+    setYearInput(String(year));
+  }, [year]);
+
+  const commitMonthInput = () => {
+    const raw = monthInput.trim();
+    const asNumber = parseInt(raw, 10);
+    const byName = monthOptions.find(m => m.label.toLowerCase() === raw.toLowerCase());
+    let safeMonth = month;
+    if (Number.isFinite(asNumber)) {
+      safeMonth = Math.min(12, Math.max(1, asNumber));
+    } else if (byName) {
+      safeMonth = byName.value;
+    }
+    setMonth(safeMonth);
+    setMonthInput(monthOptions.find(m => m.value === safeMonth)?.label || String(safeMonth));
+  };
+
+  const commitYearInput = () => {
+    const parsed = parseInt(yearInput, 10);
+    const safeYear = Number.isFinite(parsed) ? Math.min(2100, Math.max(2000, parsed)) : year;
+    setYear(safeYear);
+    setYearInput(String(safeYear));
+  };
  
   // Table visibility: Admins → all rows; Users → only their row
   const filteredRows = useMemo(() => {
@@ -159,22 +206,48 @@ const AdminReportsPage = ({
         <div className="filter-group">
           <label>Month</label>
           <input
-            type="number"
-            min={1}
-            max={12}
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value) || 1)}
+            type="text"
+            list="report-month-options"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+            onBlur={commitMonthInput}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitMonthInput();
+              }
+            }}
+            placeholder="Select or type month"
           />
+          <datalist id="report-month-options">
+            {monthOptions.map(opt => (
+              <option key={opt.value} value={opt.label} />
+            ))}
+          </datalist>
         </div>
         <div className="filter-group">
           <label>Year</label>
           <input
-            type="number"
-            min={2000}
-            max={2100}
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            list="report-year-options"
+            value={yearInput}
+            onChange={(e) => setYearInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            onBlur={commitYearInput}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitYearInput();
+              }
+            }}
+            placeholder="Select or type year"
           />
+          <datalist id="report-year-options">
+            {yearOptions.map(y => (
+              <option key={y} value={String(y)} />
+            ))}
+          </datalist>
         </div>
         {showDownload && (
           <button

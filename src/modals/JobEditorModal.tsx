@@ -179,8 +179,10 @@ const JobEditorModal: React.FC<JobEditorModalProps> = ({ isOpen, onClose, onSave
                         </div>
                     </div>
                     <div className="modal-footer">
-                        <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-                        <button type="submit" className="btn btn-primary">Save</button>
+                        <div className="job-editor-footer-right">
+                            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                            <button type="submit" className="btn btn-primary">Save</button>
+                        </div>
                     </div>
                 </form>
             </div>
