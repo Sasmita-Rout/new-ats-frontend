@@ -4,10 +4,12 @@ import FilterBar from '../components/candidates/FilterBar';
 import ProcessingQueue from '../components/common/ProcessingQueue';
 import SkillTag from '../components/common/SkillTag';
 import { exportToCSV } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 const BATCH_SIZE = 10;
+const RECENT_CANDIDATE_DAYS = 7;
 
-const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected: _onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected: _onScheduleSelected, confirmActionToast }) => {
+const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected, onScheduleMeeting, canDeleteCandidates = false, confirmActionToast }) => {
     const [displayLimit, setDisplayLimit] = useState(10);
     const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
     const [isFiltersVisible, setIsFiltersVisible] = useState(false);
@@ -54,14 +56,26 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
     };
 
     const handleDeleteSelected = async () => {
+        if (!canDeleteCandidates) return;
         const message = `Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`;
         const shouldDelete = confirmActionToast
             ? await confirmActionToast(message, 'Delete', 'Cancel')
-            : window.confirm(message);
+            : false;
         if (shouldDelete) {
             onDeleteCandidates(selectedIds);
             setSelectedIds([]);
         }
+    };
+
+    const handleBulkEmail = () => {
+        if (!onEmailSelected || selectedIds.length === 0) return;
+        onEmailSelected(selectedIds);
+    };
+
+    const handleBulkSchedule = () => {
+        if (!onScheduleSelected || selectedIds.length === 0) return;
+        const selectedCandidates = candidates.filter(c => selectedIds.includes(c.id));
+        onScheduleSelected(selectedCandidates);
     };
 
     const handleExportCSV = () => {
@@ -70,7 +84,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
             : candidates;
 
         if (dataToExport.length === 0) {
-            alert("No candidates to export.");
+            toast.info('No candidates to export.');
             return;
         }
 
@@ -93,6 +107,14 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
     const canLoadMore = visibleCount < candidates.length && visibleCount < displayLimit;
     const visibleCandidates = candidates.slice(0, visibleCount);
     const selectedVisibleCount = visibleCandidates.filter(c => selectedIds.includes(c.id)).length;
+
+    const isRecentCandidate = (appliedDate: string) => {
+        const applied = new Date(appliedDate);
+        if (Number.isNaN(applied.getTime())) return false;
+        const now = new Date();
+        const diffDays = (now.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays <= RECENT_CANDIDATE_DAYS;
+    };
     
     return (
         <div className="page-content">
@@ -119,12 +141,20 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                      {selectedIds.length > 0 ? (
                         <>
                             <span className="selection-count">{selectedIds.length} candidate(s) selected</span>
+                            <button className="btn btn-secondary" onClick={handleBulkEmail} disabled={!onEmailSelected}>
+                                <span className="material-symbols-outlined">mail</span> Email
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleBulkSchedule} disabled={!onScheduleSelected}>
+                                <span className="material-symbols-outlined">event</span> Schedule Interview
+                            </button>
                             <button className="btn btn-secondary" onClick={handleExportCSV}>
                                 <span className="material-symbols-outlined">download</span> Export Selected
                             </button>
-                            <button className="btn btn-danger" onClick={handleDeleteSelected}>
-                                <span className="material-symbols-outlined">delete_sweep</span> Delete Selected
-                            </button>
+                            {canDeleteCandidates && (
+                                <button className="btn btn-danger" onClick={handleDeleteSelected}>
+                                    <span className="material-symbols-outlined">delete_sweep</span> Delete Selected
+                                </button>
+                            )}
                         </>
                     ) : (
                         <div className="candidates-main-actions-row">
@@ -191,7 +221,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
                                 return (
                                 <React.Fragment key={candidate.id}>
-                                <tr>
+                                <tr className={isRecentCandidate(candidate.appliedDate) ? 'candidate-row-recent' : 'candidate-row-stale'}>
                                     <td>
                                         <input
                                             type="checkbox"
@@ -203,7 +233,20 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     <td>
                                         <div className="candidate-cell">
                                             <div>
-                                                <a href="#" className="candidate-name" onClick={(e) => { e.preventDefault(); onCandidateSelect(candidate); }}>{candidate.name}</a>
+                                                <a
+                                                    href="#"
+                                                    className="candidate-name"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        if (onViewCandidate) {
+                                                            onViewCandidate(candidate);
+                                                        } else {
+                                                            onCandidateSelect(candidate);
+                                                        }
+                                                    }}
+                                                >
+                                                    {candidate.name}
+                                                </a>
                                             </div>
                                         </div>
                                     </td>
@@ -232,23 +275,47 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                     <td>{candidate.appliedDate}</td>
                                     <td>
                                         <div className="action-buttons">
-                                            <button className="icon-btn" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
+                                            <button className="icon-btn candidate-action-icon" title="View Details" onClick={() => onViewCandidate ? onViewCandidate(candidate) : onCandidateSelect(candidate)}>
                                                 <span className="material-symbols-outlined">visibility</span>
                                             </button>
-                                            <button 
-                                                className="icon-btn" 
-                                                title="Delete Candidate" 
-                                                onClick={async () => {
-                                                    const message = `Are you sure you want to delete ${candidate.name}? This action cannot be undone.`;
-                                                    const shouldDelete = confirmActionToast
-                                                        ? await confirmActionToast(message, 'Delete', 'Cancel')
-                                                        : window.confirm(message);
-                                                    if (shouldDelete) {
-                                                        onDeleteCandidates([candidate.id]);
+                                            <button
+                                                className="icon-btn candidate-action-icon"
+                                                title="Send Email"
+                                                onClick={() => onEmailSelected?.([candidate.id])}
+                                            >
+                                                <span className="material-symbols-outlined">mail</span>
+                                            </button>
+                                            {canDeleteCandidates && (
+                                                <button
+                                                    className="icon-btn candidate-action-icon"
+                                                    title="Delete Candidate"
+                                                    onClick={async () => {
+                                                        const message = `Are you sure you want to delete ${candidate.name}? This action cannot be undone.`;
+                                                        const shouldDelete = confirmActionToast
+                                                            ? await confirmActionToast(message, 'Delete', 'Cancel')
+                                                            : false;
+                                                        if (shouldDelete) {
+                                                            onDeleteCandidates([candidate.id]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <span className="material-symbols-outlined">delete</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                className="btn btn-small candidate-schedule-btn"
+                                                title="Schedule Interview"
+                                                onClick={() => {
+                                                    if (onScheduleMeeting) {
+                                                        onScheduleMeeting(candidate);
+                                                        return;
+                                                    }
+                                                    if (onScheduleSelected) {
+                                                        onScheduleSelected([candidate]);
                                                     }
                                                 }}
                                             >
-                                                <span className="material-symbols-outlined">delete</span>
+                                                <span className="material-symbols-outlined">event</span> Schedule Interview
                                             </button>
                                         </div>
                                     </td>

@@ -147,20 +147,19 @@ const BulkMeetingSchedulerModal = ({
                             <label>Description / Agenda</label>
                             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} disabled={!!isSubmitting}></textarea>
                         </div>
-                        <div className="form-group" style={{ marginTop: '8px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={sendEmailAfter}
-                                    onChange={e => setSendEmailAfter(e.target.checked)}
-                                    disabled={!!isSubmitting}
-                                />
-                                Generate & compose email after scheduling
-                            </label>
-                        </div>
-
                         <div className="form-group bulk-meeting-candidates-group" style={{ marginTop: '12px' }}>
-                            <label>Candidate Interviewers</label>
+                            <div className="bulk-candidate-row-header">
+                                <label>Candidate Interviewers</label>
+                                <label className="bulk-email-option-label">
+                                    <input
+                                        type="checkbox"
+                                        checked={sendEmailAfter}
+                                        onChange={e => setSendEmailAfter(e.target.checked)}
+                                        disabled={!!isSubmitting}
+                                    />
+                                    <span>Generate & compose email after scheduling</span>
+                                </label>
+                            </div>
                             <div className="bulk-meeting-candidates-table-wrap">
                                 <table className="ats-table" style={{ marginTop: '8px' }}>
                                     <thead>

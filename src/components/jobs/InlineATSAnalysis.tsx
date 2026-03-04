@@ -3,6 +3,7 @@ import { Candidate, JobDescription, CandidateWithScore, Interview } from '../../
 import FilterBar from '../candidates/FilterBar';
 import { exportToCSV } from '../../utils/helpers';
 import InterviewDetailModal from '../../modals/InterviewDetailModal';
+import { toast } from 'react-toastify';
 
 const defaultFilters = {
     skills: '',
@@ -336,7 +337,7 @@ const InlineATSAnalysis = ({
         const message = `Delete ${selectedIds.length} candidates?`;
         const shouldDelete = confirmActionToast
             ? await confirmActionToast(message, 'Delete', 'Cancel')
-            : window.confirm(message);
+            : false;
         if (!shouldDelete) return;
         onDeleteCandidates(selectedIds);
         setSelectedIds([]);
@@ -353,6 +354,15 @@ const InlineATSAnalysis = ({
         setSelectedIds([]);
     };
 
+    const handleSingleCandidateEmail = (candidate: Candidate) => {
+        if (onEmailSelectedCandidates) {
+            const jobId = (job.jobId || job.id || '').toString();
+            onEmailSelectedCandidates([candidate], jobId);
+            return;
+        }
+        onEmailSelected([candidate.id]);
+    };
+
     const handleScheduleBulk = () => {
         if (!onScheduleBulk) return;
         const selectedCandidates = filteredCandidates.filter(c => selectedIds.includes(c.id));
@@ -366,7 +376,10 @@ const InlineATSAnalysis = ({
             ? filteredCandidates.filter(c => selectedIds.includes(c.id))
             : filteredCandidates;
 
-        if (!data.length) return alert("No candidates");
+        if (!data.length) {
+            toast.info('No candidates');
+            return;
+        }
 
         const formatted = data.map(c => ({
             'Candidate Name': c.name,
@@ -575,13 +588,21 @@ const InlineATSAnalysis = ({
                                                     const message = `Delete ${c.name}?`;
                                                     const shouldDelete = confirmActionToast
                                                         ? await confirmActionToast(message, 'Delete', 'Cancel')
-                                                        : window.confirm(message);
+                                                        : false;
                                                     if (!shouldDelete) return;
                                                     onDeleteCandidates([c.id]);
                                                 }}
                                                 title="Delete"
                                             >
                                                 <span className="material-symbols-outlined">delete</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ats-icon-action"
+                                                onClick={() => handleSingleCandidateEmail(c)}
+                                                title="Send Email"
+                                            >
+                                                <span className="material-symbols-outlined">mail</span>
                                             </button>
                                             <button
                                                 type="button"

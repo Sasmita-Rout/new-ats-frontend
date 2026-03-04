@@ -6,17 +6,20 @@ interface ProjectCardProps {
     jobs: JobDescription[];
     onSelect: (project: Project) => void;
     onEdit: (project: Project) => void;
+    onAddTeamMember: (project: Project) => void;
+    canManageTeamMembers: boolean;
+    onViewTeamMembers: (project: Project) => void;
     showOwner?: boolean;
 }
 
-const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: ProjectCardProps) => {
+const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, onAddTeamMember, canManageTeamMembers, onViewTeamMembers, showOwner }: ProjectCardProps) => {
     const projectJobs = jobs.filter(j => j.projectId === project.project_id);
     const jobCount = projectJobs.length;
     const activeJobs = projectJobs.filter(j => j.status === 'Active').length;
     const statusLabel = project.status === 'inactive' ? 'Inactive' : 'Active';
 
     return (
-        <div className="card job-card" onClick={() => onSelect(project)}>
+        <div className="card job-card project-card" onClick={() => onSelect(project)}>
             <div className="job-card-main">
                  <h3 className="job-card-title">{project.project_name}</h3>
                 <div className="job-card-meta">
@@ -32,10 +35,20 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: 
                     {project.project_description ? `${project.project_description.substring(0, 100)}...` : 'No description provided.'}
                 </p>
             </div>
-            <div className="job-card-aside" style={{justifyContent: 'center', gap: '20px'}}>
-                 <div className="job-card-actions">
+            <div className="job-card-aside project-card-aside">
+                 <div className="job-card-actions stack project-card-actions">
                      <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onEdit(project);}}>
                         <span className="material-symbols-outlined">edit</span> Edit
+                    </button>
+                    {canManageTeamMembers && (
+                        <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onAddTeamMember(project);}}>
+                            <span className="material-symbols-outlined">group_add</span>
+                            <span className="project-card-btn-label">Add Team Member</span>
+                        </button>
+                    )}
+                    <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onViewTeamMembers(project);}}>
+                        <span className="material-symbols-outlined">groups</span>
+                        <span className="project-card-btn-label">View Team</span>
                     </button>
                 </div>
             </div>
@@ -46,20 +59,17 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, showOwner }: 
 ProjectCard.displayName = 'ProjectCard';
 
 
-const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEditProject, effectiveUser }) => {
+const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEditProject, onAddTeamMember, onViewTeamMembers, effectiveUser }) => {
     
     // Filter projects locally within the component to ensure correct visibility.
     const myProjects = useMemo(() => {
         if (!effectiveUser) return [];
-        if (effectiveUser.role.includes('Admin') || effectiveUser.role === 'super_admin' || effectiveUser.role === 'admin' || effectiveUser.role === 'head_dd' || effectiveUser.role === 'pdm') {
-            return projects; // Admins see all projects passed in.
-        }
-        // Recruiters see only projects they created.
-        return projects.filter(p => p.uploaded_by === effectiveUser.email);
+        return projects;
     }, [projects, effectiveUser]);
 
     const role = effectiveUser?.role || '';
     const showOwner = role === 'super_admin' || role === 'admin' || role.includes('Admin');
+    const canManageTeamMembers = role === 'super_admin' || role === 'admin' || role.includes('Admin');
 
     return (
     <div className="page-content">
@@ -84,6 +94,9 @@ const ProjectsPage = ({ projects, jobs, onProjectSelect, onProjectCreate, onEdit
                         jobs={jobs}
                         onSelect={onProjectSelect}
                         onEdit={onEditProject}
+                        onAddTeamMember={onAddTeamMember}
+                        canManageTeamMembers={canManageTeamMembers}
+                        onViewTeamMembers={onViewTeamMembers}
                         showOwner={showOwner}
                     />
                 ))}

@@ -7,6 +7,7 @@ import JobEditorModal from '../../modals/JobEditorModal';
 import AIGenerateJDModal from '../../modals/AIGenerateJDModal';
 import CandidateEditorModal from '../../modals/CandidateEditorModal';
 import { parseJobRequirementsFromText, calculateTotalExperience } from '../../utils/analysisUtils';
+import { toast } from 'react-toastify';
 
 
 interface ResumeMatcherToolProps {
@@ -355,7 +356,7 @@ const ResumeMatcherTool: React.FC<ResumeMatcherToolProps> = ({ onParseCandidate,
             setProgressMessage('🟩 20% completed – Job description uploaded');
         } catch (error) {
             console.error("AI JD generation for tool failed:", error);
-            alert(`Sorry, the AI failed to generate the job description. Please try again.\nError: ${error.message}`);
+            toast.error(`Sorry, AI failed to generate the job description. ${error?.message || ''}`.trim());
         } finally {
             setIsParsingJd(false);
         }
@@ -386,7 +387,7 @@ const ResumeMatcherTool: React.FC<ResumeMatcherToolProps> = ({ onParseCandidate,
 
         const dataToExport = analysisResults.filter(r => selectedIds.includes(r.candidate.id));
         if (dataToExport.length === 0) {
-            alert("No candidates selected to export.");
+            toast.info('No candidates selected to export.');
             return;
         }
 

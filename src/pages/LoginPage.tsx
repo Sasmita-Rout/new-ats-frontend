@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'react-toastify';
 
 // --- SVG Icons for UI Elements ---
 const LogoIcon = () => (
@@ -109,7 +110,7 @@ const LoginPage = ({ onLogin, error }) => {
                                         <EyeIcon slashed={showPassword} />
                                     </button>
                                 </div>
-                                <a href="#" className="forgot-password" onClick={() => alert('A password reset link has been sent to your email.')}>Forgot Password?</a>
+                                <a href="#" className="forgot-password" onClick={() => toast.info('A password reset link has been sent to your email.')}>Forgot Password?</a>
                             </div>
                             <button type="submit" className="btn-signin">Sign In</button>
                         </form>
@@ -117,9 +118,9 @@ const LoginPage = ({ onLogin, error }) => {
                         <div className="login-separator">OR</div>
 
                         <div className="social-login-buttons">
-                            <button className="btn-social" onClick={() => alert('Initiating Google login...')}><GoogleIcon /> Continue with Google</button>
-                            <button className="btn-social" onClick={() => alert('Initiating Apple login...')}><AppleIcon /> Continue with Apple</button>
-                            <button className="btn-social" onClick={() => alert('Initiating Microsoft login...')}><MicrosoftIcon /> Continue with Microsoft</button>
+                            <button className="btn-social" onClick={() => toast.info('Initiating Google login...')}><GoogleIcon /> Continue with Google</button>
+                            <button className="btn-social" onClick={() => toast.info('Initiating Apple login...')}><AppleIcon /> Continue with Apple</button>
+                            <button className="btn-social" onClick={() => toast.info('Initiating Microsoft login...')}><MicrosoftIcon /> Continue with Microsoft</button>
                         </div>
                     </div>
                 </div>
