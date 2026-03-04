@@ -161,8 +161,8 @@ const InlineATSAnalysis = ({
                 let interviewMap: Record<string, boolean> = {};
                 if (organizerEmail) {
                     try {
-                        const API_BASE_URL ='http://localhost:8000';
-                        //const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+                        //const API_BASE_URL ='http://localhost:8000';
+                        const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
                         const now = new Date();
                         const start = new Date(now);
                         start.setMonth(start.getMonth() - 3);
@@ -260,8 +260,8 @@ const InlineATSAnalysis = ({
         let interview = interviews.slice().reverse().find(i => i.status === 'Scheduled') || interviews.slice().reverse()[0];
         if (!interview && organizerEmail && candidate.email) {
             try {
-                const API_BASE_URL ='http://localhost:8000';
-                //const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+                //const API_BASE_URL ='http://localhost:8000';
+                const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
                 const now = new Date();
                 const start = new Date(now);
                 start.setMonth(start.getMonth() - 3);

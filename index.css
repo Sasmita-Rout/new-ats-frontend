@@ -5013,6 +5013,7 @@ body::before {
     color: #1e40af;
     font-size: 14px;
     font-weight: 600;
+    white-space: nowrap;
 }
 .contact-support-selected-count .material-symbols-outlined {
     font-size: 18px;
