@@ -91,8 +91,8 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
     const [moreEventsModal, setMoreEventsModal] = useState<{ dateLabel: string; events: CalendarEvent[] } | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
 
-    //const API_BASE_URL ='http://localhost:8000';
-    const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+    const API_BASE_URL ='http://localhost:8000';
+    //const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
 
     const allEvents: CalendarEvent[] = useMemo(() => {
         const events: CalendarEvent[] = [];

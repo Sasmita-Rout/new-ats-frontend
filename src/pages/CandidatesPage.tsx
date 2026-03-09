@@ -57,7 +57,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
 
     const handleDeleteSelected = async () => {
         if (!canDeleteCandidates) return;
-        const message = `Are you sure you want to delete ${selectedIds.length} selected candidates? This action cannot be undone.`;
+        const message = `Are you sure you want to delete ${selectedIds.length} selected candidates?`;
         const shouldDelete = confirmActionToast
             ? await confirmActionToast(message, 'Delete', 'Cancel')
             : false;
@@ -182,7 +182,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                 </div>
             </div>
 
-            {isFiltersVisible && <FilterBar filters={filters} onFilterChange={onFilterChange} onClear={onClearFilters} context="main" />}
+            {isFiltersVisible && <FilterBar filters={filters} onFilterChange={onFilterChange} onClear={onClearFilters} context="main" onExport={handleExportCSV} />}
             
             {stagedResumes.length > 0 && <ProcessingQueue stagedFiles={stagedResumes} isProcessing={isProcessing} processingStatus={processingStatus} onProcess={onProcess} onClear={onClear} onRemoveFile={onRemoveResume} itemType="resume" />}
 

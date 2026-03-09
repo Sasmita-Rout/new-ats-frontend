@@ -2412,20 +2412,33 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             if (rawCandidate) {
                 const newCandidate = normalizeCandidate(rawCandidate);
                 candidateEmail = newCandidate.email || uploadedBy;
-                const existing = allCandidates.find(c => (c.email || '').trim().toLowerCase() === candidateEmail.trim().toLowerCase());
-                if (existing) {
-                    const shouldReplace = await confirmReplaceToast(
-                        `This email already exists (${candidateEmail}). Do you want to replace it?`
-                    );
-                    if (!shouldReplace) {
-                        return null;
+
+                let isReplacing = false;
+                if (newCandidate.email) {
+                    const existsInState = allCandidates.some(c => c.email && c.email.toLowerCase() === newCandidate.email.toLowerCase());
+                    if (existsInState) {
+                        isReplacing = true;
+                    } else {
+                        const existsInVault = await checkResumeExistsInVault(newCandidate.email);
+                        if (existsInVault) {
+                            isReplacing = true;
+                        }
                     }
                 }
+
+                // The confirmation for replacement is removed as requested.
+                // upsertCandidatesByEmail will handle replacement in the state.
                 setAllCandidates(prev => upsertCandidatesByEmail(prev, [newCandidate]));
                 try {
                     await uploadResumeToVault(file, candidateEmail, uploadedBy, newCandidate.name, newCandidate.phone);
+                    if (isReplacing) {
+                        notifySuccess(`${newCandidate.name}'s resume updated successfully.`);
+                    } else {
+                        notifySuccess(`${newCandidate.name}'s resume uploaded successfully.`);
+                    }
                 } catch (vaultError) {
                     console.error('Failed to upload resume to vault:', vaultError);
+                    notifyError(`Vault Upload Failed: ${vaultError.message || 'Unknown error'}`);
                 }
                 return newCandidate;
             }
@@ -2434,6 +2447,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 await uploadResumeToVault(file, candidateEmail, uploadedBy);
             } catch (vaultError) {
                 console.error('Failed to upload resume to vault:', vaultError);
+                notifyError(`Vault Upload Failed: ${vaultError.message || 'Unknown error'}`);
             }
 
             await fetchCandidates();
@@ -2444,7 +2458,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             notifyError('Failed to parse resume.');
             return null;
         }
-    }, [apiRequest, allCandidates, confirmReplaceToast, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault, upsertCandidatesByEmail]);
+    }, [apiRequest, allCandidates, checkResumeExistsInVault, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, notifyError, notifySuccess, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault, upsertCandidatesByEmail]);
 
     const handleClearStagedResumes = async () => {
         const shouldClear = await confirmActionToast(
@@ -2493,47 +2507,35 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     const existingEmails = new Set(
                         allCandidates.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
                     );
-                    const duplicates = newCandidates.filter(c => {
+
+                    // Always replace without asking
+                    setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
+                    successCount = newCandidates.length;
+
+                    // Show individual toasts for each resume
+                    newCandidates.forEach(c => {
                         const email = (c.email || '').trim().toLowerCase();
-                        return email && existingEmails.has(email);
+                        const isReplacing = email && existingEmails.has(email);
+                        if (isReplacing) {
+                            notifySuccess(`${c.name}'s resume updated successfully.`);
+                        } else {
+                            notifySuccess(`${c.name}'s resume uploaded successfully.`);
+                        }
                     });
+
                     const fileCandidatePairs = filesToProcess.map((file, index) => ({
                         file,
                         candidate: newCandidates[index],
                     }));
-                    let pairsForVault = fileCandidatePairs;
-                    if (duplicates.length > 0) {
-                        const shouldReplace = await confirmReplaceToast(
-                            `${duplicates.length} email(s) already exist. Replace all duplicates?`
-                        );
-                        if (shouldReplace) {
-                            setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
-                            successCount = newCandidates.length;
-                        } else {
-                            const uniqueNew = newCandidates.filter(c => {
-                                const email = (c.email || '').trim().toLowerCase();
-                                return !email || !existingEmails.has(email);
-                            });
-                            if (uniqueNew.length > 0) {
-                                setAllCandidates(prev => upsertCandidatesByEmail(prev, uniqueNew));
-                            }
-                            successCount = uniqueNew.length;
-                            pairsForVault = fileCandidatePairs.filter(pair => {
-                                const email = (pair.candidate?.email || '').trim().toLowerCase();
-                                return !email || !existingEmails.has(email);
-                            });
-                        }
-                    } else {
-                        setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
-                        successCount = newCandidates.length;
-                    }
-                    await Promise.all(pairsForVault.map(async ({ file, candidate }) => {
+
+                    await Promise.all(fileCandidatePairs.map(async ({ file, candidate }) => {
                         if (!candidate) return;
                         const candidateEmail = candidate.email || uploadedBy;
                         try {
                             await uploadResumeToVault(file, candidateEmail, uploadedBy, candidate?.name, candidate?.phone);
                         } catch (vaultError) {
                             console.error(`Failed to upload ${file.name} to vault:`, vaultError);
+                            notifyError(`Vault upload for ${candidate.name} failed.`);
                         }
                     }));
                 } else {
