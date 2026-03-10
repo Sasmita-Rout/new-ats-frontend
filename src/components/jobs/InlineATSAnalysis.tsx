@@ -535,7 +535,7 @@ const InlineATSAnalysis = ({
                                         <div className="ats-skill-tags">
                                             {c.matchingSkills?.length
                                                 ? c.matchingSkills.slice(0, 2).map(s => (
-                                                    <span key={s} className="skill-tag-simple">{s}</span>
+                                                    <span key={s} className="skill-tag-simple matched-skill-tag">{s}</span>
                                                 ))
                                                 : <span style={{ color: '#9CA3AF' }}>None</span>
                                             }
@@ -553,22 +553,24 @@ const InlineATSAnalysis = ({
 
                                     {/* MISSING */}
                                     <td>
-                                        {c.missingSkills?.length
-                                            ? c.missingSkills.slice(0, 2).map(s => (
-                                                <span key={s} className="missing-skill-tag">{s}</span>
-                                            ))
-                                            : <span style={{ color: '#10B981' }}>✓ All matched</span>
-                                        }
+                                        <div className="ats-skill-tags">
+                                            {c.missingSkills?.length
+                                                ? c.missingSkills.slice(0, 2).map(s => (
+                                                    <span key={s} className="missing-skill-tag">{s}</span>
+                                                ))
+                                                : <span style={{ color: '#10B981' }}>✓ All matched</span>
+                                            }
 
-                                        {c.missingSkills && c.missingSkills.length > 2 && (
-                                            <button
-                                                type="button"
-                                                className="ats-skill-more-btn missing"
-                                                onClick={() => toggleSkillsExpanded(c.id)}
-                                            >
-                                                {expandedSkillRowIds.includes(c.id) ? 'Show less' : `+${c.missingSkills.length - 2} more`}
-                                            </button>
-                                        )}
+                                            {c.missingSkills && c.missingSkills.length > 2 && (
+                                                <button
+                                                    type="button"
+                                                    className="ats-skill-more-btn missing"
+                                                    onClick={() => toggleSkillsExpanded(c.id)}
+                                                >
+                                                    {expandedSkillRowIds.includes(c.id) ? 'Show less' : `+${c.missingSkills.length - 2} more`}
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
 
                                     <td>
@@ -634,7 +636,7 @@ const InlineATSAnalysis = ({
                                                     <div className="ats-skill-tags">
                                                         {c.matchingSkills?.length
                                                             ? c.matchingSkills.map(s => (
-                                                                <span key={`match-${c.id}-${s}`} className="skill-tag-simple">{s}</span>
+                                                                <span key={`match-${c.id}-${s}`} className="skill-tag-simple matched-skill-tag">{s}</span>
                                                             ))
                                                             : <span style={{ color: '#9CA3AF' }}>None</span>}
                                                     </div>
@@ -668,4 +670,5 @@ const InlineATSAnalysis = ({
 };
 
 export default InlineATSAnalysis;
+
 
