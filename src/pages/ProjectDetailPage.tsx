@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { JobDescription, Candidate, Project, CandidateWithScore } from '../types/types';
 import JobCard from '../components/jobs/JobCard';
 import InlineATSAnalysis from '../components/jobs/InlineATSAnalysis';
@@ -35,6 +35,7 @@ type ProjectDetailPageProps = {
     candidatesForAnalysis: CandidateWithScore[];
     onClearCandidatesForAnalysis: () => void;
     onAnalyzeJobFit: (job: JobDescription) => Promise<{ rankedCandidates: CandidateWithScore[]; keywords: string[] }>;
+    onCancelAnalyzeJobFit: (jobId: number) => void;
     onOpenAIGenerateModal: () => void;
     onViewCandidate: (candidate: Candidate) => void;
     onScheduleMeeting: (candidate: Candidate, jobId?: string | null) => void;
@@ -47,7 +48,7 @@ type ProjectDetailPageProps = {
     onAutoAnalyzeHandled?: () => void;
 };
 
-const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner = false, confirmActionToast, autoAnalyzeJobId = null, onAutoAnalyzeHandled }: ProjectDetailPageProps) => {
+const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJobEdit, onJobChangeJd, onJobCreateManually, candidates, onCandidateSelect, onUploadJds, stagedJds, isProcessingJds, processingJdsStatus, onProcessJds, onClearJds, onDeleteJobs, onRemoveJd, onDeleteCandidates, onEmailSelected, onEmailSelectedCandidates, candidatesForAnalysis, onClearCandidatesForAnalysis, onAnalyzeJobFit, onCancelAnalyzeJobFit, onOpenAIGenerateModal, onViewCandidate, onScheduleMeeting, onScheduleBulk, organizerEmail, apiRequest, showOwner = false, confirmActionToast, autoAnalyzeJobId = null, onAutoAnalyzeHandled }: ProjectDetailPageProps) => {
     const confirmAction = useMemo(() => {
         if (confirmActionToast) return confirmActionToast;
         return async (message: string) => {
@@ -74,10 +75,21 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
     const recruitmentProgress = totalPositions > 0 ? (filledPositions / totalPositions) * 100 : 0;
 
 
+    const clearAnalysisState = useCallback((jobId: number) => {
+        setAnalyzingJobId(prev => (prev === jobId ? null : prev));
+        setAnalysisData(prev => {
+            if (!prev[jobId]) return prev;
+            const next = { ...prev };
+            delete next[jobId];
+            return next;
+        });
+    }, []);
+
     const handleAnalyzeFit = async (job: JobDescription) => {
         const jobId = job.id;
         if (analyzingJobId === jobId) {
-            setAnalyzingJobId(null);
+            onCancelAnalyzeJobFit(jobId);
+            clearAnalysisState(jobId);
             return;
         }
 
@@ -85,8 +97,18 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
 
         if (!analysisData[jobId]) {
             setAnalysisData(prev => ({ ...prev, [jobId]: { loading: true, candidates: [], keywords: [] } }));
-            const { rankedCandidates, keywords } = await onAnalyzeJobFit(job);
-            setAnalysisData(prev => ({ ...prev, [jobId]: { loading: false, candidates: rankedCandidates, keywords } }));
+            try {
+                const { rankedCandidates, keywords } = await onAnalyzeJobFit(job);
+                setAnalysisData(prev => ({ ...prev, [jobId]: { loading: false, candidates: rankedCandidates, keywords } }));
+            } catch (error: any) {
+                if (error?.name === 'AbortError' || `${error?.message || ''}`.toLowerCase().includes('aborted')) {
+                    clearAnalysisState(jobId);
+                    return;
+                }
+                console.error('Analyze fit failed:', error);
+                toast.error('Analyze fit failed. Please try again.');
+                setAnalysisData(prev => ({ ...prev, [jobId]: { loading: false, candidates: [], keywords: [] } }));
+            }
         }
     };
 
@@ -134,12 +156,22 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
         setAnalyzingJobId(targetJob.id);
         if (!analysisData[targetJob.id]) {
             setAnalysisData(prev => ({ ...prev, [targetJob.id]: { loading: true, candidates: [], keywords: [] } }));
-            onAnalyzeJobFit(targetJob).then(({ rankedCandidates, keywords }) => {
-                setAnalysisData(prev => ({ ...prev, [targetJob.id]: { loading: false, candidates: rankedCandidates, keywords } }));
-            });
+            onAnalyzeJobFit(targetJob)
+                .then(({ rankedCandidates, keywords }) => {
+                    setAnalysisData(prev => ({ ...prev, [targetJob.id]: { loading: false, candidates: rankedCandidates, keywords } }));
+                })
+                .catch((error: any) => {
+                    if (error?.name === 'AbortError' || `${error?.message || ''}`.toLowerCase().includes('aborted')) {
+                        clearAnalysisState(targetJob.id);
+                        return;
+                    }
+                    console.error('Analyze fit failed:', error);
+                    toast.error('Analyze fit failed. Please try again.');
+                    setAnalysisData(prev => ({ ...prev, [targetJob.id]: { loading: false, candidates: [], keywords: [] } }));
+                });
         }
         onAutoAnalyzeHandled?.();
-    }, [autoAnalyzeJobId, jobsForProject, analysisData, onAnalyzeJobFit, onAutoAnalyzeHandled]);
+    }, [autoAnalyzeJobId, jobsForProject, analysisData, onAnalyzeJobFit, onAutoAnalyzeHandled, clearAnalysisState]);
     
     return (
     <div className="page-content">
@@ -229,6 +261,10 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                                                     job={job} 
                                                                     onJobSelect={onJobSelect} 
                                                                     onAnalyzeFit={() => handleAnalyzeFit(job)}
+                                                                    onCancelAnalyzeFit={() => {
+                                                                        onCancelAnalyzeJobFit(job.id);
+                                                                        clearAnalysisState(job.id);
+                                                                    }}
                                                                     isAnalyzing={analyzingJobId === job.id}
                                                                     isProcessingAnalysis={analysisData[job.id]?.loading || false}
                                                                     onEdit={onJobEdit}

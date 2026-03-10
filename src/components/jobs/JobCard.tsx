@@ -1,7 +1,7 @@
 import React from 'react';
 import { JobDescription } from '../../types/types';
 
-const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, isSelected, onSelect, onDelete, showOwner }) => {
+const JobCard = ({ job, onJobSelect, onAnalyzeFit, onCancelAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete, showOwner }) => {
     return (
     <div className={`job-card-wrapper ${isSelected ? 'selected' : ''}`}>
         <input 
@@ -50,13 +50,23 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
                     </button>
                 </div>
                 <div className="job-card-actions">
-                     <button className="btn btn-primary btn-small" onClick={(e) => {e.stopPropagation(); onAnalyzeFit();}} disabled={isProcessingAnalysis}>
+                     <button
+                        className={`btn btn-small ${isProcessingAnalysis ? 'btn-danger' : 'btn-primary'}`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (isProcessingAnalysis) {
+                                onCancelAnalyzeFit?.();
+                                return;
+                            }
+                            onAnalyzeFit();
+                        }}
+                     >
                         {isProcessingAnalysis ? (
-                            <span className="material-symbols-outlined spin">autorenew</span>
+                            <span className="material-symbols-outlined">stop_circle</span>
                         ) : (
                             <span className="material-symbols-outlined">{isAnalyzing ? 'visibility_off' : 'query_stats'}</span>
                         )}
-                        {isProcessingAnalysis ? 'Analyzing...' : (isAnalyzing ? 'Hide' : 'Analyze Fit')}
+                        {isProcessingAnalysis ? 'Cancel' : (isAnalyzing ? 'Hide' : 'Analyze Fit')}
                     </button>
                 </div>
             </div>

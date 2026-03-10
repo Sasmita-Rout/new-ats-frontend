@@ -216,6 +216,7 @@ const App = () => {
     const [isViewTeamMembersModalOpen, setViewTeamMembersModalOpen] = useState(false);
     const [projectForViewTeam, setProjectForViewTeam] = useState<Project | null>(null);
     const [projectTeamMembers, setProjectTeamMembers] = useState<any[]>([]);
+    const analyzeFitControllersRef = useRef<Map<number, AbortController>>(new Map());
 
     const upsertCandidatesByEmail = useCallback((prev: Candidate[], incoming: Candidate[]) => {
         const next = [...prev];
@@ -1599,7 +1600,22 @@ ${effectiveUser.name}`;
         return data;
     }, []);
 
+    const cancelAnalyzeJobFit = useCallback((jobId: number) => {
+        const controller = analyzeFitControllersRef.current.get(jobId);
+        if (controller) {
+            controller.abort();
+            analyzeFitControllersRef.current.delete(jobId);
+        }
+    }, []);
+
     const handleAnalyzeJobFit = useCallback(async (job: JobDescription) => {
+        const existingController = analyzeFitControllersRef.current.get(job.id);
+        if (existingController) {
+            existingController.abort();
+            analyzeFitControllersRef.current.delete(job.id);
+        }
+        const controller = new AbortController();
+        analyzeFitControllersRef.current.set(job.id, controller);
         setIsAnalyzingJobId(job.id);
         try {
             const uploadedBy = await getUploadedBy();
@@ -1608,6 +1624,7 @@ ${effectiveUser.name}`;
             const data = await apiRequest('/matching/analyze-fit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
                 body: JSON.stringify({
                     job_id: jobId,
                     uploaded_by: uploadedBy,
@@ -1783,11 +1800,15 @@ ${effectiveUser.name}`;
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
         } catch (error) {
+            if (error?.name === 'AbortError') {
+                throw error;
+            }
             console.error("AI-powered analysis failed:", error);
             console.error("AI-powered analysis failed:", error);
             notifyError('An error occurred during AI analysis.');
             return { rankedCandidates: [], keywords: [] };
         } finally {
+            analyzeFitControllersRef.current.delete(job.id);
             setIsAnalyzingJobId(null);
         }
     }, [allCandidates, apiRequest, getUploadedBy]);
@@ -2910,6 +2931,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         candidatesForAnalysis={candidatesForAnalysis}
                         onClearCandidatesForAnalysis={() => setCandidatesForAnalysis([])}
                         onAnalyzeJobFit={handleAnalyzeJobFit}
+                        onCancelAnalyzeJobFit={cancelAnalyzeJobFit}
                         onOpenAIGenerateModal={() => setAIGenerateModalOpen(true)}
                         onViewCandidate={handleViewCandidate}
                         onScheduleMeeting={handleOpenMeetingModal}

@@ -211,7 +211,7 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                                 <th>Skills</th>
                                 {selectedJob && <th>Match Score</th>}
                                 <th>Applied</th>
-                                <th>Actions</th>
+                                <th style={{ paddingLeft: '20px' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
