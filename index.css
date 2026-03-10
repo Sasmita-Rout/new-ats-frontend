@@ -2414,7 +2414,8 @@ body::before {
     text-align: left;
     border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 .candidates-table th {
     font-size: 12px;
@@ -2432,6 +2433,7 @@ body::before {
 }
 .candidate-cell { display: flex; align-items: center; gap: 12px; }
 .candidate-name { font-weight: 600; text-decoration: none; color: var(--text-color-dark); }
+.candidate-name { white-space: nowrap; }
 .candidate-name:hover { color: var(--primary-color); text-decoration: underline; }
 .candidate-title { font-size: 12px; color: #555; }
 .match-score { font-weight: 600; font-size: 14px; color: var(--primary-color); }
@@ -2517,6 +2519,17 @@ body::before {
 .candidates-table td:nth-child(6) .skills-container {
     flex-wrap: wrap;
     align-items: center;
+}
+
+.candidates-table td:nth-child(3),
+.candidates-table td:nth-child(4),
+.candidates-table td:nth-child(5) {
+    white-space: nowrap;
+}
+
+.candidates-table td:nth-child(2),
+.candidates-table td:nth-child(7) {
+    white-space: nowrap;
 }
 
 .candidates-table td:nth-child(6) .skill-tag {
