@@ -1711,27 +1711,16 @@ ${effectiveUser.name}`;
             const uploadedBy = await getUploadedBy();
             const jobId = job.jobId || String(job.id);
 
-            const data = await apiRequest('/matching/analyze-fit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    job_id: jobId,
-                    uploaded_by: uploadedBy,
-                    limit: 200,
-                    offset: 0,
-                    use_ai: true,
-                }),
-            });
-
-            const results = Array.isArray(data?.results) ? data.results : [];
+            const analyzeLimit = 500;
+            let offset = 0;
+            const rankedMap = new Map<string, CandidateWithScore>();
             const byEmail = new Map<string, Candidate>();
             allCandidates.forEach(c => {
                 const email = c.email?.toLowerCase();
                 if (email) byEmail.set(email, c);
             });
 
-            const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
+            const mapResultsToCandidates = (results: any[]) => results.map((r: any) => {
                 const apiDataNormalized = normalizeCandidate(r);
                 const email = (apiDataNormalized.email || String(r.email || '')).toLowerCase();
                 let existing = email ? byEmail.get(email) : undefined;
@@ -1807,6 +1796,39 @@ ${effectiveUser.name}`;
                     location_matched: r.location_matched ?? false,
                 };
             });
+
+            while (true) {
+                const data = await apiRequest('/matching/analyze-fit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        job_id: jobId,
+                        uploaded_by: uploadedBy,
+                        limit: analyzeLimit,
+                        offset,
+                        use_ai: true,
+                    }),
+                });
+
+                const results = Array.isArray(data?.results) ? data.results : [];
+                if (!results.length) break;
+
+                const mapped = mapResultsToCandidates(results);
+                mapped.forEach(c => {
+                    const key = (c.email || String(c.id || '')).toLowerCase();
+                    if (!key) return;
+                    const existing = rankedMap.get(key);
+                    if (!existing || (c.overallScore ?? 0) > (existing.overallScore ?? 0)) {
+                        rankedMap.set(key, c);
+                    }
+                });
+
+                if (results.length < analyzeLimit) break;
+                offset += analyzeLimit;
+            }
+
+            const rankedCandidates = Array.from(rankedMap.values());
 
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
