@@ -366,6 +366,9 @@ const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCand
                             <label htmlFor="rowsPerPage">Rows per page:</label>
                             <select id="rowsPerPage" value={rowsPerPage === Number.MAX_SAFE_INTEGER ? 'all' : rowsPerPage} onChange={handleRowsPerPageChange}>
                                 <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
                             </select>
                         </div>
                         <div className="pagination-range">{rangeLabel}</div>

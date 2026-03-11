@@ -48,6 +48,8 @@ const InlineATSAnalysis = ({
 }) => {
 
     const [filters, setFilters] = useState(defaultFilters);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [pageIndex, setPageIndex] = useState(0);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [expandedSkillRowIds, setExpandedSkillRowIds] = useState<number[]>([]);
     const [emailSentMap, setEmailSentMap] = useState<Record<string, boolean>>({});
@@ -134,6 +136,7 @@ const InlineATSAnalysis = ({
 
     useEffect(() => {
         setSelectedIds([]);
+        setPageIndex(0);
     }, [filters, filteredCandidates]);
 
     useEffect(() => {
@@ -228,7 +231,7 @@ const InlineATSAnalysis = ({
 
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
-            setSelectedIds(filteredCandidates.map(c => c.id));
+            setSelectedIds(visibleCandidates.map(c => c.id));
         } else {
             setSelectedIds([]);
         }
@@ -394,14 +397,43 @@ const InlineATSAnalysis = ({
         exportToCSV(formatted, filename);
     };
 
+    const totalCandidates = filteredCandidates.length;
+    const pageCount = Math.max(1, Math.ceil(totalCandidates / rowsPerPage));
+    const safePageIndex = Math.min(pageIndex, pageCount - 1);
+    const pageStart = safePageIndex * rowsPerPage;
+    const pageEnd = Math.min(pageStart + rowsPerPage, totalCandidates);
+    const visibleCandidates = filteredCandidates.slice(pageStart, pageEnd);
+    const selectedVisibleCount = visibleCandidates.filter(c => selectedIds.includes(c.id)).length;
+    const isPaginationDisabled = totalCandidates === 0 || pageCount === 1;
+    const rangeLabel = totalCandidates === 0
+        ? `0-0 of ${totalCandidates}`
+        : `${pageStart + 1}-${pageEnd} of ${totalCandidates}`;
+    const isPrevDisabled = isPaginationDisabled || safePageIndex === 0;
+    const isNextDisabled = isPaginationDisabled || safePageIndex >= pageCount - 1;
+
     const allVisibleSelected =
-        filteredCandidates.length > 0 &&
-        selectedIds.length === filteredCandidates.length;
+        visibleCandidates.length > 0 &&
+        selectedVisibleCount === visibleCandidates.length;
 
     const toggleSkillsExpanded = (id: number) => {
         setExpandedSkillRowIds(prev =>
             prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
         );
+    };
+
+    const handleRowsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setRowsPerPage(Number(e.target.value));
+        setPageIndex(0);
+    };
+
+    const handlePrevPage = () => {
+        if (isPrevDisabled) return;
+        setPageIndex(prev => Math.max(0, prev - 1));
+    };
+
+    const handleNextPage = () => {
+        if (isNextDisabled) return;
+        setPageIndex(prev => Math.min(pageCount - 1, prev + 1));
     };
 
     return (
@@ -480,7 +512,7 @@ const InlineATSAnalysis = ({
                         </thead>
 
                         <tbody>
-                            {filteredCandidates.length ? filteredCandidates.map(c => (
+                            {visibleCandidates.length ? visibleCandidates.map(c => (
                                 <React.Fragment key={c.id}>
                                 <tr>
                                     <td>
@@ -655,6 +687,35 @@ const InlineATSAnalysis = ({
                         </tbody>
 
                     </table>
+                    </div>
+                    <div className="candidates-pagination">
+                        <div className="rows-per-page">
+                            <label htmlFor="analysisRowsPerPage">Rows per page:</label>
+                            <select id="analysisRowsPerPage" value={rowsPerPage} onChange={handleRowsPerPageChange}>
+                                <option value={10}>10</option>
+                            </select>
+                        </div>
+                        <div className="pagination-range">{rangeLabel}</div>
+                        <div className="pagination-actions">
+                            <button
+                                type="button"
+                                className="icon-btn pagination-icon"
+                                onClick={handlePrevPage}
+                                disabled={isPrevDisabled}
+                                aria-label="Previous page"
+                            >
+                                <span className="material-symbols-outlined">chevron_left</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="icon-btn pagination-icon"
+                                onClick={handleNextPage}
+                                disabled={isNextDisabled}
+                                aria-label="Next page"
+                            >
+                                <span className="material-symbols-outlined">chevron_right</span>
+                            </button>
+                        </div>
                     </div>
                 </>
             )}

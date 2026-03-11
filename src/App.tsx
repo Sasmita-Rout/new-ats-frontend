@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -174,7 +173,6 @@ const App = () => {
     const [selectedJobForDetail, setSelectedJobForDetail] = useState<JobDescription | null>(null);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [searchDebounced, setSearchDebounced] = useState('');
     const [globalSearchTerm, setGlobalSearchTerm] = useState('');
     const [emailTargets, setEmailTargets] = useState<Candidate[]>([]);
     const [emailJobIdOverride, setEmailJobIdOverride] = useState<string | null>(null);
@@ -219,6 +217,7 @@ const App = () => {
     const [projectTeamMembers, setProjectTeamMembers] = useState<any[]>([]);
     const analyzeFitControllersRef = useRef<Map<number, AbortController>>(new Map());
 
+    const isInitialMount = useRef(true);
     const upsertCandidatesByEmail = useCallback((prev: Candidate[], incoming: Candidate[]) => {
         const next = [...prev];
         const indexByEmail = new Map<string, number>();
@@ -1230,7 +1229,7 @@ ${effectiveUser.name}`;
                 } else {
                     throw new Error("Invalid data file structure.");
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Import failed:", error);
                 notifyError(`Failed to import data: ${error.message}`);
             }
@@ -1259,7 +1258,6 @@ ${effectiveUser.name}`;
                 });
 
                 // Cascade status to jobs (Two-way sync)
-                // Check if status changed to avoid resetting jobs when editing other fields
                 const existingProject = allProjects.find(p => p.project_id === projectData.project_id);
                 const statusChanged = existingProject && existingProject.status !== projectData.status;
 
@@ -1292,7 +1290,7 @@ ${effectiveUser.name}`;
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(payload),
-                            }).catch(e => console.error(`Failed to update job '${job.title}' (${job.id}):`, e));
+                            }).catch((e: any) => console.error(`Failed to update job '${job.title}' (${job.id}):`, e));
                         }
                         return Promise.resolve();
                     }));
@@ -1609,6 +1607,97 @@ ${effectiveUser.name}`;
         }
     }, []);
 
+    const safeArray = (value: unknown): string[] => {
+        if (Array.isArray(value)) return value.filter(Boolean).map(String);
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String);
+            } catch {
+                return value.split(',').map(v => v.trim()).filter(Boolean);
+            }
+        }
+        return [];
+    };
+
+    const safeObjectArray = <T extends object>(value: unknown): T[] => {
+        if (Array.isArray(value)) return value.filter(Boolean) as T[];
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? (parsed.filter(Boolean) as T[]) : [];
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    };
+
+    const normalizeCandidate = useCallback((raw: any): Candidate => {
+        const email = raw.email || '';
+
+        const phone = raw.phone 
+            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '') 
+            || raw.contact_no 
+            || raw.mobile 
+            || '';
+        const location = raw.location || raw.address || '';
+
+        const appliedDate = raw.applied_date || raw.appliedDate || raw.file_created || new Date().toISOString().split('T')[0];
+        
+        const idSource = email.toLowerCase() || [
+            raw.name || raw.candidate_name,
+            raw.filenames,
+            raw.file_created
+        ].filter(Boolean).join('|') || Date.now().toString();
+
+        const derivedId = hashStringToInt(String(idSource));
+
+        const experience = safeObjectArray<Experience>(raw.experience);
+        let totalExperienceYears = raw.total_experience_years || raw.totalExperienceYears || raw.experience_years || raw.experience;
+        if (typeof totalExperienceYears === 'string') {
+            const parsed = parseFloat(totalExperienceYears);
+            totalExperienceYears = isNaN(parsed) ? 0 : parsed;
+        }
+        if (!totalExperienceYears && experience.length > 0) {
+            totalExperienceYears = calculateTotalExperience(experience);
+        }
+
+        return {
+            id: typeof raw.id === 'number' ? raw.id : derivedId,
+            name: raw.name || raw.candidate_name || 'Unknown Candidate',
+            title: raw.title || raw.candidate_title || 'N/A',
+            avatar: raw.avatar || getInitials(raw.name || raw.candidate_name || 'Unknown Candidate'),
+            summary: raw.summary || '',
+            email,
+            phone,
+            location,
+            dob: raw.dob || raw.date_of_birth || raw.dateOfBirth || 'N/A',
+            experience: experience,
+            education: safeObjectArray<Education>(raw.education),
+            skills: safeArray(raw.skills),
+            softSkills: safeArray(raw.soft_skills || raw.softSkills),
+            languages: safeArray(raw.languages),
+            certifications: safeArray(raw.certifications),
+            links: safeObjectArray<Link>(raw.links),
+            status: raw.status || 'Screening',
+            appliedDate,
+            salaryExpectation: raw.salary_expectation ?? raw.salaryExpectation ?? null,
+            resumeContent: raw.resume_content || raw.resumeContent || '',
+            originalResumeFile: null,
+            applicationHistory: safeObjectArray<{ stage: string; date: string; notes: string }>(raw.application_history || raw.applicationHistory),
+            tasks: safeObjectArray<Task>(raw.tasks),
+            notes: safeObjectArray<Note>(raw.notes),
+            category: raw.category || 'Uncategorized',
+            tags: safeArray(raw.tags),
+            source: raw.source || raw.filename || raw.original_filename || '',
+            rejectionReason: raw.rejection_reason || raw.rejectionReason || null,
+            communicationHistory: safeObjectArray<{ type: 'email' | 'call'; date: string; subject: string }>(raw.communication_history || raw.communicationHistory),
+            interviews: safeObjectArray<Interview>(raw.interviews),
+            totalExperienceYears: totalExperienceYears || 0,
+        };
+    }, []);
+
     const handleAnalyzeJobFit = useCallback(async (job: JobDescription) => {
         const existingController = analyzeFitControllersRef.current.get(job.id);
         if (existingController) {
@@ -1642,169 +1731,89 @@ ${effectiveUser.name}`;
                 if (email) byEmail.set(email, c);
             });
 
-            /*const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
-                const email = String(r.email || '').toLowerCase();
-                const existing = byEmail.get(email);
+            const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
+                const apiDataNormalized = normalizeCandidate(r);
+                const email = (apiDataNormalized.email || String(r.email || '')).toLowerCase();
+                let existing = email ? byEmail.get(email) : undefined;
+
+                if (!existing && apiDataNormalized.name) {
+                    const nameLower = apiDataNormalized.name.toLowerCase();
+                    const nameMatches = allCandidates.filter(c => c.name?.toLowerCase() === nameLower);
+                    if (nameMatches.length === 1) {
+                        existing = nameMatches[0];
+                    } else if (nameMatches.length > 1) {
+                        const apiPhone = (apiDataNormalized.phone || '').replace(/\D/g, '');
+                        if (apiPhone.length >= 5) {
+                            const phoneMatch = nameMatches.find(c => (c.phone || '').replace(/\D/g, '') === apiPhone);
+                            if (phoneMatch) existing = phoneMatch;
+                        }
+                        if (!existing && apiDataNormalized.location) {
+                            const locLower = apiDataNormalized.location.toLowerCase();
+                            const locMatch = nameMatches.find(c => (c.location || '').toLowerCase() === locLower);
+                            if (locMatch) existing = locMatch;
+                        }
+                    }
+                }
                 const overallScore = typeof r.match_score === 'number'
                     ? Math.round(r.match_score)
                     : Math.round(Number(r.match_score) || 0);
-                const matchingSkills = Array.isArray(r.matching_skills) ? r.matching_skills : [];
-                const missingSkills = Array.isArray(r.missing_skills) ? r.missing_skills : [];
+                
+                const matchingSkills = Array.isArray(r.matching_skills) 
+                    ? r.matching_skills 
+                    : (typeof r.matching_skills === 'string' && r.matching_skills)
+                        ? r.matching_skills.split(',').map((s: string) => s.trim()).filter(Boolean)
+                        : [];
+                
+                const missingSkills = Array.isArray(r.missing_skills)
+                    ? r.missing_skills
+                    : (typeof r.missing_skills === 'string' && r.missing_skills)
+                        ? r.missing_skills.split(',').map((s: string) => s.trim()).filter(Boolean)
+                        : [];
 
                 const apiSkills = Array.isArray(r.skills)
                     ? r.skills
-                    : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+                    : String(r.skills || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+                
                 const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
                     ? existing.skills
                     : apiSkills;
-                const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
+                
+                const candidateSkillsLower = new Set(candidateSkillsSource.map((s: string) => s.toLowerCase()));
                 const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
                 const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
                 const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
 
                 if (existing) {
-                    const mergedContact = {
-                        ...existing.contact,
-                        phone: existing.contact?.phone || r.phone || '',
-                        location: existing.contact?.location || r.location || '',
-                    };
-                    const mergedSkills = (existing.skills && existing.skills.length > 0) ? existing.skills : apiSkills;
                     return {
                         ...existing,
-                        contact: mergedContact,
-                        skills: mergedSkills,
+                        phone: existing.phone || apiDataNormalized.phone,
+                        location: existing.location || apiDataNormalized.location,
+                        dob: (existing.dob && existing.dob !== 'N/A') ? existing.dob : apiDataNormalized.dob,
+                        skills: (existing.skills && existing.skills.length > 0) ? existing.skills : apiDataNormalized.skills,
+                        totalExperienceYears: existing.totalExperienceYears || apiDataNormalized.totalExperienceYears,
                         overallScore,
                         matchingSkills: finalMatchingSkills,
                         missingSkills,
-                        totalExperienceYears: existing.totalExperienceYears ?? r.experience_years,
+                        location_matched: r.location_matched ?? false,
                     };
                 }
 
-                const name = r.candidate_name || r.name || 'Unknown Candidate';
-                const idSource = email || name || `${jobId}|${Math.random()}`;
-                const derivedId = hashStringToInt(String(idSource));
+                const newCandidate = apiDataNormalized;
                 return {
-                    id: derivedId,
-                    name,
-                    title: r.title || 'N/A',
-                    avatar: getInitials(name),
-                    summary: '',
-                    contact: { email: email || '', phone: r.phone || '', location: r.location || '' },
-                    experience: [],
-                    education: [],
-                    skills: Array.isArray(r.skills)
-                        ? r.skills
-                        : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean),
-                    softSkills: [],
-                    languages: [],
-                    certifications: [],
-                    links: [],
-                    status: 'Screening',
-                    appliedDate: new Date().toISOString().split('T')[0],
-                    salaryExpectation: null,
-                    resumeContent: '',
-                    originalResumeFile: null,
-                    applicationHistory: [],
-                    tasks: [],
-                    notes: [],
-                    category: 'Uncategorized',
-                    tags: [],
-                    source: '',
-                    rejectionReason: null,
-                    communicationHistory: [],
-                    totalExperienceYears: r.experience_years,
+                    ...newCandidate,
                     overallScore,
                     matchingSkills: finalMatchingSkills,
                     missingSkills,
+                    location_matched: r.location_matched ?? false,
                 };
-            });*/
-            const rankedCandidates: CandidateWithScore[] = results.map((r: any) => {
-    const apiDataNormalized = normalizeCandidate(r);
-    const email = (apiDataNormalized.email || String(r.email || '')).toLowerCase();
-    let existing = email ? byEmail.get(email) : undefined;
+            });
 
-    if (!existing && apiDataNormalized.name) {
-        const nameLower = apiDataNormalized.name.toLowerCase();
-        const nameMatches = allCandidates.filter(c => c.name?.toLowerCase() === nameLower);
-        if (nameMatches.length === 1) {
-            existing = nameMatches[0];
-        } else if (nameMatches.length > 1) {
-            const apiPhone = (apiDataNormalized.phone || '').replace(/\D/g, '');
-            if (apiPhone.length >= 5) {
-                const phoneMatch = nameMatches.find(c => (c.phone || '').replace(/\D/g, '') === apiPhone);
-                if (phoneMatch) existing = phoneMatch;
-            }
-            if (!existing && apiDataNormalized.location) {
-                const locLower = apiDataNormalized.location.toLowerCase();
-                const locMatch = nameMatches.find(c => (c.location || '').toLowerCase() === locLower);
-                if (locMatch) existing = locMatch;
-            }
-        }
-    }
-    const overallScore = typeof r.match_score === 'number'
-        ? Math.round(r.match_score)
-        : Math.round(Number(r.match_score) || 0);
-    
-    // FIX: Properly handle matching_skills and missing_skills arrays
-    const matchingSkills = Array.isArray(r.matching_skills) 
-        ? r.matching_skills 
-        : (typeof r.matching_skills === 'string' && r.matching_skills)
-            ? r.matching_skills.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
-    
-    const missingSkills = Array.isArray(r.missing_skills)
-        ? r.missing_skills
-        : (typeof r.missing_skills === 'string' && r.missing_skills)
-            ? r.missing_skills.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
-
-    const apiSkills = Array.isArray(r.skills)
-        ? r.skills
-        : String(r.skills || '').split(',').map(s => s.trim()).filter(Boolean);
-    
-    const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
-        ? existing.skills
-        : apiSkills;
-    
-    const candidateSkillsLower = new Set(candidateSkillsSource.map(s => s.toLowerCase()));
-    const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
-    const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
-    const finalMatchingSkills = matchingSkills.length > 0 ? matchingSkills : fallbackMatchingSkills;
-
-    if (existing) {
-        return {
-            ...existing,
-            // Only update fields on the existing candidate if they are empty or 'N/A'
-            phone: existing.phone || apiDataNormalized.phone,
-            location: existing.location || apiDataNormalized.location,
-            dob: (existing.dob && existing.dob !== 'N/A') ? existing.dob : apiDataNormalized.dob,
-            skills: (existing.skills && existing.skills.length > 0) ? existing.skills : apiDataNormalized.skills,
-            totalExperienceYears: existing.totalExperienceYears || apiDataNormalized.totalExperienceYears,
-            // Add scoring info
-            overallScore,
-            matchingSkills: finalMatchingSkills,
-            missingSkills,
-            location_matched: r.location_matched ?? false,
-        };
-    }
-
-    // For a new candidate, just use the normalized API result and add scores
-    const newCandidate = apiDataNormalized;
-    return {
-        ...newCandidate,
-        overallScore,
-        matchingSkills: finalMatchingSkills,
-        missingSkills,
-        location_matched: r.location_matched ?? false,
-    };
-});
             const keywords = job.requiredSkills || [];
             return { rankedCandidates, keywords };
-        } catch (error) {
+        } catch (error: any) {
             if (error?.name === 'AbortError') {
                 throw error;
             }
-            console.error("AI-powered analysis failed:", error);
             console.error("AI-powered analysis failed:", error);
             notifyError('An error occurred during AI analysis.');
             return { rankedCandidates: [], keywords: [] };
@@ -1812,7 +1821,7 @@ ${effectiveUser.name}`;
             analyzeFitControllersRef.current.delete(job.id);
             setIsAnalyzingJobId(null);
         }
-    }, [allCandidates, apiRequest, getUploadedBy]);
+    }, [allCandidates, apiRequest, getUploadedBy, normalizeCandidate, notifyError]);
 
     const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
         try {
@@ -1820,7 +1829,6 @@ ${effectiveUser.name}`;
                 notifyError('AI analysis is not configured. Set VITE_GEMINI_API_KEY in .env and restart.');
                 return null;
             }
-            // Fix: Re-instantiate AI right before the call.
             const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
             const matchSchema = {
                 type: Type.OBJECT,
@@ -1850,7 +1858,6 @@ Required Skills: ${jd.requiredSkills?.join(', ') || 'N/A'}
 Experience: ${jd.experience}
 Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
-            // Fix: Updated model to 'gemini-3-flash-preview' for analysis tasks.
             const response = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [{ text: prompt }] },
@@ -1924,114 +1931,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
     }, [checkResumeExistsInVault]);
 
-    const safeArray = (value: unknown): string[] => {
-        if (Array.isArray(value)) return value.filter(Boolean).map(String);
-        if (typeof value === 'string') {
-            try {
-                const parsed = JSON.parse(value);
-                if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String);
-            } catch {
-                return value.split(',').map(v => v.trim()).filter(Boolean);
-            }
-        }
-        return [];
-    };
-
-    const safeObjectArray = <T extends object>(value: unknown): T[] => {
-        if (Array.isArray(value)) return value.filter(Boolean) as T[];
-        if (typeof value === 'string') {
-            try {
-                const parsed = JSON.parse(value);
-                return Array.isArray(parsed) ? (parsed.filter(Boolean) as T[]) : [];
-            } catch {
-                return [];
-            }
-        }
-        return [];
-    };
-
-    const normalizeCandidate = useCallback((raw: any): Candidate => {
-        const email = raw.email || '';
-
-        // Standardize contact info from different API response shapes
-        // `list-candidates` uses `contact` for phone. `search-db` uses `phone`.
-        // Relaxed validation: Accept if it has at least 5 digits, even if it has text
-        const phone = raw.phone 
-            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '') 
-            || raw.contact_no 
-            || raw.mobile 
-            || '';
-        const location = raw.location || raw.address || '';
-
-        const appliedDate = raw.applied_date || raw.appliedDate || raw.file_created || new Date().toISOString().split('T')[0];
-        
-        // Use email as the primary source for a stable ID. Fallback to other fields if email is missing.
-        const idSource = email.toLowerCase() || [
-            raw.name || raw.candidate_name,
-            raw.filenames,
-            raw.file_created
-        ].filter(Boolean).join('|') || Date.now().toString();
-
-        const derivedId = hashStringToInt(String(idSource));
-
-        const experience = safeObjectArray<Experience>(raw.experience);
-        // Handle experience from `search-db` (experience_years) or `list-candidates` (experience: "2.0")
-        let totalExperienceYears = raw.total_experience_years || raw.totalExperienceYears || raw.experience_years || raw.experience;
-        if (typeof totalExperienceYears === 'string') {
-            const parsed = parseFloat(totalExperienceYears);
-            totalExperienceYears = isNaN(parsed) ? 0 : parsed;
-        }
-        if (!totalExperienceYears && experience.length > 0) {
-            totalExperienceYears = calculateTotalExperience(experience);
-        }
-
-        return {
-            id: typeof raw.id === 'number' ? raw.id : derivedId,
-            name: raw.name || raw.candidate_name || 'Unknown Candidate',
-            title: raw.title || raw.candidate_title || 'N/A',
-            avatar: raw.avatar || getInitials(raw.name || raw.candidate_name || 'Unknown Candidate'),
-            summary: raw.summary || '',
-            email,
-            phone,
-            location,
-            dob: raw.dob || raw.date_of_birth || raw.dateOfBirth || 'N/A',
-            experience: experience,
-            education: safeObjectArray<Education>(raw.education),
-            skills: safeArray(raw.skills),
-            softSkills: safeArray(raw.soft_skills || raw.softSkills),
-            languages: safeArray(raw.languages),
-            certifications: safeArray(raw.certifications),
-            links: safeObjectArray<Link>(raw.links),
-            status: raw.status || 'Screening',
-            appliedDate,
-            salaryExpectation: raw.salary_expectation ?? raw.salaryExpectation ?? null,
-            resumeContent: raw.resume_content || raw.resumeContent || '',
-            originalResumeFile: null,
-            applicationHistory: safeObjectArray<{ stage: string; date: string; notes: string }>(raw.application_history || raw.applicationHistory),
-            tasks: safeObjectArray<Task>(raw.tasks),
-            notes: safeObjectArray<Note>(raw.notes),
-            category: raw.category || 'Uncategorized',
-            tags: safeArray(raw.tags),
-            source: raw.source || raw.filename || raw.original_filename || '',
-            rejectionReason: raw.rejection_reason || raw.rejectionReason || null,
-            communicationHistory: safeObjectArray<{ type: 'email' | 'call'; date: string; subject: string }>(raw.communication_history || raw.communicationHistory),
-            interviews: safeObjectArray<Interview>(raw.interviews),
-            totalExperienceYears: totalExperienceYears || 0,
-        };
-    }, []);
-
     const normalizeJobFromApi = useCallback((raw: any): JobDescription => {
         const jobId = raw.job_id || raw.jobId || raw.id;
         const projectId = raw.project_id || raw.projectId || 'unassigned';
         const rawSkills = raw.job_skills || raw.jobSkills || raw.requiredSkills || [];
         const requiredSkills = Array.isArray(rawSkills)
             ? rawSkills.map((s: any) => String(s).trim()).filter(Boolean)
-            : String(rawSkills).split(',').map(s => s.trim()).filter(Boolean);
+            : String(rawSkills).split(',').map((s: string) => s.trim()).filter(Boolean);
         const expMinRaw = raw.job_experience_min ?? raw.jobExperienceMin;
         const expMaxRaw = raw.job_experience_max ?? raw.jobExperienceMax;
         const expMinParsed = expMinRaw !== undefined && expMinRaw !== null ? Number(expMinRaw) : null;
         const expMaxParsed = expMaxRaw !== undefined && expMaxRaw !== null ? Number(expMaxRaw) : null;
-        // Keep ATS experience range anchored from 0 years in all views.
         const expMin = 0;
         const expMax = Number.isFinite(expMaxParsed)
             ? Math.max(expMaxParsed as number, 0)
@@ -2118,30 +2028,41 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         return [];
     };
 
-    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0, query = '') => {
+    // FIX 1: Removed duplicate function declaration - merged into single fetchCandidatesPage
+    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0, search = '') => {
         try {
-            const searchParam = query ? `&q=${encodeURIComponent(query)}` : '';
-            const data = await apiRequest(`/resume/list-candidates?limit=${limit}&offset=${offset}${searchParam}`);
+            let data;
+            if (search && search.trim()) {
+                data = await apiRequest(`/resume/search?q=${encodeURIComponent(search)}&limit=${limit}&offset=${offset}`);
+            } else {
+                data = await apiRequest(`/resume/list-candidates?limit=${limit}&offset=${offset}`);
+            }
             const candidates = extractCandidates(data).map(normalizeCandidate);
-            const seen = new Set<string>();
-            const deduped = candidates.filter(c => {
-                const key = (c.email || String(c.id || '')).toLowerCase();
-                if (!key) return true;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-            setAllCandidates(deduped);
+            setAllCandidates(candidates);
             const total = typeof data?.total === 'number' ? data.total : candidates.length;
             setTotalCandidatesCount(total);
         } catch (error) {
             console.error('Failed to load candidates:', error);
+            notifyError('Failed to load or search for candidates.');
         }
     }, [apiRequest, normalizeCandidate]);
 
     const fetchCandidates = useCallback(async () => {
-        return fetchCandidatesPage(10, 0, searchDebounced);
-    }, [fetchCandidatesPage, searchDebounced]);
+        return fetchCandidatesPage(10, 0);
+    }, [fetchCandidatesPage]);
+
+    useEffect(() => {
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return;
+        }
+
+        const debounceTimer = setTimeout(() => {
+            fetchCandidatesPage(10, 0, searchTerm);
+        }, 500);
+
+        return () => clearTimeout(debounceTimer);
+    }, [searchTerm, fetchCandidatesPage]);
 
     const fetchHistory = useCallback(async () => {
         try {
@@ -2202,7 +2123,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             toast.success('Team member added.');
             setAddTeamMemberModalOpen(false);
             setProjectForTeamMember(null);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to add team member:', error);
             toast.error(`Failed to add team member. ${error?.message || ''}`.trim());
         }
@@ -2213,7 +2134,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const requestedBy = await getUploadedBy();
             const data = await apiRequest(`/project/team/eligible-users?requested_by=${encodeURIComponent(requestedBy)}`);
             setAtsUsers(Array.isArray(data) ? data : []);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to load ATS users:', error);
             toast.error(`Failed to load ATS users. ${error?.message || ''}`.trim());
         }
@@ -2236,7 +2157,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             setProjectTeamMembers(members);
             setProjectForViewTeam(project);
             setViewTeamMembersModalOpen(true);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to load team members:', error);
             toast.error(`Failed to load team members. ${error?.message || ''}`.trim());
         }
@@ -2254,7 +2175,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const members = await fetchProjectTeamMembers(projectForViewTeam.project_id);
             setProjectTeamMembers(members);
             toast.success('Team member updated.');
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to update team member:', error);
             toast.error(`Failed to update team member. ${error?.message || ''}`.trim());
         }
@@ -2270,15 +2191,12 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const members = await fetchProjectTeamMembers(projectForViewTeam.project_id);
             setProjectTeamMembers(members);
             toast.success('Team member removed.');
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to remove team member:', error);
             toast.error(`Failed to remove team member. ${error?.message || ''}`.trim());
         }
     }, [fetchProjectTeamMembers, getUploadedBy, projectForViewTeam, apiRequest]);
 
-    // --- SMART VIEW HANDLER ---
-    // This ensures we show the FULL candidate profile (from allCandidates) 
-    // even if the current view (like Analyze Fit) only has partial data.
     const isProfileComplete = (c: Candidate) => {
         const hasPhone = !!c.phone && c.phone !== 'No Phone';
         const hasLocation = !!c.location && c.location !== 'No Location';
@@ -2298,7 +2216,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     }, [apiRequest, normalizeCandidate]);
 
     const handleSelectCandidateFromAnalysis = async (candidate: Candidate) => {
-        // Prefer full record for detail view (Analyze Fit often has partial data)
         const fullCandidate = allCandidates.find(c =>
             (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
             c.id === candidate.id
@@ -2334,7 +2251,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     };
 
     const handleViewCandidate = async (candidate: Candidate) => {
-        // Try to find the full record in our main list by email or ID
         const fullCandidate = allCandidates.find(c => 
             (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) || 
             c.id === candidate.id
@@ -2382,23 +2298,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         fetchJobs();
         fetchHistory();
     }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs, fetchHistory]);
-
-    useEffect(() => {
-        const trimmed = searchTerm.trim();
-        if (!trimmed) {
-            setSearchDebounced('');
-            return;
-        }
-        const handle = setTimeout(() => {
-            setSearchDebounced(trimmed);
-        }, 200);
-        return () => clearTimeout(handle);
-    }, [searchTerm]);
-
-    useEffect(() => {
-        if (!effectiveUser?.email) return;
-        fetchCandidatesPage(10, 0, searchDebounced);
-    }, [effectiveUser?.email, fetchCandidatesPage, searchDebounced]);
 
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
@@ -2459,11 +2358,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 body: formData,
             });
 
-            if (data && data.success === false) {
-                notifyInfo(data.message || 'Resume was uploaded recently and cannot be replaced yet.');
-                return null;
-            }
-
             const rawCandidate = extractCandidate(data);
             let candidateEmail = uploadedBy;
             if (rawCandidate) {
@@ -2483,8 +2377,6 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     }
                 }
 
-                // The confirmation for replacement is removed as requested.
-                // upsertCandidatesByEmail will handle replacement in the state.
                 setAllCandidates(prev => upsertCandidatesByEmail(prev, [newCandidate]));
                 try {
                     await uploadResumeToVault(file, candidateEmail, uploadedBy, newCandidate.name, newCandidate.phone);
@@ -2493,7 +2385,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     } else {
                         notifySuccess(`${newCandidate.name}'s resume uploaded successfully.`);
                     }
-                } catch (vaultError) {
+                } catch (vaultError: any) {
                     console.error('Failed to upload resume to vault:', vaultError);
                     notifyError(`Vault Upload Failed: ${vaultError.message || 'Unknown error'}`);
                 }
@@ -2502,7 +2394,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
             try {
                 await uploadResumeToVault(file, candidateEmail, uploadedBy);
-            } catch (vaultError) {
+            } catch (vaultError: any) {
                 console.error('Failed to upload resume to vault:', vaultError);
                 notifyError(`Vault Upload Failed: ${vaultError.message || 'Unknown error'}`);
             }
@@ -2515,7 +2407,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             notifyError('Failed to parse resume.');
             return null;
         }
-    }, [apiRequest, allCandidates, checkResumeExistsInVault, fetchCandidates, getUploadedBy, logAction, normalizeCandidate, notifyError, notifySuccess, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault, upsertCandidatesByEmail]);
+    }, [apiRequest, allCandidates, checkResumeExistsInVault, fetchCandidates, getUploadedBy, normalizeCandidate, notifyError, notifySuccess, selectedJob, selectedJobForDetail, selectedProject, uploadResumeToVault, upsertCandidatesByEmail]);
 
     const handleClearStagedResumes = async () => {
         const shouldClear = await confirmActionToast(
@@ -2560,32 +2452,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     body: formData,
                 });
                 const newCandidates = extractCandidates(data).map(normalizeCandidate);
-                const skippedRecent = typeof data?.skipped_recent === 'number' ? data.skipped_recent : 0;
-                const processedCount = typeof data?.processed === 'number' ? data.processed : newCandidates.length;
                 if (newCandidates.length > 0) {
                     const existingEmails = new Set(
                         allCandidates.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
                     );
 
-                    // Always replace without asking
                     setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
-                    successCount = processedCount;
+                    successCount = newCandidates.length;
 
-                    if (skippedRecent > 0) {
-                        notifyInfo(`${skippedRecent} resume(s) skipped (uploaded within last 2 months).`);
-                        notifySuccess(`${processedCount} resume(s) processed successfully.`);
-                    } else {
-                        // Show individual toasts for each resume
-                        newCandidates.forEach(c => {
-                            const email = (c.email || '').trim().toLowerCase();
-                            const isReplacing = email && existingEmails.has(email);
-                            if (isReplacing) {
-                                notifySuccess(`${c.name}'s resume updated successfully.`);
-                            } else {
-                                notifySuccess(`${c.name}'s resume uploaded successfully.`);
-                            }
-                        });
-                    }
+                    newCandidates.forEach(c => {
+                        const email = (c.email || '').trim().toLowerCase();
+                        const isReplacing = email && existingEmails.has(email);
+                        if (isReplacing) {
+                            notifySuccess(`${c.name}'s resume updated successfully.`);
+                        } else {
+                            notifySuccess(`${c.name}'s resume uploaded successfully.`);
+                        }
+                    });
 
                     const fileCandidatePairs = filesToProcess.map((file, index) => ({
                         file,
@@ -2597,15 +2480,12 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         const candidateEmail = candidate.email || uploadedBy;
                         try {
                             await uploadResumeToVault(file, candidateEmail, uploadedBy, candidate?.name, candidate?.phone);
-                        } catch (vaultError) {
+                        } catch (vaultError: any) {
                             console.error(`Failed to upload ${file.name} to vault:`, vaultError);
                             notifyError(`Vault upload for ${candidate.name} failed.`);
                         }
                     }));
                 } else {
-                    if (skippedRecent > 0) {
-                        notifyInfo(`${skippedRecent} resume(s) skipped (uploaded within last 2 months).`);
-                    }
                     await fetchCandidates();
                 }
             } catch (error) {
@@ -2784,9 +2664,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     throw new Error(`Missing email for ${candidate.name}`);
                 }
                 const personalizedSubject = applyEmailTemplate(options.subject, candidate, jobTitle);
-
-                const personalizedBodyBase = applyEmailTemplate(options.body, candidate, jobTitle);
-                const personalizedBody = personalizedBodyBase;
+                const personalizedBody = applyEmailTemplate(options.body, candidate, jobTitle);
                 const payload = {
                     job_id: jobId,
                     candidate_id: candidate.id,
@@ -2833,6 +2711,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
 
     // --- FILTER & SEARCH LOGIC ---
+    // FIX 2: Removed duplicate searchMatch logic and stray duplicate return statement
     const filteredCandidates = useMemo(() => {
         let candidates = allCandidates;
         if (selectedJob) {
@@ -2844,27 +2723,18 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             }).sort((a, b) => (b.jobSpecificMatchScore || 0) - (a.jobSpecificMatchScore || 0));
         }
 
-        const isServerPaged = totalCandidatesCount > allCandidates.length;
         return candidates.filter(c => {
-            const locationValue = (c.location && c.location !== 'No Location' ? c.location : '') || c.originalLocation || '';
+            const locationValue = (c.location && c.location !== 'No Location' ? c.location : '') || '';
             const skillsValue = Array.isArray(c.skills) ? c.skills : [];
             const tagsValue = Array.isArray(c.tags) ? c.tags : [];
             const educationValue = Array.isArray(c.education) ? c.education : [];
             const experienceValue = Array.isArray(c.experience) ? c.experience : [];
-            const originalSkillsValue = c.originalSkills || '';
-            const originalExperienceValue = c.originalExperience || '';
-
-            const searchMatch = isServerPaged || !searchTerm ||
-                c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                skillsValue.some(s => s.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                originalSkillsValue.toLowerCase().includes(searchTerm.toLowerCase());
 
             const statusMatch = mainFilters.status.length === 0 || mainFilters.status.includes(c.status);
             const skillsMatch = !mainFilters.skills || mainFilters.skills.toLowerCase().split(',').every(skill => {
                 const term = skill.trim();
                 if (!term) return true;
-                return skillsValue.some(cs => cs.toLowerCase().includes(term)) || originalSkillsValue.toLowerCase().includes(term);
+                return skillsValue.some(cs => cs.toLowerCase().includes(term));
             });
             const nameMatch = !mainFilters.name || (c.name || '').toLowerCase().includes(mainFilters.name.toLowerCase());
             const emailMatch = !mainFilters.email || (c.email || '').toLowerCase().includes(mainFilters.email.toLowerCase());
@@ -2888,12 +2758,12 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 if (!term) return true;
                 return experienceValue.some(exp => 
                     `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(term)
-                ) || originalExperienceValue.toLowerCase().includes(term);
+                );
             });
             
-            return searchMatch && statusMatch && skillsMatch && nameMatch && emailMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
+            return statusMatch && skillsMatch && nameMatch && emailMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
         });
-    }, [allCandidates, selectedJob, searchTerm, mainFilters]);
+    }, [allCandidates, selectedJob, mainFilters]);
 
     const globalSearchResults = useMemo(() => {
         if (!globalSearchTerm) return { candidates: [], projects: [], jobs: [] };
@@ -2941,9 +2811,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Login':
                 return <LoginPage onLogin={(user) => { setCurrentUser(user); setCurrentPage('Dashboard'); }} error={null} />;
             case 'Dashboard':
-                const pendingCount = invitations.filter(i => i.inviterId === effectiveUser.id && i.status === 'Pending').length;
+                const pendingCount = invitations.filter(i => i.inviterId === effectiveUser!.id && i.status === 'Pending').length;
                 return <DashboardPage 
-                    effectiveUser={effectiveUser} 
+                    effectiveUser={effectiveUser!} 
                     candidates={allCandidates} 
                     totalCandidatesCount={totalCandidatesCount}
                     jobs={allJobDescriptions} 
@@ -3008,7 +2878,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
                     onAddTeamMember={handleOpenAddTeamMember}
                     onViewTeamMembers={handleViewTeamMembers}
-                    effectiveUser={effectiveUser}
+                    effectiveUser={effectiveUser!}
                 />;
             case 'Candidates':
                 if (selectedCandidate) {
@@ -3020,7 +2890,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <CandidatesPage
                     candidates={filteredCandidates}
                     totalCandidatesCount={totalCandidatesCount || allCandidates.length}
-                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit, searchDebounced)}
+                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit, searchTerm)}
                     onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); }}
                     selectedJob={selectedJob}
                     onBack={() => setSelectedJob(null)}
@@ -3068,7 +2938,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     }}
                 />;
             case 'Reports':
-                return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser} allUsers={users} apiRequest={apiRequest} />;
+                return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser!} allUsers={users} apiRequest={apiRequest} />;
             case 'Calendar':
                  const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
                  const role = effectiveUser?.role || '';
@@ -3079,7 +2949,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'History':
                  return <HistoryPage 
                     historyLog={historyLog} 
-                    effectiveUser={effectiveUser} 
+                    effectiveUser={effectiveUser!} 
                     onNavigateTo={handleNavigateTo} 
                     currentUser={currentUser}
                     impersonatedUser={impersonatedUser}
@@ -3088,7 +2958,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Settings':
             case 'SettingsMyProfile':
                 return <SettingsPage 
-                    effectiveUser={effectiveUser} 
+                    effectiveUser={effectiveUser!} 
                     onUpdateUser={handleSaveUser}
                     allUsers={users}
                     invitations={invitations}
@@ -3098,7 +2968,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 />;
             case 'SettingsContactSupport':
                 return <SettingsPage 
-                    effectiveUser={effectiveUser} 
+                    effectiveUser={effectiveUser!} 
                     onUpdateUser={handleSaveUser}
                     allUsers={users}
                     invitations={invitations}
