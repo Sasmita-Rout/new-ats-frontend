@@ -2459,6 +2459,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 body: formData,
             });
 
+            if (data && data.success === false) {
+                notifyInfo(data.message || 'Resume was uploaded recently and cannot be replaced yet.');
+                return null;
+            }
+
             const rawCandidate = extractCandidate(data);
             let candidateEmail = uploadedBy;
             if (rawCandidate) {
@@ -2555,6 +2560,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     body: formData,
                 });
                 const newCandidates = extractCandidates(data).map(normalizeCandidate);
+                const skippedRecent = typeof data?.skipped_recent === 'number' ? data.skipped_recent : 0;
+                const processedCount = typeof data?.processed === 'number' ? data.processed : newCandidates.length;
                 if (newCandidates.length > 0) {
                     const existingEmails = new Set(
                         allCandidates.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
@@ -2562,18 +2569,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
 
                     // Always replace without asking
                     setAllCandidates(prev => upsertCandidatesByEmail(prev, newCandidates));
-                    successCount = newCandidates.length;
+                    successCount = processedCount;
 
-                    // Show individual toasts for each resume
-                    newCandidates.forEach(c => {
-                        const email = (c.email || '').trim().toLowerCase();
-                        const isReplacing = email && existingEmails.has(email);
-                        if (isReplacing) {
-                            notifySuccess(`${c.name}'s resume updated successfully.`);
-                        } else {
-                            notifySuccess(`${c.name}'s resume uploaded successfully.`);
-                        }
-                    });
+                    if (skippedRecent > 0) {
+                        notifyInfo(`${skippedRecent} resume(s) skipped (uploaded within last 2 months).`);
+                        notifySuccess(`${processedCount} resume(s) processed successfully.`);
+                    } else {
+                        // Show individual toasts for each resume
+                        newCandidates.forEach(c => {
+                            const email = (c.email || '').trim().toLowerCase();
+                            const isReplacing = email && existingEmails.has(email);
+                            if (isReplacing) {
+                                notifySuccess(`${c.name}'s resume updated successfully.`);
+                            } else {
+                                notifySuccess(`${c.name}'s resume uploaded successfully.`);
+                            }
+                        });
+                    }
 
                     const fileCandidatePairs = filesToProcess.map((file, index) => ({
                         file,
@@ -2591,6 +2603,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         }
                     }));
                 } else {
+                    if (skippedRecent > 0) {
+                        notifyInfo(`${skippedRecent} resume(s) skipped (uploaded within last 2 months).`);
+                    }
                     await fetchCandidates();
                 }
             } catch (error) {
