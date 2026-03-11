@@ -174,6 +174,7 @@ const App = () => {
     const [selectedJobForDetail, setSelectedJobForDetail] = useState<JobDescription | null>(null);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchDebounced, setSearchDebounced] = useState('');
     const [globalSearchTerm, setGlobalSearchTerm] = useState('');
     const [emailTargets, setEmailTargets] = useState<Candidate[]>([]);
     const [emailJobIdOverride, setEmailJobIdOverride] = useState<string | null>(null);
@@ -2117,11 +2118,20 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         return [];
     };
 
-    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0) => {
+    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0, query = '') => {
         try {
-            const data = await apiRequest(`/resume/list-candidates?limit=${limit}&offset=${offset}`);
+            const searchParam = query ? `&q=${encodeURIComponent(query)}` : '';
+            const data = await apiRequest(`/resume/list-candidates?limit=${limit}&offset=${offset}${searchParam}`);
             const candidates = extractCandidates(data).map(normalizeCandidate);
-            setAllCandidates(candidates);
+            const seen = new Set<string>();
+            const deduped = candidates.filter(c => {
+                const key = (c.email || String(c.id || '')).toLowerCase();
+                if (!key) return true;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            setAllCandidates(deduped);
             const total = typeof data?.total === 'number' ? data.total : candidates.length;
             setTotalCandidatesCount(total);
         } catch (error) {
@@ -2130,8 +2140,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     }, [apiRequest, normalizeCandidate]);
 
     const fetchCandidates = useCallback(async () => {
-        return fetchCandidatesPage(10, 0);
-    }, [fetchCandidatesPage]);
+        return fetchCandidatesPage(10, 0, searchDebounced);
+    }, [fetchCandidatesPage, searchDebounced]);
 
     const fetchHistory = useCallback(async () => {
         try {
@@ -2372,6 +2382,23 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         fetchJobs();
         fetchHistory();
     }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs, fetchHistory]);
+
+    useEffect(() => {
+        const trimmed = searchTerm.trim();
+        if (!trimmed) {
+            setSearchDebounced('');
+            return;
+        }
+        const handle = setTimeout(() => {
+            setSearchDebounced(trimmed);
+        }, 200);
+        return () => clearTimeout(handle);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        if (!effectiveUser?.email) return;
+        fetchCandidatesPage(10, 0, searchDebounced);
+    }, [effectiveUser?.email, fetchCandidatesPage, searchDebounced]);
 
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
@@ -2802,6 +2829,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             }).sort((a, b) => (b.jobSpecificMatchScore || 0) - (a.jobSpecificMatchScore || 0));
         }
 
+        const isServerPaged = totalCandidatesCount > allCandidates.length;
         return candidates.filter(c => {
             const locationValue = (c.location && c.location !== 'No Location' ? c.location : '') || c.originalLocation || '';
             const skillsValue = Array.isArray(c.skills) ? c.skills : [];
@@ -2811,7 +2839,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const originalSkillsValue = c.originalSkills || '';
             const originalExperienceValue = c.originalExperience || '';
 
-            const searchMatch = !searchTerm ||
+            const searchMatch = isServerPaged || !searchTerm ||
                 c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 skillsValue.some(s => s.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -2977,7 +3005,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <CandidatesPage
                     candidates={filteredCandidates}
                     totalCandidatesCount={totalCandidatesCount || allCandidates.length}
-                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit)}
+                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit, searchDebounced)}
                     onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); }}
                     selectedJob={selectedJob}
                     onBack={() => setSelectedJob(null)}

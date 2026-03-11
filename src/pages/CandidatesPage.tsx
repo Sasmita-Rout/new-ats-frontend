@@ -120,8 +120,8 @@ const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCand
     const selectedVisibleCount = visibleCandidates.filter(c => selectedIds.includes(c.id)).length;
     const isPaginationDisabled = totalForLabel === 0 || pageCount === 1;
     const rangeLabel = totalCandidates === 0
-        ? `0–0 of ${totalForLabel}`
-        : `${pageStart + 1}–${pageEnd} of ${totalForLabel}`;
+        ? `0-0 of ${totalForLabel}`
+        : `${pageStart + 1}-${pageEnd} of ${totalForLabel}`;
     const isPrevDisabled = isPaginationDisabled || safePageIndex === 0;
     const isNextDisabled = isPaginationDisabled || safePageIndex >= pageCount - 1;
 
