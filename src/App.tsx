@@ -2117,9 +2117,9 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         return [];
     };
 
-    const fetchCandidates = useCallback(async () => {
+    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0) => {
         try {
-            const data = await apiRequest('/resume/list-candidates?limit=200&offset=0');
+            const data = await apiRequest(`/resume/list-candidates?limit=${limit}&offset=${offset}`);
             const candidates = extractCandidates(data).map(normalizeCandidate);
             setAllCandidates(candidates);
             const total = typeof data?.total === 'number' ? data.total : candidates.length;
@@ -2128,6 +2128,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             console.error('Failed to load candidates:', error);
         }
     }, [apiRequest, normalizeCandidate]);
+
+    const fetchCandidates = useCallback(async () => {
+        return fetchCandidatesPage(10, 0);
+    }, [fetchCandidatesPage]);
 
     const fetchHistory = useCallback(async () => {
         try {
@@ -2972,6 +2976,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 }
                 return <CandidatesPage
                     candidates={filteredCandidates}
+                    totalCandidatesCount={totalCandidatesCount || allCandidates.length}
+                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit)}
                     onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); }}
                     selectedJob={selectedJob}
                     onBack={() => setSelectedJob(null)}

@@ -6,37 +6,37 @@ import SkillTag from '../components/common/SkillTag';
 import { exportToCSV } from '../utils/helpers';
 import { toast } from 'react-toastify';
 
-const BATCH_SIZE = 10;
 const RECENT_CANDIDATE_DAYS = 7;
 
-const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected, onScheduleMeeting, canDeleteCandidates = false, confirmActionToast }) => {
-    const [displayLimit, setDisplayLimit] = useState(10);
-    const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected, onScheduleMeeting, canDeleteCandidates = false, confirmActionToast }) => {
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [pageIndex, setPageIndex] = useState(0);
     const [isFiltersVisible, setIsFiltersVisible] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [expandedSkillIds, setExpandedSkillIds] = useState<number[]>([]);
 
     useEffect(() => {
-        setVisibleCount(BATCH_SIZE);
-    }, [candidates, displayLimit]);
+        setPageIndex(0);
+    }, [filters, searchTerm, rowsPerPage]);
 
     useEffect(() => {
         setSelectedIds([]);
     }, [candidates, filters, searchTerm]);
 
-    const handleDisplayLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const handleRowsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const value = e.target.value;
         const newLimit = value === 'all' ? Number.MAX_SAFE_INTEGER : Number(value);
-        setDisplayLimit(newLimit);
-    };
-    
-    const handleLoadMore = () => {
-        setVisibleCount(prev => prev + BATCH_SIZE);
+        setRowsPerPage(newLimit);
+        setPageIndex(0);
+        if (typeof onPageChange === 'function' && typeof totalCandidatesCount === 'number' && totalCandidatesCount > candidates.length) {
+            const effectiveLimit = newLimit === Number.MAX_SAFE_INTEGER ? 200 : newLimit;
+            onPageChange(0, effectiveLimit);
+        }
     };
 
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
-            const allVisibleIds = candidates.slice(0, visibleCount).map(c => c.id);
+            const allVisibleIds = visibleCandidates.map(c => c.id);
             setSelectedIds(allVisibleIds);
         } else {
             setSelectedIds([]);
@@ -104,9 +104,44 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
         exportToCSV(formattedData, filename);
     };
 
-    const canLoadMore = visibleCount < candidates.length && visibleCount < displayLimit;
-    const visibleCandidates = candidates.slice(0, visibleCount);
+    const totalCandidates = candidates.length;
+    const totalForLabel = typeof totalCandidatesCount === 'number' ? totalCandidatesCount : totalCandidates;
+    const isServerPaged = typeof totalCandidatesCount === 'number' && totalCandidatesCount > totalCandidates;
+    const effectiveRowsPerPage = rowsPerPage === Number.MAX_SAFE_INTEGER
+        ? (isServerPaged ? 200 : Number.MAX_SAFE_INTEGER)
+        : rowsPerPage;
+    const pageCount = effectiveRowsPerPage === Number.MAX_SAFE_INTEGER
+        ? 1
+        : Math.max(1, Math.ceil(totalForLabel / effectiveRowsPerPage));
+    const safePageIndex = Math.min(pageIndex, pageCount - 1);
+    const pageStart = effectiveRowsPerPage === Number.MAX_SAFE_INTEGER ? 0 : safePageIndex * effectiveRowsPerPage;
+    const pageEnd = effectiveRowsPerPage === Number.MAX_SAFE_INTEGER ? totalForLabel : Math.min(pageStart + effectiveRowsPerPage, totalForLabel);
+    const visibleCandidates = isServerPaged ? candidates : candidates.slice(pageStart, pageEnd);
     const selectedVisibleCount = visibleCandidates.filter(c => selectedIds.includes(c.id)).length;
+    const isPaginationDisabled = totalForLabel === 0 || pageCount === 1;
+    const rangeLabel = totalCandidates === 0
+        ? `0–0 of ${totalForLabel}`
+        : `${pageStart + 1}–${pageEnd} of ${totalForLabel}`;
+    const isPrevDisabled = isPaginationDisabled || safePageIndex === 0;
+    const isNextDisabled = isPaginationDisabled || safePageIndex >= pageCount - 1;
+
+    const handlePrevPage = () => {
+        if (isPrevDisabled) return;
+        const nextPage = Math.max(0, safePageIndex - 1);
+        setPageIndex(nextPage);
+        if (typeof onPageChange === 'function' && isServerPaged) {
+            onPageChange(nextPage, effectiveRowsPerPage);
+        }
+    };
+
+    const handleNextPage = () => {
+        if (isNextDisabled) return;
+        const nextPage = Math.min(pageCount - 1, safePageIndex + 1);
+        setPageIndex(nextPage);
+        if (typeof onPageChange === 'function' && isServerPaged) {
+            onPageChange(nextPage, effectiveRowsPerPage);
+        }
+    };
 
     const isRecentCandidate = (appliedDate: string) => {
         const applied = new Date(appliedDate);
@@ -158,16 +193,6 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                         </>
                     ) : (
                         <div className="candidates-main-actions-row">
-                            <div className="page-size-selector">
-                                <label htmlFor="displayLimit">Show up to:</label>
-                                <select id="displayLimit" value={displayLimit === Number.MAX_SAFE_INTEGER ? 'all' : displayLimit} onChange={handleDisplayLimitChange}>
-                                    <option value={10}>10</option>
-                                    <option value={20}>20</option>
-                                    <option value={50}>50</option>
-                                    <option value={100}>100</option>
-                                    <option value={'all'}>All</option>
-                                </select>
-                            </div>
                             <button className="btn btn-secondary" onClick={() => setIsFiltersVisible(!isFiltersVisible)}>
                                 <span className="material-symbols-outlined">filter_list</span> {isFiltersVisible ? 'Hide' : 'Show'} Filters
                             </button>
@@ -336,13 +361,35 @@ const CandidatesPage = ({ candidates, onCandidateSelect, selectedJob, onBack, fi
                             )})}
                         </tbody>
                     </table>
-                    {canLoadMore && (
-                        <div className="load-more-container">
-                            <button onClick={handleLoadMore} className="btn btn-secondary">
-                                Load More
+                    <div className="candidates-pagination">
+                        <div className="rows-per-page">
+                            <label htmlFor="rowsPerPage">Rows per page:</label>
+                            <select id="rowsPerPage" value={rowsPerPage === Number.MAX_SAFE_INTEGER ? 'all' : rowsPerPage} onChange={handleRowsPerPageChange}>
+                                <option value={10}>10</option>
+                            </select>
+                        </div>
+                        <div className="pagination-range">{rangeLabel}</div>
+                        <div className="pagination-actions">
+                            <button
+                                type="button"
+                                className="icon-btn pagination-icon"
+                                onClick={handlePrevPage}
+                                disabled={isPrevDisabled}
+                                aria-label="Previous page"
+                            >
+                                <span className="material-symbols-outlined">chevron_left</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="icon-btn pagination-icon"
+                                onClick={handleNextPage}
+                                disabled={isNextDisabled}
+                                aria-label="Next page"
+                            >
+                                <span className="material-symbols-outlined">chevron_right</span>
                             </button>
                         </div>
-                    )}
+                    </div>
                 </div>
             ) : (
                 stagedResumes.length === 0 && (
