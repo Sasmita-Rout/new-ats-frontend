@@ -64,6 +64,7 @@ export type Project = {
   project_name: string;
   project_description?: string;
   uploaded_by: string;
+  uploaded_by_name?: string;
   status?: 'active' | 'inactive';
 };
 

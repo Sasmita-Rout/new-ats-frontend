@@ -143,10 +143,10 @@ const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pend
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis type="number" />
                                 <YAxis 
-                                    dataKey="ta_email" 
+                                    dataKey="ta_name" 
                                     type="category" 
                                     width={120}
-                                    tickFormatter={(value) => value.split('@')[0]}
+                                    tickFormatter={(value) => value || 'Unknown'}
                                 />
                                 <Tooltip />
                                 <Legend />
@@ -169,6 +169,8 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, myProj
     const myActiveProjectsCount = myProjects.filter(p => p.status !== 'inactive').length;
     const myInactiveProjectsCount = myProjects.filter(p => p.status === 'inactive').length;
     const [assignedProjects, setAssignedProjects] = useState<Project[]>([]);
+    const [userActivity, setUserActivity] = useState([]);
+    const [isLoadingActivity, setIsLoadingActivity] = useState(true);
 
     const activeJobsCount = useMemo(() => {
         if (!jobs || !myProjects) return 0;
@@ -210,10 +212,27 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, myProj
             if (!active) return;
             const assigned = results.filter(Boolean) as Project[];
             const filtered = assigned.filter(p => p.uploaded_by !== user.email);
-            setAssignedProjects(filtered);
+            setAssignedProjects(assigned.filter(p => p.uploaded_by !== user.email));
+        };
+
+        const fetchUserActivity = async () => {
+            if (!apiRequest || !user?.email) {
+                setIsLoadingActivity(false);
+                return;
+            }
+            setIsLoadingActivity(true);
+            try {
+                const data = await apiRequest(`/report/system-activity?days=30&uploaded_by=${encodeURIComponent(user.email)}`);
+                setUserActivity(Array.isArray(data) ? data : []);
+            } catch (error) {
+                console.error("Failed to fetch user activity:", error);
+            } finally {
+                setIsLoadingActivity(false);
+            }
         };
 
         loadAssignedProjects();
+        fetchUserActivity();
         return () => { active = false; };
     }, [apiRequest, projects, user?.email]);
     
@@ -229,7 +248,7 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, myProj
                             onClick={(e) => { e.preventDefault(); onProjectSelect(p); }}
                         >
                             {p.project_name}
-                            <span className="muted-inline"> — {p.uploaded_by || 'Owner unknown'}</span>
+                            <span className="muted-inline"> — {p.uploaded_by_name || p.uploaded_by || 'Owner unknown'}</span>
                         </a>
                     ))
                 ) : (
@@ -263,9 +282,35 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, myProj
                     <div className="stat-card-info"><h4>Inactive Projects</h4><p>{myInactiveProjectsCount}</p></div>
                 </div>
             </div>
-            <div className="dashboard-grid equal">
-                <ProjectList title="Assigned Projects" projectList={assignedProjects} />
-                <ProjectList title="My Projects" projectList={myProjects} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="dashboard-grid equal">
+                    <ProjectList title="Assigned Projects" projectList={assignedProjects} />
+                    <ProjectList title="My Projects" projectList={myProjects} />
+                </div>
+                
+                <div className="dashboard-grid single-col">
+                    <div className="chart-card">
+                        <h4>Your Activity (Last 30 Days)</h4>
+                        {isLoadingActivity ? (
+                            <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Loading Chart...</div>
+                        ) : userActivity.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={userActivity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="day" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="searches" stroke="#8884d8" name="Your Searches" />
+                                    <Line type="monotone" dataKey="unique_jobs" stroke="#ffc658" name="Unique Jobs Searched" />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>No activity data available.</div>
+                        )}
+                    </div>
+                </div>
             </div>
         </>
     );

@@ -1489,6 +1489,16 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.jobs-list-placeholder::-webkit-scrollbar {
+    width: 6px;
+}
+.jobs-list-placeholder::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
 }
 .jobs-list-placeholder > a {
     padding: 12px;
