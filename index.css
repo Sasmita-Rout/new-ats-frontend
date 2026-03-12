@@ -1386,6 +1386,13 @@ body::before {
     grid-template-columns: 2fr 1fr;
     gap: 24px;
 }
+.dashboard-grid.equal {
+    grid-template-columns: repeat(2, 1fr);
+    align-items: stretch;
+}
+.dashboard-grid.equal .chart-card {
+    height: 100%;
+}
 .dashboard-grid.single-col {
     grid-template-columns: 1fr;
 }
@@ -1424,6 +1431,11 @@ body::before {
 .chart-card:hover::before { opacity: 1; }
 
 .chart-card h4 { margin-bottom: 24px; }
+.muted-inline {
+    color: #64748B;
+    font-size: 12px;
+    margin-left: 6px;
+}
 /* Pipeline Chart Redesign */
 .pipeline-chart {
     display: flex;
