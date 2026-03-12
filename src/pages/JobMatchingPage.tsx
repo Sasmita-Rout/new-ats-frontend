@@ -27,7 +27,7 @@ const ProjectCard = React.memo(({ project, jobs, onSelect, onEdit, onAddTeamMemb
                     <span><span className="material-symbols-outlined">fact_check</span> {activeJobs} Active</span>
                     <span><span className="material-symbols-outlined">toggle_on</span> {statusLabel}</span>
                     {showOwner && (
-                        <span><span className="material-symbols-outlined">person</span> {project.uploaded_by || 'Unknown'}</span>
+                        <span><span className="material-symbols-outlined">person</span> {project.uploaded_by_name || project.uploaded_by || 'Unknown'}</span>
                     )}
                 </div>
                  <p className="job-card-description-snippet">
