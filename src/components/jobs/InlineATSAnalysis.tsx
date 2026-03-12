@@ -553,7 +553,12 @@ const InlineATSAnalysis = ({
                                         </div>
                                     </td>
 
-                                    <td>{c.totalExperienceYears || 'N/A'}</td>
+                                      <td>
+                                          {`${(typeof c.totalExperienceYears === 'number' && !Number.isNaN(c.totalExperienceYears))
+                                              ? c.totalExperienceYears
+                                              : (c.totalExperienceYears || 'N/A')
+                                          } (${c.expMatch ? 'Yes' : 'No'})`}
+                                      </td>
 
                                                                         {/* LOCATION */}
                                     <td>
