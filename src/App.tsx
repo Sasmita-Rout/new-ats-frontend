@@ -1800,7 +1800,7 @@ ${effectiveUser.name}`;
             });
 
             while (true) {
-                const data = await apiRequest('/matching/search-db', {
+                const data = await apiRequest('/matching/analyze-fit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,

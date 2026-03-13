@@ -59,8 +59,11 @@ const AdminReportsPage = ({
     setIsLoading(true);
     setError(null);
     try {
-      // Use '&' (not '&amp;') in JS template strings.
-      const responseData = await apiRequest(`/report?month=${month}&year=${year}`);
+      let path = `/report?month=${month}&year=${year}`;
+      if (filterEmail) {
+        path += `&uploaded_by=${encodeURIComponent(filterEmail)}`;
+      }
+      const responseData = await apiRequest(path);
  
       // Optional /job/stats (does not affect the ATS Search report)
       let statsData = null;
@@ -119,7 +122,11 @@ const AdminReportsPage = ({
  
   const handleDownload = async () => {
     try {
-      const csvText = await apiRequest(`/report/download?month=${month}&year=${year}`);
+      let path = `/report/download?month=${month}&year=${year}`;
+      if (filterEmail) {
+        path += `&uploaded_by=${encodeURIComponent(filterEmail)}`;
+      }
+      const csvText = await apiRequest(path);
       const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -274,7 +281,7 @@ const AdminReportsPage = ({
               <span className="material-symbols-outlined">query_stats</span> ATS Search Report
             </h4>
             <div className="report-badges">
-              <span className="report-badge">TAs: {taCount}</span>
+              {!filterEmail && <span className="report-badge">TAs: {taCount}</span>}
               <span className="report-badge">Unique Jobs: {displayUniqueJobs}</span>
             </div>
           </div>
