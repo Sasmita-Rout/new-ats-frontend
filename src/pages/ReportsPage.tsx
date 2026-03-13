@@ -264,6 +264,7 @@ const AdminReportsPage = ({
             ))}
           </select>
         </div>
+        <div style={{ flex: 1 }}></div>
         {showDownload && (
           <div className="report-filter-download-group" style={{ display: 'flex', gap: '8px' }}>
             <button
