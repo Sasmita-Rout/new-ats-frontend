@@ -4,7 +4,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
 
 // Import types
-import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, UserRole, Notification, Experience, Education, Link, Task, Note } from './types/types';
+import { Candidate, JobDescription, CandidateWithScore, Interview, User, HistoryEntry, Project, MatchResult, CompanyProfile, Invitation, InvitationStatus, UserPermission, UserRole, Notification, Experience, Education, Link, Task, Note, AnalysisResult } from './types/types';
 
 // Import pages
 import DashboardPage from './pages/DashboardPage';
