@@ -18,7 +18,7 @@ const GlobalSearchResults = ({ candidates, jobs, projects, onCandidateSelect, on
                                     <div className="user-avatar small">{getInitials(c.name)}</div>
                                     <div>
                                         <p className="result-title">{c.name}</p>
-                                        <p className="result-subtitle">{c.title}</p>
+                                        {c.title && c.title !== 'N/A' && <p className="result-subtitle">{c.title}</p>}
                                     </div>
                                 </div>
                             ))}
@@ -32,7 +32,7 @@ const GlobalSearchResults = ({ candidates, jobs, projects, onCandidateSelect, on
                                     <span className="material-symbols-outlined icon">folder</span>
                                     <div>
                                         <p className="result-title">{p.project_name}</p>
-                                        <p className="result-subtitle">{p.project_id}</p>
+                                        {p.project_id && p.project_id !== 'N/A' && <p className="result-subtitle">{p.project_id}</p>}
                                     </div>
                                 </div>
                             ))}
@@ -46,7 +46,7 @@ const GlobalSearchResults = ({ candidates, jobs, projects, onCandidateSelect, on
                                      <span className="material-symbols-outlined icon">work</span>
                                      <div>
                                         <p className="result-title">{j.title}</p>
-                                        <p className="result-subtitle">{j.companyName}</p>
+                                        {j.companyName && j.companyName !== 'N/A' && <p className="result-subtitle">{j.companyName}</p>}
                                      </div>
                                  </div>
                             ))}
