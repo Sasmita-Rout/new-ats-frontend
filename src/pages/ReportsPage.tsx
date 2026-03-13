@@ -199,16 +199,16 @@ const AdminReportsPage = ({
       (r) => String(r.ta_email || '').toLowerCase() === email,
     );
     // If not found, 0; otherwise that user's distinct job count for the period
-    return myRow?.search_count ?? 0;
+    return myRow?.unique_jobs ?? 0;
   }, [filterEmail, rows, uniqueJobCountGlobal]);
- 
+
   return (
     <>
       <div className="page-header" style={{ marginBottom: '16px' }}>
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
- 
+
       <div className="report-filter-bar" style={{ marginTop: '24px' }}>
         <div className="filter-group">
           <label>Month</label>
@@ -266,14 +266,14 @@ const AdminReportsPage = ({
           </button>
         )}
       </div>
- 
+
       {error && (
         <div className="empty-state">
           <span className="material-symbols-outlined">error</span>
           <p>{error}</p>
         </div>
       )}
- 
+
       {!error && (
         <div className="report-card full-width">
           <div className="report-card-header">
@@ -296,6 +296,7 @@ const AdminReportsPage = ({
                   <tr>
                     <th>Email</th>
                     <th>Search Count</th>
+                    <th>Unique Jobs</th>
                     <th>Month</th>
                     <th>Year</th>
                   </tr>
@@ -306,6 +307,9 @@ const AdminReportsPage = ({
                       <td className="report-email">{row.ta_email}</td>
                       <td>
                         <span className="report-count">{row.search_count}</span>
+                      </td>
+                      <td>
+                        <span className="report-count">{row.unique_jobs}</span>
                       </td>
                       <td>{row.month}</td>
                       <td>{row.year}</td>
@@ -514,6 +518,7 @@ const ReportsPage = ({
           title="My Reports"
           subtitle="Review your personal recruitment performance and pipeline."
           filterEmail={effectiveUser.email}
+          showDownload
         />
       )}
     </div>
