@@ -3,7 +3,8 @@ import { Candidate, JobDescription, User } from '../types/types';
  
 type ReportRow = {
   ta_email: string;
-  search_count: number; // distinct job_ids for that user in the period
+  search_count: number; // total searches
+  unique_jobs: number;  // distinct job_ids
   month: string;
   year: number;
 };
@@ -120,24 +121,49 @@ const AdminReportsPage = ({
     }
   };
  
-  const handleDownload = async () => {
+  const handleDownload = async (targetEmail?: string) => {
     try {
       let path = `/report/download?month=${month}&year=${year}`;
-      if (filterEmail) {
-        path += `&uploaded_by=${encodeURIComponent(filterEmail)}`;
+      const emailToUse = targetEmail || filterEmail;
+      if (emailToUse) {
+        path += `&uploaded_by=${encodeURIComponent(emailToUse)}`;
       }
       const csvText = await apiRequest(path);
       const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `ats_report_${year}_${month}.csv`;
+      const suffix = emailToUse ? `_${emailToUse.split('@')[0]}` : '';
+      link.download = `ats_report_${year}_${month}${suffix}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
     } catch (e: any) {
       setError(e?.message || 'Failed to download report.');
+    }
+  };
+
+  const handleDownloadDetailed = async (targetEmail?: string) => {
+    try {
+      let path = `/report/download-detailed?month=${month}&year=${year}`;
+      const emailToUse = targetEmail || filterEmail;
+      if (emailToUse) {
+        path += `&uploaded_by=${encodeURIComponent(emailToUse)}`;
+      }
+      const csvText = await apiRequest(path);
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const suffix = emailToUse ? `_${emailToUse.split('@')[0]}` : '';
+      link.download = `ats_detailed_history_${year}_${month}${suffix}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to download detailed Reports.');
     }
   };
  
@@ -257,13 +283,22 @@ const AdminReportsPage = ({
           </datalist>
         </div>
         {showDownload && (
-          <button
-            className="btn btn-primary report-filter-download"
-            onClick={handleDownload}
-            disabled={isLoading}
-          >
-            Download CSV
-          </button>
+          <div className="report-filter-download-group" style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="btn btn-secondary report-filter-download"
+              onClick={() => handleDownload()}
+              disabled={isLoading}
+            >
+              Download Summary
+            </button>
+            <button
+              className="btn btn-primary report-filter-download"
+              onClick={() => handleDownloadDetailed()}
+              disabled={isLoading}
+            >
+              Download Detailed History
+            </button>
+          </div>
         )}
       </div>
 
@@ -296,8 +331,10 @@ const AdminReportsPage = ({
                   <tr>
                     <th>Email</th>
                     <th>Search Count</th>
+                    {!filterEmail && <th>Unique Jobs</th>}
                     <th>Month</th>
                     <th>Year</th>
+                    {showDownload && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -307,8 +344,25 @@ const AdminReportsPage = ({
                       <td>
                         <span className="report-count">{row.search_count}</span>
                       </td>
+                      {!filterEmail && (
+                        <td>
+                          <span className="report-count">{row.unique_jobs}</span>
+                        </td>
+                      )}
                       <td>{row.month}</td>
                       <td>{row.year}</td>
+                      {showDownload && (
+                        <td>
+                          <button
+                            className="btn-icon-only"
+                            onClick={() => handleDownloadDetailed(row.ta_email)}
+                            title="Download User History"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-color)' }}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>download</span>
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
