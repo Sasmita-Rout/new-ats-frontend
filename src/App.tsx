@@ -1784,6 +1784,7 @@ ${effectiveUser.name}`;
                         matchingSkills: finalMatchingSkills,
                         missingSkills,
                         location_matched: r.location_matched ?? false,
+                        expMatch: r.experience_matched ?? false,
                     };
                 }
 
@@ -1794,11 +1795,12 @@ ${effectiveUser.name}`;
                     matchingSkills: finalMatchingSkills,
                     missingSkills,
                     location_matched: r.location_matched ?? false,
+                    expMatch: r.experience_matched ?? false,
                 };
             });
 
             while (true) {
-                const data = await apiRequest('/matching/analyze-fit', {
+                const data = await apiRequest('/matching/search-db', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,
