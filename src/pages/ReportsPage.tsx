@@ -296,7 +296,6 @@ const AdminReportsPage = ({
                   <tr>
                     <th>Email</th>
                     <th>Search Count</th>
-                    <th>Unique Jobs</th>
                     <th>Month</th>
                     <th>Year</th>
                   </tr>
@@ -307,9 +306,6 @@ const AdminReportsPage = ({
                       <td className="report-email">{row.ta_email}</td>
                       <td>
                         <span className="report-count">{row.search_count}</span>
-                      </td>
-                      <td>
-                        <span className="report-count">{row.unique_jobs}</span>
                       </td>
                       <td>{row.month}</td>
                       <td>{row.year}</td>
