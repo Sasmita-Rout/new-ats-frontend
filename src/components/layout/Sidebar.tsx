@@ -16,10 +16,14 @@ const Sidebar = ({ currentPage, onNavigate, effectiveUser }) => {
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
-                <h1 className="logo">AccionTalent</h1>
-                <p className="subtitle">Internal Talent Platform</p>
-            </div>
+  <h1 style={{ fontSize: "26px", fontWeight: "700", margin: 0 }}>
+    <span style={{ color: "#e11d48" }}>Accion</span>Talent
+  </h1>
 
+ <p style={{ fontSize: "14px", marginTop: "4px", marginLeft: "4px", color: "#cbd5e1" }}>
+  Internal Talent Platform
+</p>
+</div>
             <nav className="sidebar-nav">
                 <ul>
                     {navConfig.map(item => (
