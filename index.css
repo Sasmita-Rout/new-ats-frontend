@@ -2232,7 +2232,7 @@ body::before {
     margin-bottom: 16px;
 }
 .toolbar .search-bar-wrapper {
-    flex: 1 1 340px;
+    flex: 0 1 400px;
     width: auto;
     min-width: 260px;
     max-width: 620px;
@@ -2240,12 +2240,13 @@ body::before {
 .toolbar .actions {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: flex-end;
     flex-wrap: wrap;
     gap: 12px;
-    flex: 1 1 420px;
+    flex: 1;
 }
 .toolbar .actions.bulk-selected-actions {
+    justify-content: flex-end;
     flex-wrap: nowrap;
     gap: 8px;
     flex: 1 1 auto;
