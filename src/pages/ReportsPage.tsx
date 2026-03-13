@@ -238,49 +238,31 @@ const AdminReportsPage = ({
       <div className="report-filter-bar" style={{ marginTop: '24px' }}>
         <div className="filter-group">
           <label>Month</label>
-          <input
-            type="text"
-            list="report-month-options"
-            value={monthInput}
-            onChange={(e) => setMonthInput(e.target.value)}
-            onBlur={commitMonthInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitMonthInput();
-              }
-            }}
-            placeholder="Select or type month"
-          />
-          <datalist id="report-month-options">
-            {monthOptions.map(opt => (
-              <option key={opt.value} value={opt.label} />
+          <select
+            value={month}
+            onChange={(e) => setMonth(parseInt(e.target.value, 10))}
+            className="form-select"
+          >
+            {monthOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
-          </datalist>
+          </select>
         </div>
         <div className="filter-group">
           <label>Year</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            list="report-year-options"
-            value={yearInput}
-            onChange={(e) => setYearInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            onBlur={commitYearInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitYearInput();
-              }
-            }}
-            placeholder="Select or type year"
-          />
-          <datalist id="report-year-options">
-            {yearOptions.map(y => (
-              <option key={y} value={String(y)} />
+          <select
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value, 10))}
+            className="form-select"
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
-          </datalist>
+          </select>
         </div>
         {showDownload && (
           <div className="report-filter-download-group" style={{ display: 'flex', gap: '8px' }}>
