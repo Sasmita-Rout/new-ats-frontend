@@ -239,3 +239,9 @@ export type MatchResult = {
   missingSkills: string[];
   location_matched?: boolean;
 };
+
+export type AnalysisResult = {
+    loading: boolean;
+    candidates: CandidateWithScore[];
+    keywords: string[];
+};

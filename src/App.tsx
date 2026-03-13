@@ -215,7 +215,25 @@ const App = () => {
     const [isViewTeamMembersModalOpen, setViewTeamMembersModalOpen] = useState(false);
     const [projectForViewTeam, setProjectForViewTeam] = useState<Project | null>(null);
     const [projectTeamMembers, setProjectTeamMembers] = useState<any[]>([]);
+    const [globalAnalysisData, setGlobalAnalysisData] = useState<{ [key: number]: AnalysisResult }>({});
     const analyzeFitControllersRef = useRef<Map<number, AbortController>>(new Map());
+
+    const handleUpdateAnalysisData = useCallback((jobId: number, data: Partial<AnalysisResult> | null) => {
+        setGlobalAnalysisData(prev => {
+            if (data === null) {
+                const next = { ...prev };
+                delete next[jobId];
+                return next;
+            }
+            return {
+                ...prev,
+                [jobId]: {
+                    ...(prev[jobId] || { loading: false, candidates: [], keywords: [] }),
+                    ...data
+                }
+            };
+        });
+    }, []);
 
     const isInitialMount = useRef(true);
     const upsertCandidatesByEmail = useCallback((prev: Candidate[], incoming: Candidate[]) => {
@@ -2884,6 +2902,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         confirmActionToast={confirmActionToast}
                         autoAnalyzeJobId={autoAnalyzeJobId}
                         onAutoAnalyzeHandled={() => setAutoAnalyzeJobId(null)}
+                        globalAnalysisData={globalAnalysisData}
+                        onUpdateAnalysisData={handleUpdateAnalysisData}
                     />;
                 }
                 if (selectedJobForDetail) {
