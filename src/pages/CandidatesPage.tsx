@@ -236,7 +236,7 @@ const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCand
                                 <th>Skills</th>
                                 {selectedJob && <th>Match Score</th>}
                                 <th>Applied</th>
-                                <th style={{ paddingLeft: '20px' }}>Actions</th>
+                                <th className="actions-header">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
