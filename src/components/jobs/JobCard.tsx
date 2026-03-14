@@ -1,7 +1,7 @@
 import React from 'react';
 import { JobDescription } from '../../types/types';
 
-const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, isSelected, onSelect, onDelete, showOwner }) => {
+const JobCard = ({ job, onJobSelect, onAnalyzeFit, onCancelAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete, showOwner }) => {
     return (
     <div className={`job-card-wrapper ${isSelected ? 'selected' : ''}`}>
         <input 
@@ -50,14 +50,39 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, isAnalyzing, isProcessingAnal
                     </button>
                 </div>
                 <div className="job-card-actions">
-                     <button className="btn btn-primary btn-small" onClick={(e) => {e.stopPropagation(); onAnalyzeFit();}} disabled={isProcessingAnalysis}>
-                        {isProcessingAnalysis ? (
-                            <span className="material-symbols-outlined spin">autorenew</span>
-                        ) : (
+                     {isProcessingAnalysis ? (
+                         <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                            <button
+                                className="btn btn-small btn-primary"
+                                style={{ flex: 1, opacity: 0.8, cursor: 'wait' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <span className="material-symbols-outlined rotating">refresh</span>
+                                Analyzing...
+                            </button>
+                            <button
+                                className="btn btn-small btn-danger"
+                                title="Cancel Analysis"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onCancelAnalyzeFit?.();
+                                }}
+                            >
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                         </div>
+                     ) : (
+                        <button
+                            className={`btn btn-small ${isAnalyzing ? 'btn-secondary' : 'btn-primary'}`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onAnalyzeFit();
+                            }}
+                        >
                             <span className="material-symbols-outlined">{isAnalyzing ? 'visibility_off' : 'query_stats'}</span>
-                        )}
-                        {isProcessingAnalysis ? 'Analyzing...' : (isAnalyzing ? 'Hide' : 'Analyze Fit')}
-                    </button>
+                            {isAnalyzing ? 'Hide' : 'Analyze Fit'}
+                        </button>
+                     )}
                 </div>
             </div>
         </div>

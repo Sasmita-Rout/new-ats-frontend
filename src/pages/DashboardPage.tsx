@@ -1,7 +1,7 @@
 
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Candidate, JobDescription, User } from '../types/types';
+import { Candidate, JobDescription, User, Project } from '../types/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ResponsiveContainer } from 'recharts';
 
 const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pendingInvitationCount, onNavigate, apiRequest }) => {
@@ -143,10 +143,10 @@ const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pend
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis type="number" />
                                 <YAxis 
-                                    dataKey="ta_email" 
+                                    dataKey="ta_name" 
                                     type="category" 
                                     width={120}
-                                    tickFormatter={(value) => value.split('@')[0]}
+                                    tickFormatter={(value) => value || 'Unknown'}
                                 />
                                 <Tooltip />
                                 <Legend />
@@ -165,10 +165,12 @@ const AdminDashboard = ({ candidates, totalCandidatesCount, jobs, projects, pend
 
 
 // FIX: Removed unused 'interviews' prop from component signature to resolve type error at the call site.
-const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, jobs, onProjectSelect, user }) => {
-    const myProjects = useMemo(() => projects, [projects]);
+const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, myProjects, jobs, onProjectSelect, user, apiRequest }) => {
     const myActiveProjectsCount = myProjects.filter(p => p.status !== 'inactive').length;
     const myInactiveProjectsCount = myProjects.filter(p => p.status === 'inactive').length;
+    const [assignedProjects, setAssignedProjects] = useState<Project[]>([]);
+    const [userActivity, setUserActivity] = useState([]);
+    const [isLoadingActivity, setIsLoadingActivity] = useState(true);
 
     const activeJobsCount = useMemo(() => {
         if (!jobs || !myProjects) return 0;
@@ -182,20 +184,73 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, jobs, 
         return jobs.filter(j => j.status === 'Active' && myActiveProjectIds.has(String(j.projectId))).length;
     }, [jobs, myProjects]);
 
-    const statusCounts = useMemo(() => {
-        const counts = { Screening: 0, Interview: 0, Offer: 0, Hired: 0 };
-        candidates.forEach(c => {
-            if (c.status in counts) counts[c.status]++;
-        });
-        return Object.entries(counts);
-    }, [candidates]);
+    useEffect(() => {
+        let active = true;
+        const loadAssignedProjects = async () => {
+            if (!apiRequest || !projects || projects.length === 0 || !user?.email) {
+                if (active) setAssignedProjects([]);
+                return;
+            }
+
+            const userEmail = user.email.trim().toLowerCase();
+            const results = await Promise.all(
+                projects.map(async (project: Project) => {
+                    try {
+                        const team = await apiRequest(`/project/${encodeURIComponent(project.project_id)}/team`);
+                        const members = Array.isArray(team) ? team : [];
+                        const isMember = members.some((m: any) => {
+                            const email = (m.user_email || m.email || '').toString().trim().toLowerCase();
+                            return email === userEmail;
+                        });
+                        return isMember ? project : null;
+                    } catch {
+                        return null;
+                    }
+                })
+            );
+
+            if (!active) return;
+            const assigned = results.filter(Boolean) as Project[];
+            const filtered = assigned.filter(p => p.uploaded_by !== user.email);
+            setAssignedProjects(assigned.filter(p => p.uploaded_by !== user.email));
+        };
+
+        const fetchUserActivity = async () => {
+            if (!apiRequest || !user?.email) {
+                setIsLoadingActivity(false);
+                return;
+            }
+            setIsLoadingActivity(true);
+            try {
+                const data = await apiRequest(`/report/system-activity?days=30&uploaded_by=${encodeURIComponent(user.email)}`);
+                setUserActivity(Array.isArray(data) ? data : []);
+            } catch (error) {
+                console.error("Failed to fetch user activity:", error);
+            } finally {
+                setIsLoadingActivity(false);
+            }
+        };
+
+        loadAssignedProjects();
+        fetchUserActivity();
+        return () => { active = false; };
+    }, [apiRequest, projects, user?.email]);
     
     const ProjectList = ({ title, projectList }) => (
         <div className="chart-card">
             <h4>{title} ({projectList.length})</h4>
             <div className="jobs-list-placeholder">
                 {projectList.length > 0 ? (
-                    projectList.map(p => <a href="#" key={p.project_id} onClick={(e) => {e.preventDefault(); onProjectSelect(p)}}>{p.project_name}</a>)
+                    projectList.map(p => (
+                        <a
+                            href="#"
+                            key={p.project_id}
+                            onClick={(e) => { e.preventDefault(); onProjectSelect(p); }}
+                        >
+                            {p.project_name}
+                            <span className="muted-inline"> — {p.uploaded_by_name || p.uploaded_by || 'Owner unknown'}</span>
+                        </a>
+                    ))
                 ) : (
                     <p className="placeholder-text">No projects in this category.</p>
                 )}
@@ -227,22 +282,34 @@ const RecruiterDashboard = ({ candidates, totalCandidatesCount, projects, jobs, 
                     <div className="stat-card-info"><h4>Inactive Projects</h4><p>{myInactiveProjectsCount}</p></div>
                 </div>
             </div>
-            <div className="dashboard-grid">
-               <div className="chart-card">
-                  <h4>Candidate Pipeline</h4>
-                  <div className="pipeline-chart">
-                      {statusCounts.map(([status, count]) => (
-                         <div key={status} className="pipeline-bar">
-                            <span className="pipeline-bar-label">{status}</span>
-                            <div className="pipeline-bar-progress">
-                               <div className="pipeline-bar-fill" style={{width: `${candidates.length > 0 ? (count / candidates.length) * 100 : 0}%`}}>{count}</div>
-                            </div>
-                         </div>
-                      ))}
-                  </div>
-               </div>
-               <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr', gridTemplateRows: 'auto', gap: '24px' }}>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="dashboard-grid equal">
+                    <ProjectList title="Assigned Projects" projectList={assignedProjects} />
                     <ProjectList title="My Projects" projectList={myProjects} />
+                </div>
+                
+                <div className="dashboard-grid single-col">
+                    <div className="chart-card">
+                        <h4>Your Activity (Last 30 Days)</h4>
+                        {isLoadingActivity ? (
+                            <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Loading Chart...</div>
+                        ) : userActivity.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={userActivity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="day" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="searches" stroke="#8884d8" name="Your Searches" />
+                                    <Line type="monotone" dataKey="unique_jobs" stroke="#ffc658" name="Unique Jobs Searched" />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>No activity data available.</div>
+                        )}
+                    </div>
                 </div>
             </div>
         </>
@@ -281,10 +348,12 @@ const DashboardPage = ({ effectiveUser, candidates, totalCandidatesCount, jobs, 
                 <RecruiterDashboard 
                     candidates={candidates} 
                     totalCandidatesCount={totalCandidatesCount}
-                    projects={myProjects} 
+                    projects={projects} 
+                    myProjects={myProjects}
                     jobs={jobs}
                     onProjectSelect={onProjectSelect} 
                     user={effectiveUser} 
+                    apiRequest={apiRequest}
                 />
             )}
         </div>

@@ -103,23 +103,23 @@ const HistoryPage = ({
                  <table className="history-table">
                      <thead>
                         <tr>
-                            <th>Timestamp</th>
-                            <th>User</th>
-                            <th>Action Details</th>
+                            <th style={{ padding: '15px 26px' }}>Timestamp</th>
+                            <th style={{ padding: '15px 26px' }}>User</th>
+                            <th style={{ padding: '15px 26px' }}>Action Details</th>
                         </tr>
                      </thead>
                      <tbody>
                         {visibleLogs.length > 0 ? visibleLogs.map(log => (
                             <tr key={log.id}>
-                                <td>{formatTimestamp(log.timestamp)}</td>
-                                <td>
+                                <td style={{ whiteSpace: 'nowrap', padding: '12px 24px' }}>{formatTimestamp(log.timestamp)}</td>
+                                <td style={{ padding: '12px 24px' }}>
                                     <div className="user-cell">
                                         <div>
                                             <strong>{log.userName}</strong>
                                         </div>
                                     </div>
                                 </td>
-                                <td>
+                                <td style={{ padding: '12px 24px' }}>
                                     {log.action}
                                 </td>
                             </tr>
