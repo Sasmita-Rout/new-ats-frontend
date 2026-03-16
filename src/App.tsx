@@ -45,16 +45,16 @@ import ViewTeamMembersModal from './modals/ViewTeamMembersModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-//const API_BASE_URL =  'http://localhost:8000';
-//const SSO_API_URL =  'http://localhost:8001';
+const API_BASE_URL =  'http://localhost:8000';
+const SSO_API_URL =  'http://localhost:8001';
 const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-//const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
+const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-const SSO_API_URL = "https://intranet.accionlabs.com";
-const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+//const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+//const SSO_API_URL = "https://intranet.accionlabs.com";
+//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
