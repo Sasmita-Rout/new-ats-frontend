@@ -12,6 +12,7 @@ type InterviewUpdatePayload = {
     duration: number;
     interviewer: string;
     notes: string;
+    type: Interview['type'];
 };
 
 type InterviewDetailModalProps = {
@@ -46,6 +47,7 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
     const [editDuration, setEditDuration] = useState(String(duration || 30));
     const [editInterviewer, setEditInterviewer] = useState(interviewer || '');
     const [editNotes, setEditNotes] = useState(notes || '');
+    const [editType, setEditType] = useState<Interview['type']>(type);
 
     useEffect(() => {
         if (!event) return;
@@ -54,7 +56,8 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
         setEditDuration(String(duration || 30));
         setEditInterviewer(interviewer || '');
         setEditNotes(notes || '');
-    }, [initialDateTime, duration, interviewer, notes, event?.interview?.id]);
+        setEditType(type);
+    }, [initialDateTime, duration, interviewer, notes, type, event?.interview?.id]);
 
     const handleSave = async () => {
         if (!onUpdateInterview) return;
@@ -70,6 +73,7 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
                 duration: Math.max(10, parseInt(editDuration || '30', 10)),
                 interviewer: editInterviewer.trim(),
                 notes: editNotes,
+                type: editType,
             });
             setIsEditing(false);
         } catch (error: any) {
@@ -102,7 +106,7 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
                     <button onClick={onClose} className="close-btn">&times;</button>
                 </div>
                 <div className="modal-body interview-detail-modal-body">
-                     <p>
+                    <p>
                         <span className="material-symbols-outlined">person</span>
                         <strong>Candidate:</strong>
                         <span>{candidate.name} ({candidate.title})</span>
@@ -110,22 +114,69 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
                     <p>
                         <span className="material-symbols-outlined">event_note</span>
                         <strong>Type:</strong>
-                        <span>{type} Interview</span>
+                        {isEditing ? (
+                            <select 
+                                className="form-input-small"
+                                value={editType} 
+                                onChange={(e) => setEditType(e.target.value as Interview['type'])}
+                            >
+                                <option value="Screening">Screening</option>
+                                <option value="Technical">Technical</option>
+                                <option value="HR">HR</option>
+                                <option value="Final">Final</option>
+                            </select>
+                        ) : (
+                            <span>{type} Interview</span>
+                        )}
                     </p>
                     <p>
                         <span className="material-symbols-outlined">calendar_today</span>
-                        <strong>Date:</strong>
-                        <span>{new Date(date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                        <strong>Date & Time:</strong>
+                        {isEditing ? (
+                            <input 
+                                type="datetime-local" 
+                                className="form-input-small"
+                                value={editDateTime} 
+                                onChange={(e) => setEditDateTime(e.target.value)} 
+                            />
+                        ) : (
+                            <span>
+                                {new Date(date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at {new Date(date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                        )}
                     </p>
                     <p>
                         <span className="material-symbols-outlined">schedule</span>
-                        <strong>Time:</strong>
-                        <span>{new Date(date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} ({duration} mins)</span>
+                        <strong>Duration:</strong>
+                        {isEditing ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input 
+                                    type="number" 
+                                    className="form-input-small"
+                                    style={{ width: '80px' }}
+                                    min={10} 
+                                    value={editDuration} 
+                                    onChange={(e) => setEditDuration(e.target.value)} 
+                                />
+                                <span>mins</span>
+                            </div>
+                        ) : (
+                            <span>{duration} mins</span>
+                        )}
                     </p>
                     <p>
                         <span className="material-symbols-outlined">group</span>
                         <strong>Interviewer(s):</strong>
-                        <span>{interviewer}</span>
+                        {isEditing ? (
+                            <input 
+                                type="text" 
+                                className="form-input-small"
+                                value={editInterviewer} 
+                                onChange={(e) => setEditInterviewer(e.target.value)} 
+                            />
+                        ) : (
+                            <span>{interviewer}</span>
+                        )}
                     </p>
                     <p>
                         <span className="material-symbols-outlined">link</span>
@@ -136,31 +187,20 @@ const InterviewDetailModal = ({ isOpen, onClose, event, onViewProfile, onUpdateI
                             <span>Not provided</span>
                         )}
                     </p>
-                     <p style={{ alignItems: 'flex-start' }}>
+                    <p style={{ alignItems: 'flex-start' }}>
                         <span className="material-symbols-outlined">description</span>
                         <strong>Notes/Agenda:</strong>
-                        <span className="meeting-notes">{notes || 'No agenda provided.'}</span>
+                        {isEditing ? (
+                            <textarea 
+                                className="form-input-small"
+                                rows={3} 
+                                value={editNotes} 
+                                onChange={(e) => setEditNotes(e.target.value)} 
+                            />
+                        ) : (
+                            <span className="meeting-notes">{notes || 'No agenda provided.'}</span>
+                        )}
                     </p>
-                    {isEditing && (
-                        <div className="interview-edit-panel">
-                            <div className="form-group">
-                                <label>Date & Time</label>
-                                <input type="datetime-local" value={editDateTime} onChange={(e) => setEditDateTime(e.target.value)} />
-                            </div>
-                            <div className="form-group">
-                                <label>Duration (minutes)</label>
-                                <input type="number" min={10} value={editDuration} onChange={(e) => setEditDuration(e.target.value)} />
-                            </div>
-                            <div className="form-group">
-                                <label>Interviewer</label>
-                                <input type="text" value={editInterviewer} onChange={(e) => setEditInterviewer(e.target.value)} />
-                            </div>
-                            <div className="form-group">
-                                <label>Notes</label>
-                                <textarea rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
-                            </div>
-                        </div>
-                    )}
                 </div>
                 <div className="modal-footer">
                     {!isEditing && !!onUpdateInterview && (

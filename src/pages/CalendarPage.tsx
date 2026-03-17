@@ -261,7 +261,7 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
 
     const handleUpdateInterview = async (
         targetEvent: CalendarEvent,
-        updates: { dateTime: string; duration: number; interviewer: string; notes: string }
+        updates: { dateTime: string; duration: number; interviewer: string; notes: string; type: Interview['type'] }
     ) => {
         const payload = {
             event_id: targetEvent.eventId,
@@ -273,6 +273,7 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
             duration: updates.duration,
             interviewer: updates.interviewer,
             description: updates.notes,
+            interview_type: updates.type,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
         };
 
@@ -292,6 +293,7 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
                         duration: updates.duration,
                         interviewer: updates.interviewer,
                         notes: updates.notes,
+                        type: updates.type,
                     },
                 };
             })
@@ -307,6 +309,7 @@ const CalendarPage = ({ candidates, interviews, onViewCandidate, organizerEmail 
                     duration: updates.duration,
                     interviewer: updates.interviewer,
                     notes: updates.notes,
+                    type: updates.type,
                 },
             };
         });
