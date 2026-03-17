@@ -1729,7 +1729,7 @@ ${effectiveUser.name}`;
             const uploadedBy = await getUploadedBy();
             const jobId = job.jobId || String(job.id);
 
-            const analyzeLimit = 500;
+            const analyzeLimit = 5000;
             let offset = 0;
             const rankedMap = new Map<string, CandidateWithScore>();
             const byEmail = new Map<string, Candidate>();
@@ -1817,35 +1817,43 @@ ${effectiveUser.name}`;
                 };
             });
 
-            while (true) {
-                const data = await apiRequest('/matching/analyze-fit', {
+            // Fetch Top 500 results ONCE for immediate display
+            const data = await apiRequest('/matching/search-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+        
+                body: JSON.stringify({
+                    job_id: jobId,
+                    uploaded_by: uploadedBy,
+                    limit: analyzeLimit,
+                    offset: 0,
+                    use_ai: true,
+                }),
+            });
+
+            const allResults = Array.isArray(data?.results) ? data.results : [];
+            const mapped = mapResultsToCandidates(allResults);
+            mapped.forEach(c => {
+                const key = (c.email || String(c.id || '')).toLowerCase();
+                if (!key) return;
+                const existing = rankedMap.get(key);
+                if (!existing || (c.overallScore ?? 0) > (existing.overallScore ?? 0)) {
+                    rankedMap.set(key, c);
+                }
+            });
+
+            // API 2 – Store results separately without slowing down the UI
+            if (allResults.length > 0) {
+                apiRequest('/matching/analyze-fit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    signal: controller.signal,
                     body: JSON.stringify({
                         job_id: jobId,
                         uploaded_by: uploadedBy,
-                        limit: analyzeLimit,
-                        offset,
-                        use_ai: true,
+                        results: allResults,
                     }),
-                });
-
-                const results = Array.isArray(data?.results) ? data.results : [];
-                if (!results.length) break;
-
-                const mapped = mapResultsToCandidates(results);
-                mapped.forEach(c => {
-                    const key = (c.email || String(c.id || '')).toLowerCase();
-                    if (!key) return;
-                    const existing = rankedMap.get(key);
-                    if (!existing || (c.overallScore ?? 0) > (existing.overallScore ?? 0)) {
-                        rankedMap.set(key, c);
-                    }
-                });
-
-                if (results.length < analyzeLimit) break;
-                offset += analyzeLimit;
+                }).catch(err => console.error("Persistence failed:", err));
             }
 
             const rankedCandidates = Array.from(rankedMap.values());
