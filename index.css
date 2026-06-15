@@ -2596,6 +2596,18 @@ body::before {
     display: flex;
     align-items: flex-start;
     gap: 10px;
+    position: sticky;
+    left: 0;
+    width: calc(100vw - 364px);
+    max-width: calc(100vw - 364px);
+    box-sizing: border-box;
+}
+
+@media (max-width: 992px) {
+    .candidate-skill-expanded-panel {
+        width: calc(100vw - 48px);
+        max-width: calc(100vw - 48px);
+    }
 }
 
 .candidate-skill-expanded-panel strong {
