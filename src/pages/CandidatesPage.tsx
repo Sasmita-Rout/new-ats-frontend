@@ -8,6 +8,28 @@ import { toast } from 'react-toastify';
 
 const RECENT_CANDIDATE_DAYS = 7;
 
+const highlightText = (text: string, searchTerms: string[]) => {
+    if (!text) return <span>{text || ''}</span>;
+    const cleanTerms = searchTerms
+        .filter((t): t is string => typeof t === 'string')
+        .flatMap(t => t.split(','))
+        .map(t => t.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'))
+        .filter(t => t.length > 0);
+        
+    if (cleanTerms.length === 0) return <span>{text}</span>;
+
+    const regex = new RegExp(`(${cleanTerms.join('|')})`, 'gi');
+    const parts = text.split(regex);
+
+    return (
+        <span>
+            {parts.map((part, i) => 
+                regex.test(part) ? <mark key={i} className="search-highlight">{part}</mark> : part
+            )}
+        </span>
+    );
+};
+
 const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCandidateSelect, selectedJob, onBack, filters, onFilterChange, onClearFilters, searchTerm, onSearchChange, onUpload, stagedResumes, isProcessing, processingStatus, onProcess, onClear, onDeleteCandidates, onRemoveResume, onEmailSelected, onAnalyzeSelected: _onAnalyzeSelected, onViewCandidate, onScheduleSelected, onScheduleMeeting, canDeleteCandidates = false, confirmActionToast }) => {
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [pageIndex, setPageIndex] = useState(0);
@@ -270,18 +292,18 @@ const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCand
                                                         }
                                                     }}
                                                 >
-                                                    {candidate.name}
+                                                    {highlightText(candidate.name, [searchTerm, filters.name])}
                                                 </a>
                                             </div>
                                         </div>
                                     </td>
-                                    <td>{candidate.email}</td>
-                                    <td>{candidate.phone}</td>
-                                    <td>{candidate.location}</td>
+                                    <td>{highlightText(candidate.email, [searchTerm, filters.email])}</td>
+                                    <td>{highlightText(candidate.phone, [searchTerm])}</td>
+                                    <td>{highlightText(candidate.location, [searchTerm, filters.location])}</td>
                                     <td>
                                         <div className="skills-container">
                                             {candidate.skills.slice(0, 3)
-                                                .map(skill => <SkillTag key={skill} tag={skill} />)}
+                                                .map(skill => <SkillTag key={skill} tag={skill} highlightTerms={[searchTerm, filters.skills]} />)}
                                             {candidate.skills.length > 3 && (
                                                 <button
                                                     type="button"
@@ -351,7 +373,7 @@ const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCand
                                             <div className="candidate-skill-expanded-panel">
                                                 <strong>All Skills:</strong>
                                                 <div className="skills-container">
-                                                    {candidate.skills.map(skill => <SkillTag key={`${candidate.id}-${skill}`} tag={skill} />)}
+                                                    {candidate.skills.map(skill => <SkillTag key={`${candidate.id}-${skill}`} tag={skill} highlightTerms={[searchTerm, filters.skills]} />)}
                                                 </div>
                                             </div>
                                         </td>
