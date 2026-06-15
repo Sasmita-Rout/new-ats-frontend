@@ -240,12 +240,12 @@ const CandidatesPage = ({ candidates, totalCandidatesCount, onPageChange, onCand
                             </tr>
                         </thead>
                         <tbody>
-                            {visibleCandidates.map(candidate => {
+                            {visibleCandidates.map((candidate, index) => {
                                 const isSkillsExpanded = expandedSkillIds.includes(candidate.id);
                                 const totalColumns = selectedJob ? 9 : 8;
 
                                 return (
-                                <React.Fragment key={candidate.id}>
+                                <React.Fragment key={`${candidate.id}-${index}`}>
                                 <tr className={isRecentCandidate(candidate.appliedDate) ? 'candidate-row-recent' : 'candidate-row-stale'}>
                                     <td>
                                         <input

@@ -45,16 +45,16 @@ import ViewTeamMembersModal from './modals/ViewTeamMembersModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-//const API_BASE_URL =  'http://localhost:8000';
-//const SSO_API_URL =  'http://localhost:8001';
+const API_BASE_URL = 'http://localhost:8001';
+const SSO_API_URL = 'http://localhost:8000';
 const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-//const RESUME_VAULT_BASE_URL =  'http://localhost:8002/resume_vault';
+const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-const SSO_API_URL = "https://intranet.accionlabs.com";
-const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+//const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+//const SSO_API_URL = "https://intranet.accionlabs.com";
+//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -197,7 +197,7 @@ const App = () => {
     const [candidatesForBulkMeeting, setCandidatesForBulkMeeting] = useState<Candidate[]>([]);
     const [bulkMeetingJobId, setBulkMeetingJobId] = useState<string | null>(null);
     const [isBulkMeetingSubmitting, setBulkMeetingSubmitting] = useState(false);
-    const [initialEmailDraft, setInitialEmailDraft] = useState<{subject: string, body: string, cc?: string} | null>(null);
+    const [initialEmailDraft, setInitialEmailDraft] = useState<{ subject: string, body: string, cc?: string } | null>(null);
     const [candidatesForAnalysis, setCandidatesForAnalysis] = useState<Candidate[]>([]);
     const [isUserEditorModalOpen, setUserEditorModalOpen] = useState(false);
     const [userToEdit, setUserToEdit] = useState<Partial<User> | null>(null);
@@ -339,7 +339,7 @@ const App = () => {
             );
         });
     }, []);
-    
+
     // --- DERIVED STATE ---
     const effectiveUser = impersonatedUser || currentUser;
 
@@ -570,7 +570,7 @@ ${companyProfile?.name || '[Company Name]'}`;
 
     // --- DATA PERSISTENCE ---
     // TODO: Data persistence (candidates, jobs, projects, history, invitations, notifications) will be handled via API calls.
-    
+
     // --- CORE HANDLERS ---
     const persistHistoryEntry = useCallback(async (entry: HistoryEntry) => {
         const { id, ...payload } = entry;
@@ -594,7 +594,7 @@ ${companyProfile?.name || '[Company Name]'}`;
     const logAction = useCallback((action: string, details: Partial<HistoryEntry> = {}, directUser: User | null = null) => {
         const userContext = directUser || effectiveUser;
         if (!userContext) return;
-    
+
         const newLog: HistoryEntry = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
@@ -644,7 +644,7 @@ ${companyProfile?.name || '[Company Name]'}`;
     const handleMarkAllAsRead = () => {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     };
-    
+
     const handleNotificationNavigate = (notification: Notification) => {
         handleMarkAsRead(notification.id);
         if (notification.linkTo) {
@@ -666,10 +666,10 @@ ${companyProfile?.name || '[Company Name]'}`;
         if (impersonatedUser) {
             newLog.action = `User logged out while impersonating`;
         }
-        
+
         setHistoryLog(prev => [newLog, ...prev]);
         persistHistoryEntry(newLog);
-        
+
         setCurrentUser(null);
         setImpersonatedUser(null);
         // TODO: Logout functionality will interact with an authentication API.
@@ -686,7 +686,7 @@ ${companyProfile?.name || '[Company Name]'}`;
             userName: currentUser.name,
             action: `Stopped impersonating`,
         };
-        
+
         const userNoticeLog: HistoryEntry = {
             id: Date.now() + 1,
             timestamp: new Date().toISOString(),
@@ -694,15 +694,15 @@ ${companyProfile?.name || '[Company Name]'}`;
             userName: impersonatedUser.name,
             action: `Impersonation session ended by`,
         };
-        
+
         setHistoryLog(prev => [userNoticeLog, adminLog, ...prev]);
         persistHistoryEntry(adminLog);
         persistHistoryEntry(userNoticeLog);
-        
+
         setImpersonatedUser(null);
         handleNavigate('Dashboard');
     };
-    
+
     const handleOpenMeetingModal = (candidate: Candidate, jobId?: string) => {
         setCandidateForMeeting(candidate);
         setMeetingJobId(jobId || null);
@@ -1077,7 +1077,7 @@ ${effectiveUser.name}`;
         setUsers(userToKeep ? [userToKeep] : []);
         logAction('Reset all application data');
     };
-    
+
     const handleNavigate = (page: string) => {
         const targetPage = page === 'Settings' ? 'SettingsMyProfile' : page;
         setSelectedCandidate(null);
@@ -1092,7 +1092,7 @@ ${effectiveUser.name}`;
         }
         setCurrentPage(targetPage);
     };
-    
+
     const handleNavigateTo = (type: HistoryEntry['targetType'], id: number) => {
         if (type === 'Candidate') {
             const candidate = allCandidates.find(c => c.id === id);
@@ -1102,7 +1102,7 @@ ${effectiveUser.name}`;
             }
         } else if (type === 'Job') {
             const job = allJobDescriptions.find(j => j.id === id);
-             if (job) {
+            if (job) {
                 setSelectedJobForDetail(job);
                 setCurrentPage('Job Matching');
             }
@@ -1114,7 +1114,7 @@ ${effectiveUser.name}`;
             }
         }
     };
-    
+
     // --- USER MANAGEMENT ---
     const handleSaveUser = (userData: Partial<User> & { invitationId?: number }, userId?: number) => {
         if (userId) {
@@ -1126,14 +1126,14 @@ ${effectiveUser.name}`;
             setUsers(users.map(u => u.id === userId ? { ...u, ...userData, password: userData.password || u.password } : u));
             logAction('Updated user', { targetType: 'User', targetName: userData.name, targetId: userId });
         } else {
-             const newUser: User = { 
-                id: Date.now(), 
+            const newUser: User = {
+                id: Date.now(),
                 avatar: getInitials(userData.name),
                 permissions: userData.role === 'Admin' ? allPermissions : [],
-                ...userData 
+                ...userData
             } as User;
             setUsers(prev => [newUser, ...prev]);
-            
+
             const invitation = invitations.find(i => i.id === userData.invitationId);
             if (invitation) {
                 handleUpdateInvitationStatus(invitation.id, 'Approved');
@@ -1158,13 +1158,13 @@ ${effectiveUser.name}`;
         }
 
         const updatedUser = { ...currentUser, ...updatedData, avatar: newAvatar };
-        
+
         setCurrentUser(updatedUser);
         // TODO: User session persistence will be handled via API calls.
         setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
         logAction('Updated own profile');
     };
-    
+
     const handleUpdateAllUsers = (updatedUsers: User[]) => {
         setUsers(updatedUsers);
         logAction('Updated multiple user roles/permissions');
@@ -1183,7 +1183,7 @@ ${effectiveUser.name}`;
         };
         setInvitations(prev => [newInvitation, ...prev]);
         logAction(`Sent invitation to ${email}`);
-        
+
         const admins = users.filter(u => u.role.includes('Admin'));
         admins.forEach(admin => {
             addNotification(admin.id, `${effectiveUser.name} has invited a new member: ${email}`, { page: 'Settings' });
@@ -1221,7 +1221,7 @@ ${effectiveUser.name}`;
         URL.revokeObjectURL(url);
         logAction('Exported workspace data');
     };
-    
+
     const handleImportData = async (file: File) => {
         const shouldImport = await confirmActionToast(
             'Import will overwrite all existing jobs, candidates, users, and settings. Continue?',
@@ -1229,7 +1229,7 @@ ${effectiveUser.name}`;
             'Cancel'
         );
         if (!shouldImport) return;
-        
+
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
@@ -1284,9 +1284,9 @@ ${effectiveUser.name}`;
                     const apiStatus = projectData.status === 'inactive' ? 'inactive' : 'active';
 
                     const projectJobs = allJobDescriptions.filter(j => String(j.projectId) === String(projectData.project_id));
-                    
+
                     // Optimistic update
-                    setAllJobDescriptions(prev => prev.map(j => 
+                    setAllJobDescriptions(prev => prev.map(j =>
                         String(j.projectId) === String(projectData.project_id) ? { ...j, status: newStatus } : j
                     ));
 
@@ -1354,7 +1354,7 @@ ${effectiveUser.name}`;
             }
         }
     };
-    
+
     const handleSaveJob = async (jobData: Partial<JobDescription>, projectId: string) => {
         const uploadedBy = await getUploadedBy();
         const existing = jobData.jobId
@@ -1459,16 +1459,16 @@ ${effectiveUser.name}`;
             notifyError('No project selected. Cannot process JDs.');
             return;
         }
-        
+
         setIsProcessingJds(true);
         const totalFiles = stagedJds.length;
         let successCount = 0;
         const uploadedBy = await getUploadedBy();
-        
+
         for (let i = 0; i < totalFiles; i++) {
             const file = stagedJds[i];
             setProcessingJdsStatus(`Processing ${file.name} (${i + 1}/${totalFiles})...`);
-            
+
             try {
                 const formData = new FormData();
                 const jobId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -1490,13 +1490,13 @@ ${effectiveUser.name}`;
                     body: formData,
                 });
                 successCount++;
-    
+
             } catch (error) {
                 console.error(`Failed to process ${file.name}:`, error);
                 notifyError(`JD upload failed: ${file.name}`);
             }
         }
-        
+
         await fetchJobs();
         setProcessingJdsStatus(`Processing complete. ${successCount}/${totalFiles} JDs added successfully.`);
         if (successCount > 0) notifySuccess(`JD upload complete: ${successCount}/${totalFiles}`);
@@ -1519,15 +1519,15 @@ ${effectiveUser.name}`;
                 return { id: job.id, ok: false };
             }
         }));
-            const deletedIds = results.filter(r => r.ok).map(r => r.id);
-            if (deletedIds.length > 0) {
-                setAllJobDescriptions(prev => prev.filter(j => !deletedIds.includes(j.id)));
-                jobsToDelete.filter(j => deletedIds.includes(j.id))
-                    .forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
-                notifySuccess(`Deleted ${deletedIds.length} job(s).`);
-                if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
-                if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
-            }
+        const deletedIds = results.filter(r => r.ok).map(r => r.id);
+        if (deletedIds.length > 0) {
+            setAllJobDescriptions(prev => prev.filter(j => !deletedIds.includes(j.id)));
+            jobsToDelete.filter(j => deletedIds.includes(j.id))
+                .forEach(j => logAction('Deleted job', { targetType: 'Job', targetName: j.title, targetId: j.id }));
+            notifySuccess(`Deleted ${deletedIds.length} job(s).`);
+            if (selectedJob && deletedIds.includes(selectedJob.id)) setSelectedJob(null);
+            if (selectedJobForDetail && deletedIds.includes(selectedJobForDetail.id)) setSelectedJobForDetail(null);
+        }
     };
 
     const handleJobStatusUpdate = async (jobId: number, status: JobDescription['status']) => {
@@ -1545,7 +1545,7 @@ ${effectiveUser.name}`;
                 console.error('Failed to update job status:', error);
             }
         }
-        if(jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
+        if (jobToUpdate) logAction(`Updated job status to ${status}`, { targetType: 'Job', targetName: jobToUpdate.title, targetId: jobId });
     };
 
     const handleGenerateJdWithAI = async (prompt: string, projectId: string) => {
@@ -1654,15 +1654,15 @@ ${effectiveUser.name}`;
     const normalizeCandidate = useCallback((raw: any): Candidate => {
         const email = raw.email || '';
 
-        const phone = raw.phone 
-            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '') 
-            || raw.contact_no 
-            || raw.mobile 
+        const phone = raw.phone
+            || (typeof raw.contact === 'string' && (raw.contact.match(/\d/g) || []).length >= 5 ? raw.contact : '')
+            || raw.contact_no
+            || raw.mobile
             || '';
         const location = raw.location || raw.address || '';
 
         const appliedDate = raw.applied_date || raw.appliedDate || raw.file_created || new Date().toISOString().split('T')[0];
-        
+
         const idSource = email.toLowerCase() || [
             raw.name || raw.candidate_name,
             raw.filenames,
@@ -1761,16 +1761,22 @@ ${effectiveUser.name}`;
                         }
                     }
                 }
-                const overallScore = typeof r.match_score === 'number'
-                    ? Math.round(r.match_score)
-                    : Math.round(Number(r.match_score) || 0);
-                
-                const matchingSkills = Array.isArray(r.matching_skills) 
-                    ? r.matching_skills 
+                const preferredScore =
+                    typeof r.gpt_style_fit_score === 'number' && r.gpt_style_fit_score > 0
+                        ? r.gpt_style_fit_score
+                        : (typeof r.ai_recruiter_fit_score === 'number' && r.ai_recruiter_fit_score > 0
+                            ? r.ai_recruiter_fit_score
+                            : r.match_score);
+                const overallScore = typeof preferredScore === 'number'
+                    ? Math.round(preferredScore)
+                    : Math.round(Number(preferredScore) || 0);
+
+                const matchingSkills = Array.isArray(r.matching_skills)
+                    ? r.matching_skills
                     : (typeof r.matching_skills === 'string' && r.matching_skills)
                         ? r.matching_skills.split(',').map((s: string) => s.trim()).filter(Boolean)
                         : [];
-                
+
                 const missingSkills = Array.isArray(r.missing_skills)
                     ? r.missing_skills
                     : (typeof r.missing_skills === 'string' && r.missing_skills)
@@ -1780,11 +1786,11 @@ ${effectiveUser.name}`;
                 const apiSkills = Array.isArray(r.skills)
                     ? r.skills
                     : String(r.skills || '').split(',').map((s: string) => s.trim()).filter(Boolean);
-                
+
                 const candidateSkillsSource = (existing?.skills && existing.skills.length > 0)
                     ? existing.skills
                     : apiSkills;
-                
+
                 const candidateSkillsLower = new Set(candidateSkillsSource.map((s: string) => s.toLowerCase()));
                 const jdSkillsSource = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
                 const fallbackMatchingSkills = jdSkillsSource.filter(skill => candidateSkillsLower.has(String(skill).toLowerCase()));
@@ -1822,7 +1828,7 @@ ${effectiveUser.name}`;
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 signal: controller.signal,
-        
+
                 body: JSON.stringify({
                     job_id: jobId,
                     uploaded_by: uploadedBy,
@@ -2079,15 +2085,30 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     };
 
     // FIX 1: Removed duplicate function declaration - merged into single fetchCandidatesPage
-    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0, search = '') => {
+    const fetchCandidatesPage = useCallback(async (limit = 10, offset = 0, search = '', filterObj: any = null) => {
+        console.log('[fetchCandidatesPage] Called with:', { limit, offset, search, filterObj });
         try {
-            let data;
+            const queryParams = new URLSearchParams();
+            queryParams.append('limit', String(limit));
+            queryParams.append('offset', String(offset));
+            
             if (search && search.trim()) {
-                data = await apiRequest(`/resume/search?q=${encodeURIComponent(search)}&limit=${limit}&offset=${offset}`);
-            } else {
-                data = await apiRequest(`/resume/list-candidates?limit=${limit}&offset=${offset}`);
+                queryParams.append('q', search.trim());
             }
+            if (filterObj) {
+                if (filterObj.skills) queryParams.append('skills', filterObj.skills);
+                if (filterObj.name) queryParams.append('name', filterObj.name);
+                if (filterObj.email) queryParams.append('email', filterObj.email);
+                if (filterObj.location) queryParams.append('location', filterObj.location);
+                if (filterObj.experience) queryParams.append('experience', filterObj.experience);
+            }
+            
+            console.log('[fetchCandidatesPage] Fetching candidates with query:', queryParams.toString());
+            const data = await apiRequest(`/resume/list-candidates?${queryParams.toString()}`);
+            console.log('[fetchCandidatesPage] Received data:', data);
+            
             const candidates = extractCandidates(data).map(normalizeCandidate);
+            console.log('[fetchCandidatesPage] Normalized candidates:', candidates);
             setAllCandidates(candidates);
             const total = typeof data?.total === 'number' ? data.total : candidates.length;
             setTotalCandidatesCount(total);
@@ -2098,21 +2119,27 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     }, [apiRequest, normalizeCandidate]);
 
     const fetchCandidates = useCallback(async () => {
-        return fetchCandidatesPage(10, 0);
-    }, [fetchCandidatesPage]);
+        return fetchCandidatesPage(10, 0, searchTerm, mainFilters);
+    }, [fetchCandidatesPage, searchTerm, mainFilters]);
 
     useEffect(() => {
+        console.log('[Search/Filters Debounce Effect] Triggered with:', { searchTerm, mainFilters });
         if (isInitialMount.current) {
+            console.log('[Search/Filters Debounce Effect] Skipping initial mount fetch');
             isInitialMount.current = false;
             return;
         }
 
         const debounceTimer = setTimeout(() => {
-            fetchCandidatesPage(10, 0, searchTerm);
+            console.log('[Search/Filters Debounce Effect] Executing search/filter fetch');
+            fetchCandidatesPage(10, 0, searchTerm, mainFilters);
         }, 500);
 
-        return () => clearTimeout(debounceTimer);
-    }, [searchTerm, fetchCandidatesPage]);
+        return () => {
+            console.log('[Search/Filters Debounce Effect] Cleaning up timer');
+            clearTimeout(debounceTimer);
+        };
+    }, [searchTerm, mainFilters, fetchCandidatesPage]);
 
     const fetchHistory = useCallback(async () => {
         try {
@@ -2301,8 +2328,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     };
 
     const handleViewCandidate = async (candidate: Candidate) => {
-        const fullCandidate = allCandidates.find(c => 
-            (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) || 
+        const fullCandidate = allCandidates.find(c =>
+            (c.email && candidate.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
             c.id === candidate.id
         );
 
@@ -2466,7 +2493,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             'Cancel'
         );
         if (shouldClear) {
-            processingRef.current = false; 
+            processingRef.current = false;
             setStagedResumes([]);
             setIsProcessing(false);
             setProcessingStatus('');
@@ -2542,7 +2569,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 console.error('Failed to process batch resumes:', error);
             }
         }
-        
+
         if (processingRef.current) {
             setProcessingStatus(`Processing complete. ${successCount}/${totalFiles} resumes added.`);
             logAction(`Bulk processed ${totalFiles} resumes, added ${successCount} new candidates`);
@@ -2752,7 +2779,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         }
         setEmailJobIdOverride(null);
     };
-    
+
     const handleAnalyzeSelected = (ids: number[]) => {
         const targets = allCandidates.filter(c => ids.includes(c.id));
         setCandidatesForAnalysis(targets);
@@ -2773,7 +2800,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             }).sort((a, b) => (b.jobSpecificMatchScore || 0) - (a.jobSpecificMatchScore || 0));
         }
 
-        return candidates.filter(c => {
+        const filtered = candidates.filter(c => {
             const locationValue = (c.location && c.location !== 'No Location' ? c.location : '') || '';
             const skillsValue = Array.isArray(c.skills) ? c.skills : [];
             const tagsValue = Array.isArray(c.tags) ? c.tags : [];
@@ -2788,16 +2815,20 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             });
             const nameMatch = !mainFilters.name || (c.name || '').toLowerCase().includes(mainFilters.name.toLowerCase());
             const emailMatch = !mainFilters.email || (c.email || '').toLowerCase().includes(mainFilters.email.toLowerCase());
-            const locationMatch = !mainFilters.location || locationValue.toLowerCase().includes(mainFilters.location.toLowerCase());
+            const locationMatch = !mainFilters.location || mainFilters.location.toLowerCase().split(',').some(loc => {
+                const term = loc.trim();
+                if (!term) return true;
+                return locationValue.toLowerCase().includes(term);
+            });
             const categoryMatch = !mainFilters.roleCategory || c.category.toLowerCase().includes(mainFilters.roleCategory.toLowerCase());
-            const educationMatch = !mainFilters.education || (educationValue.length > 0 && educationValue.some(edu => 
-                edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) || 
+            const educationMatch = !mainFilters.education || (educationValue.length > 0 && educationValue.some(edu =>
+                edu.degree.toLowerCase().includes(mainFilters.education.toLowerCase()) ||
                 edu.institution.toLowerCase().includes(mainFilters.education.toLowerCase())
             ));
             const salaryMin = parseFloat(mainFilters.salaryMin);
             const salaryMax = parseFloat(mainFilters.salaryMax);
             const salaryMatch = (!mainFilters.salaryMin || (c.salaryExpectation && c.salaryExpectation >= salaryMin)) &&
-                                (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
+                (!mainFilters.salaryMax || (c.salaryExpectation && c.salaryExpectation <= salaryMax));
             const tagsMatch = !mainFilters.tags || mainFilters.tags.toLowerCase().split(',').every(tag => {
                 const term = tag.trim();
                 if (!term) return true;
@@ -2806,19 +2837,27 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const experienceMatch = !mainFilters.experience || mainFilters.experience.toLowerCase().split(',').every(expTerm => {
                 const term = expTerm.trim();
                 if (!term) return true;
-                return experienceValue.some(exp => 
+                return experienceValue.some(exp =>
                     `${exp.title} ${exp.company} ${exp.description}`.toLowerCase().includes(term)
                 );
             });
-            
+
             return statusMatch && skillsMatch && nameMatch && emailMatch && locationMatch && categoryMatch && educationMatch && salaryMatch && tagsMatch && experienceMatch;
         });
+
+        console.log('[filteredCandidates Memo] Recalculated:', {
+            allCandidatesCount: allCandidates.length,
+            filteredCount: filtered.length,
+            selectedJob: selectedJob?.title || null
+        });
+
+        return filtered;
     }, [allCandidates, selectedJob, mainFilters]);
 
     const globalSearchResults = useMemo(() => {
         if (!globalSearchTerm) return { candidates: [], projects: [], jobs: [] };
         const lowerTerm = globalSearchTerm.toLowerCase();
-        
+
         const candidates = allCandidates.filter(c =>
             c.name.toLowerCase().includes(lowerTerm) ||
             c.title.toLowerCase().includes(lowerTerm) ||
@@ -2830,13 +2869,13 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             p.project_id.toLowerCase().includes(lowerTerm) ||
             (p.project_description || '').toLowerCase().includes(lowerTerm)
         ).slice(0, 5);
-        
+
         const jobs = allJobDescriptions.filter(j =>
             j.title.toLowerCase().includes(lowerTerm) ||
             j.companyName.toLowerCase().includes(lowerTerm) ||
             j.requiredSkills.some(s => s.toLowerCase().includes(lowerTerm))
         ).slice(0, 5);
-        
+
         return { candidates, projects, jobs };
     }, [globalSearchTerm, allCandidates, allProjects, allJobDescriptions]);
 
@@ -2855,19 +2894,19 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         const project = allProjects.find(p => candidateProjectIds.has(normalize(p.project_id)));
         return project || null;
     }, [allJobDescriptions, allProjects]);
-    
+
     const renderContent = () => {
         switch (currentPage) {
             case 'Login':
                 return <LoginPage onLogin={(user) => { setCurrentUser(user); setCurrentPage('Dashboard'); }} error={null} />;
             case 'Dashboard':
                 const pendingCount = invitations.filter(i => i.inviterId === effectiveUser!.id && i.status === 'Pending').length;
-                return <DashboardPage 
-                    effectiveUser={effectiveUser!} 
-                    candidates={allCandidates} 
+                return <DashboardPage
+                    effectiveUser={effectiveUser!}
+                    candidates={allCandidates}
                     totalCandidatesCount={totalCandidatesCount}
-                    jobs={allJobDescriptions} 
-                    projects={allProjects} 
+                    jobs={allJobDescriptions}
+                    projects={allProjects}
                     onProjectSelect={(p) => { setSelectedProject(p); setCurrentPage('Job Matching'); }}
                     pendingInvitationCount={pendingCount}
                     onNavigate={handleNavigate}
@@ -2915,17 +2954,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     />;
                 }
                 if (selectedJobForDetail) {
-                    return <JobDetailPage 
-                        job={selectedJobForDetail} 
+                    return <JobDetailPage
+                        job={selectedJobForDetail}
                         onBack={() => setSelectedJobForDetail(null)}
                         onMatch={(j) => { setSelectedJob(j); setCurrentPage('Candidates'); }}
                         onEdit={(j) => { setJobToEdit(j); setJobEditorModalOpen(true); }}
                     />;
                 }
-                 return <ProjectsPage 
-                    projects={allProjects} 
-                    jobs={allJobDescriptions} 
-                    onProjectSelect={(p) => setSelectedProject(p)} 
+                return <ProjectsPage
+                    projects={allProjects}
+                    jobs={allJobDescriptions}
+                    onProjectSelect={(p) => setSelectedProject(p)}
                     onProjectCreate={() => { setProjectToEdit(null); setProjectEditorModalOpen(true); }}
                     onEditProject={(p) => { setProjectToEdit(p); setProjectEditorModalOpen(true); }}
                     onAddTeamMember={handleOpenAddTeamMember}
@@ -2942,7 +2981,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <CandidatesPage
                     candidates={filteredCandidates}
                     totalCandidatesCount={totalCandidatesCount || allCandidates.length}
-                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit, searchTerm)}
+                    onPageChange={(page, limit) => fetchCandidatesPage(limit, page * limit, searchTerm, mainFilters)}
                     onCandidateSelect={(c) => { setCandidateBackPage(null); setSelectedCandidate(c); }}
                     selectedJob={selectedJob}
                     onBack={() => setSelectedJob(null)}
@@ -2970,10 +3009,10 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                         (effectiveUser?.role || '').includes('Admin')
                     }
                     confirmActionToast={confirmActionToast}
-                 />;
+                />;
             case 'Communications':
-                return <CommunicationsPage 
-                    emailTargets={emailTargets} 
+                return <CommunicationsPage
+                    emailTargets={emailTargets}
                     onClearTargets={clearEmailTargets}
                     onUpdateTargets={setEmailTargets}
                     onSendEmail={handleSendEmail}
@@ -2992,25 +3031,25 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             case 'Reports':
                 return <ReportsPage candidates={allCandidates} jobs={allJobDescriptions} effectiveUser={effectiveUser!} allUsers={users} apiRequest={apiRequest} />;
             case 'Calendar':
-                 const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
-                 const role = effectiveUser?.role || '';
-                 const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
+                const allInterviews = allCandidates.flatMap(c => c.interviews || []).filter(i => i !== undefined);
+                const role = effectiveUser?.role || '';
+                const calendarEmail = (role === 'super_admin' || role === 'admin' || role.includes('Admin'))
                     ? ''
                     : (effectiveUser?.email || '');
-                 return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onViewCandidate={handleViewCandidate} />;
+                return <CalendarPage candidates={allCandidates} interviews={allInterviews} organizerEmail={calendarEmail} onViewCandidate={handleViewCandidate} />;
             case 'History':
-                 return <HistoryPage 
-                    historyLog={historyLog} 
-                    effectiveUser={effectiveUser!} 
-                    onNavigateTo={handleNavigateTo} 
+                return <HistoryPage
+                    historyLog={historyLog}
+                    effectiveUser={effectiveUser!}
+                    onNavigateTo={handleNavigateTo}
                     currentUser={currentUser}
                     impersonatedUser={impersonatedUser}
                     allUsers={users}
                 />;
             case 'Settings':
             case 'SettingsMyProfile':
-                return <SettingsPage 
-                    effectiveUser={effectiveUser!} 
+                return <SettingsPage
+                    effectiveUser={effectiveUser!}
                     onUpdateUser={handleSaveUser}
                     allUsers={users}
                     invitations={invitations}
@@ -3019,8 +3058,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onComposeSupportEmail={handleContactSupportEmailSelected}
                 />;
             case 'SettingsContactSupport':
-                return <SettingsPage 
-                    effectiveUser={effectiveUser!} 
+                return <SettingsPage
+                    effectiveUser={effectiveUser!}
                     onUpdateUser={handleSaveUser}
                     allUsers={users}
                     invitations={invitations}
@@ -3032,7 +3071,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 return <div>Page not found</div>;
         }
     };
-    
+
     if (isAuthLoading) return <div className="loading-indicator">Checking SSO session...</div>;
     if (!effectiveUser) return <div className="loading-indicator">Please log in via the intranet application.</div>;
 
@@ -3060,7 +3099,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
     const renderAccessDenied = () => (
         <div className="page-content">
             <div className="empty-state large">
-                <span className="material-symbols-outlined" style={{fontSize: '64px', color: '#EF4444'}}>lock</span>
+                <span className="material-symbols-outlined" style={{ fontSize: '64px', color: '#EF4444' }}>lock</span>
                 <h3>Access Denied</h3>
                 <p>You do not have permission to view this page.</p>
             </div>
@@ -3071,11 +3110,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         <div className="app-container">
             <Sidebar currentPage={currentPage} onNavigate={handleNavigate} effectiveUser={effectiveUser} />
             <main className="main-content">
-                <Header 
+                <Header
                     currentPage={currentPage}
                     user={effectiveUser}
-                    impersonatedUser={impersonatedUser} 
-                    onStopImpersonation={handleStopImpersonation} 
+                    impersonatedUser={impersonatedUser}
+                    onStopImpersonation={handleStopImpersonation}
                     globalSearchTerm={globalSearchTerm}
                     onSearchChange={setGlobalSearchTerm}
                     candidates={globalSearchResults.candidates}

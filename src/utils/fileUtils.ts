@@ -10,22 +10,22 @@ if (typeof pdfjsLib !== 'undefined') {
 }
 
 
-//const RESUME_VAULT_BASE_URL ='http://localhost:8002/resume_vault';
-const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
+//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 export const downloadResumeText = (candidate: Candidate) => {
-  const textContent = candidate.resumeContent && candidate.resumeContent.trim().length > 0
-    ? candidate.resumeContent
-    : JSON.stringify(candidate, (key, value) => (key === 'originalResumeFile' ? undefined : value), 2);
-  const blob = new Blob([textContent], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${candidate.name.replace(' ', '_')}_Resume.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+    const textContent = candidate.resumeContent && candidate.resumeContent.trim().length > 0
+        ? candidate.resumeContent
+        : JSON.stringify(candidate, (key, value) => (key === 'originalResumeFile' ? undefined : value), 2);
+    const blob = new Blob([textContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${candidate.name.replace(' ', '_')}_Resume.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 };
 
 export const downloadOriginalResume = (candidate: Candidate) => {
@@ -86,7 +86,7 @@ export const getTextFromFile = async (file: File, ai?: GoogleGenAI): Promise<str
             if (!ai) {
                 return reject(new Error("AI instance is required to parse images."));
             }
-             reader.onload = async (event) => {
+            reader.onload = async (event) => {
                 try {
                     const base64Data = (event.target.result as string).split(',')[1];
                     const imagePart = {
