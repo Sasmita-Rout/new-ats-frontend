@@ -45,16 +45,16 @@ import ViewTeamMembersModal from './modals/ViewTeamMembersModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-//const API_BASE_URL = 'http://localhost:8001';
-//const SSO_API_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8001';
+const SSO_API_URL = 'http://localhost:8000';
 const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-//const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
+const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-const SSO_API_URL = "https://intranet.accionlabs.com";
-const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+//const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+//const SSO_API_URL = "https://intranet.accionlabs.com";
+//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -71,7 +71,7 @@ const hashStringToInt = (value: string): number => {
 const deriveAtsRoleFromIntranet = (intranetRole?: string, isSuperAdmin?: boolean, accessLevel?: string): UserRole => {
     if (isSuperAdmin) return 'super_admin';
     const role = (intranetRole || '').toLowerCase();
-    if (role === 'admin' || role === 'head_dd' || role === 'pdm') return role as UserRole;
+    if (role === 'admin' || role === 'app_admin' || role === 'app admin' || role === 'head_dd' || role === 'pdm') return (role === 'app_admin' || role === 'app admin') ? 'admin' : role as UserRole;
     if ((accessLevel || '').toLowerCase() === 'admin') return 'admin';
     if (role === 'user') return 'user';
     return 'user';
@@ -117,7 +117,18 @@ async function getCurrentUserSession(): Promise<{ email: string; name?: string; 
                     const name = String(app?.app_name || '').toLowerCase();
                     return name === ATS_SSO_APP_NAME;
                 });
-                const role = atsApp?.role || undefined;
+                // Directly use the global SSO role to match what is shown in SSO
+                let role = data.role || atsApp?.role || undefined;
+                
+                // As requested: if the user is an App Admin for ANY app in SSO, they should show as Admin in ATS
+                const isAnyAppAdmin = apps.some(app => 
+                    String(app?.role || '').toLowerCase().includes('admin') || 
+                    String(app?.access_level || '').toLowerCase().includes('admin')
+                );
+                
+                if (isAnyAppAdmin) {
+                    role = 'admin';
+                }
                 localStorage.setItem('userEmail', data.email);
                 return {
                     email: data.email,

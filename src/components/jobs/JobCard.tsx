@@ -1,7 +1,7 @@
 import React from 'react';
 import { JobDescription } from '../../types/types';
 
-const JobCard = ({ job, onJobSelect, onAnalyzeFit, onCancelAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete, showOwner }) => {
+const JobCard = ({ job, onJobSelect, onAnalyzeFit, onCancelAnalyzeFit, isAnalyzing, isProcessingAnalysis, onEdit, onChangeJd, isSelected, onSelect, onDelete, showOwner, canDelete }) => {
     return (
     <div className={`job-card-wrapper ${isSelected ? 'selected' : ''}`}>
         <input 
@@ -45,9 +45,11 @@ const JobCard = ({ job, onJobSelect, onAnalyzeFit, onCancelAnalyzeFit, isAnalyzi
                     <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onEdit(job);}}>
                         <span className="material-symbols-outlined">edit</span> Edit
                     </button>
-                    <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onDelete(job.id);}}>
-                        <span className="material-symbols-outlined">delete</span> Delete
-                    </button>
+                    {canDelete && (
+                        <button className="btn btn-secondary btn-small" onClick={(e) => {e.stopPropagation(); onDelete(job.id);}}>
+                            <span className="material-symbols-outlined">delete</span> Delete
+                        </button>
+                    )}
                 </div>
                 <div className="job-card-actions">
                     <button
