@@ -45,16 +45,16 @@ import ViewTeamMembersModal from './modals/ViewTeamMembersModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-const API_BASE_URL = 'http://localhost:8001';
-const SSO_API_URL = 'http://localhost:8000';
+//const API_BASE_URL = 'http://localhost:8001';
+//const SSO_API_URL = 'http://localhost:8000';
 const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
+//const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-//const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-//const SSO_API_URL = "https://intranet.accionlabs.com";
-//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+const SSO_API_URL = "https://intranet.accionlabs.com";
+const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -119,13 +119,13 @@ async function getCurrentUserSession(): Promise<{ email: string; name?: string; 
                 });
                 // Directly use the global SSO role to match what is shown in SSO
                 let role = data.role || atsApp?.role || undefined;
-                
+
                 // As requested: if the user is an App Admin for ANY app in SSO, they should show as Admin in ATS
-                const isAnyAppAdmin = apps.some(app => 
-                    String(app?.role || '').toLowerCase().includes('admin') || 
+                const isAnyAppAdmin = apps.some(app =>
+                    String(app?.role || '').toLowerCase().includes('admin') ||
                     String(app?.access_level || '').toLowerCase().includes('admin')
                 );
-                
+
                 if (isAnyAppAdmin) {
                     role = 'admin';
                 }
@@ -1838,7 +1838,7 @@ ${effectiveUser.name}`;
                 };
             });
 
-            // Fetch Top 500 results ONCE for immediate display
+            // Fetch Top 500 results ONCE for immediate display (Heuristic only)
             const data = await apiRequest('/matching/search-db', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1849,7 +1849,7 @@ ${effectiveUser.name}`;
                     uploaded_by: uploadedBy,
                     limit: analyzeLimit,
                     offset: 0,
-                    use_ai: true,
+                    use_ai: false, // Turn off immediate AI for fast load
                 }),
             });
 
@@ -1864,22 +1864,97 @@ ${effectiveUser.name}`;
                 }
             });
 
-            // API 2 – Store results separately without slowing down the UI
-            if (allResults.length > 0) {
-                apiRequest('/matching/analyze-fit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        job_id: jobId,
-                        uploaded_by: uploadedBy,
-                        results: allResults,
-                    }),
-                }).catch(err => console.error("Persistence failed:", err));
-            }
-
             const rankedCandidates = Array.from(rankedMap.values());
-
             const keywords = job.requiredSkills || [];
+
+            // Background Progressive AI Enrichment
+            (async () => {
+                if (allResults.length === 0) return;
+
+                // Take top 50 candidates to enrich
+                const top50 = rankedCandidates.slice(0, 50);
+                const batchSize = 10;
+                let hasUpdates = false;
+
+                for (let i = 0; i < top50.length; i += batchSize) {
+                    if (controller.signal.aborted) break;
+                    const batch = top50.slice(i, i + batchSize);
+
+                    try {
+                        const batchData = await apiRequest('/matching/enrich-ai-batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            signal: controller.signal,
+                            body: JSON.stringify({
+                                job_id: jobId,
+                                candidates: batch.map(c => ({
+                                    email: c.email || c.id,
+                                    name: c.name,
+                                    skills: c.skills,
+                                    experience: c.totalExperienceYears,
+                                    location: c.location
+                                }))
+                            })
+                        });
+
+                        if (batchData?.ai_map) {
+                            hasUpdates = true;
+                            // Update the global analysis state progressively!
+                            setGlobalAnalysisData(prev => {
+                                const currentJobData = prev[Number(jobId)];
+                                if (!currentJobData) return prev;
+
+                                const updatedCandidates = currentJobData.candidates.map(c => {
+                                    const key = (c.email || String(c.id || '')).toLowerCase();
+                                    const aiResult = batchData.ai_map[key];
+                                    if (aiResult) {
+                                        return {
+                                            ...c,
+                                            overallScore: aiResult.recruiter_fit_score || c.overallScore,
+                                            matchingSkills: aiResult.matched_skills || c.matchingSkills,
+                                            missingSkills: aiResult.missing_skills || c.missingSkills,
+                                        };
+                                    }
+                                    return c;
+                                });
+
+                                // Re-sort based on newly injected overallScore
+                                updatedCandidates.sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
+
+                                return {
+                                    ...prev,
+                                    [Number(jobId)]: {
+                                        ...currentJobData,
+                                        candidates: updatedCandidates
+                                    }
+                                };
+                            });
+                        }
+                    } catch (e: any) {
+                        if (e?.name !== 'AbortError') {
+                            console.error("Batch AI enrichment failed:", e);
+                        }
+                    }
+                }
+
+                // Once all batches are enriched, optionally persist the updated results back to DB
+                // Since this runs in background, we might need a separate mechanism or just persist the heuristic + AI so far.
+                if (hasUpdates && !controller.signal.aborted) {
+                    apiRequest('/matching/analyze-fit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            job_id: jobId,
+                            uploaded_by: uploadedBy,
+                            // Re-fetching the fully updated list from state isn't synchronous here, 
+                            // so we will rely on frontend persistence or heuristic persistence for now.
+                            // We pass the base results; ideally, the backend ai_map is what gets persisted.
+                            results: allResults,
+                        }),
+                    }).catch(err => console.error("Persistence failed:", err));
+                }
+            })();
+
             return { rankedCandidates, keywords };
         } catch (error: any) {
             if (error?.name === 'AbortError') {
@@ -1892,7 +1967,7 @@ ${effectiveUser.name}`;
             analyzeFitControllersRef.current.delete(job.id);
             setIsAnalyzingJobId(null);
         }
-    }, [allCandidates, apiRequest, getUploadedBy, normalizeCandidate, notifyError]);
+    }, [allCandidates, apiRequest, getUploadedBy, normalizeCandidate, notifyError, setGlobalAnalysisData]);
 
     const handleAnalyzeFit = useCallback(async (candidate: Candidate, jd: Partial<JobDescription>): Promise<MatchResult | null> => {
         try {

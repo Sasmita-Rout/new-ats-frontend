@@ -10,8 +10,8 @@ if (typeof pdfjsLib !== 'undefined') {
 }
 
 
-const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
-//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+//const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
+const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 export const downloadResumeText = (candidate: Candidate) => {
     const textContent = candidate.resumeContent && candidate.resumeContent.trim().length > 0
