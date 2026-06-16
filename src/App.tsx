@@ -146,6 +146,9 @@ const App = () => {
     const [allProjects, setAllProjects] = useState<Project[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [historyLog, setHistoryLog] = useState<HistoryEntry[]>([]);
+    const [historyOffset, setHistoryOffset] = useState(0);
+    const [hasMoreHistory, setHasMoreHistory] = useState(true);
+    const [historyUserId, setHistoryUserId] = useState<number | null>(null);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
@@ -2141,15 +2144,61 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         };
     }, [searchTerm, mainFilters, fetchCandidatesPage]);
 
-    const fetchHistory = useCallback(async () => {
+    const fetchHistory = useCallback(async (userId?: number | null) => {
+        if (!effectiveUser) return;
         try {
-            const data = await apiRequest('/history/list?limit=200&offset=0');
+            const role = effectiveUser.role;
+            const isAdmin = role === 'super_admin' || role === 'admin' || role.includes('Admin');
+            
+            // If not admin, always force current user ID
+            const finalUserId = !isAdmin ? effectiveUser.id : (userId !== undefined ? userId : historyUserId);
+            
+            setHistoryOffset(0);
+            setHasMoreHistory(true);
+            setHistoryUserId(finalUserId ?? null);
+            
+            let url = '/history/list?limit=20&offset=0';
+            if (finalUserId) url += `&user_id=${finalUserId}`;
+            
+            const data = await apiRequest(url);
             const logs = Array.isArray(data?.history) ? data.history : [];
             setHistoryLog(logs);
+            if (logs.length < 20) {
+                setHasMoreHistory(false);
+            }
         } catch (error) {
             console.error('Failed to load history:', error);
         }
-    }, [apiRequest]);
+    }, [apiRequest, historyUserId, effectiveUser]);
+
+    const handleLoadMoreHistory = useCallback(async () => {
+        if (!effectiveUser) return;
+        try {
+            const role = effectiveUser.role;
+            const isAdmin = role === 'super_admin' || role === 'admin' || role.includes('Admin');
+            
+            // Ensure even "Load More" respects the role restriction
+            const finalUserId = !isAdmin ? effectiveUser.id : historyUserId;
+            
+            const nextOffset = historyOffset + 20;
+            let url = `/history/list?limit=20&offset=${nextOffset}`;
+            if (finalUserId) url += `&user_id=${finalUserId}`;
+            
+            const data = await apiRequest(url);
+            const logs = Array.isArray(data?.history) ? data.history : [];
+            if (logs.length === 0) {
+                setHasMoreHistory(false);
+            } else {
+                setHistoryLog(prev => [...prev, ...logs]);
+                setHistoryOffset(nextOffset);
+                if (logs.length < 20) {
+                    setHasMoreHistory(false);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load more history:', error);
+        }
+    }, [apiRequest, historyOffset, historyUserId, effectiveUser]);
 
     const fetchProjects = useCallback(async () => {
         const uploadedBy = await getUploadedBy();
@@ -3042,9 +3091,12 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     historyLog={historyLog}
                     effectiveUser={effectiveUser!}
                     onNavigateTo={handleNavigateTo}
-                    currentUser={currentUser}
+                    currentUser={currentUser!}
                     impersonatedUser={impersonatedUser}
                     allUsers={users}
+                    onLoadMore={handleLoadMoreHistory}
+                    hasMore={hasMoreHistory}
+                    onFilterByUser={fetchHistory}
                 />;
             case 'Settings':
             case 'SettingsMyProfile':
