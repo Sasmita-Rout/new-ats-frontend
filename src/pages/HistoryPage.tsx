@@ -63,9 +63,16 @@ const HistoryPage = ({
     };
 
     const selectableUsers = useMemo(() => {
-        // Filter out the current user from the list of all users to avoid duplication
-        return allUsers
-            .filter(u => u.id !== currentUser.id)
+        // Use a Map to guarantee unique user IDs
+        const uniqueUsersMap = new Map<number, {id: number, name: string}>();
+        
+        allUsers.forEach(user => {
+            if (user.id !== currentUser.id) {
+                uniqueUsersMap.set(user.id, user);
+            }
+        });
+
+        return Array.from(uniqueUsersMap.values())
             .sort((a, b) => a.name.localeCompare(b.name));
     }, [allUsers, currentUser.id]);
 

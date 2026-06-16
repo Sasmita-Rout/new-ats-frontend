@@ -45,16 +45,16 @@ import ViewTeamMembersModal from './modals/ViewTeamMembersModal';
 import { getInitials } from './utils/helpers';
 import { calculateTotalExperience, parseJobRequirementsFromText } from './utils/analysisUtils';
 
-const API_BASE_URL = 'http://localhost:8001';
-const SSO_API_URL = 'http://localhost:8000';
+//const API_BASE_URL = 'http://localhost:8001';
+//const SSO_API_URL = 'http://localhost:8000';
 const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
-const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
+//const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-//const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
-//const SSO_API_URL = "https://intranet.accionlabs.com";
-//const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
+const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
+const SSO_API_URL = "https://intranet.accionlabs.com";
+const RESUME_VAULT_BASE_URL = "https://intranet.accionlabs.com/resume_vault";
 
 const defaultFilters = { status: [] as Candidate['status'][], skills: '', location: '', roleCategory: '', education: '', salaryMin: '', salaryMax: '', tags: '', experience: '', name: '', email: '' };
 const allPermissions: UserPermission[] = ['Dashboard', 'Job Matching', 'All Candidates', 'Calendar', 'Communications', 'Reports', 'Settings', 'History'];
@@ -149,7 +149,7 @@ const App = () => {
     const [historyOffset, setHistoryOffset] = useState(0);
     const [hasMoreHistory, setHasMoreHistory] = useState(true);
     const [historyUserId, setHistoryUserId] = useState<number | null>(null);
-    const [historyUsers, setHistoryUsers] = useState<Array<{id: number, name: string}>>([]);
+    const [historyUsers, setHistoryUsers] = useState<Array<{ id: number, name: string }>>([]);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
@@ -2095,7 +2095,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
             const queryParams = new URLSearchParams();
             queryParams.append('limit', String(limit));
             queryParams.append('offset', String(offset));
-            
+
             if (search && search.trim()) {
                 queryParams.append('q', search.trim());
             }
@@ -2106,11 +2106,11 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                 if (filterObj.location) queryParams.append('location', filterObj.location);
                 if (filterObj.experience) queryParams.append('experience', filterObj.experience);
             }
-            
+
             console.log('[fetchCandidatesPage] Fetching candidates with query:', queryParams.toString());
             const data = await apiRequest(`/resume/list-candidates?${queryParams.toString()}`);
             console.log('[fetchCandidatesPage] Received data:', data);
-            
+
             const candidates = extractCandidates(data).map(normalizeCandidate);
             console.log('[fetchCandidatesPage] Normalized candidates:', candidates);
             setAllCandidates(candidates);
@@ -2150,17 +2150,17 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         try {
             const role = effectiveUser.role;
             const isAdmin = role === 'super_admin' || role === 'admin' || role.includes('Admin');
-            
+
             // If not admin, always force current user ID
             const finalUserId = !isAdmin ? effectiveUser.id : (userId !== undefined ? userId : historyUserId);
-            
+
             setHistoryOffset(0);
             setHasMoreHistory(true);
             setHistoryUserId(finalUserId ?? null);
-            
+
             let url = '/history/list?limit=20&offset=0';
             if (finalUserId) url += `&user_id=${finalUserId}`;
-            
+
             const data = await apiRequest(url);
             const logs = Array.isArray(data?.history) ? data.history : [];
             setHistoryLog(logs);
@@ -2177,14 +2177,14 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         try {
             const role = effectiveUser.role;
             const isAdmin = role === 'super_admin' || role === 'admin' || role.includes('Admin');
-            
+
             // Ensure even "Load More" respects the role restriction
             const finalUserId = !isAdmin ? effectiveUser.id : historyUserId;
-            
+
             const nextOffset = historyOffset + 20;
             let url = `/history/list?limit=20&offset=${nextOffset}`;
             if (finalUserId) url += `&user_id=${finalUserId}`;
-            
+
             const data = await apiRequest(url);
             const logs = Array.isArray(data?.history) ? data.history : [];
             if (logs.length === 0) {
