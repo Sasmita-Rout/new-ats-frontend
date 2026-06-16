@@ -149,6 +149,7 @@ const App = () => {
     const [historyOffset, setHistoryOffset] = useState(0);
     const [hasMoreHistory, setHasMoreHistory] = useState(true);
     const [historyUserId, setHistoryUserId] = useState<number | null>(null);
+    const [historyUsers, setHistoryUsers] = useState<Array<{id: number, name: string}>>([]);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
@@ -2415,6 +2416,15 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         setSelectedCandidate(null);
     };
 
+    const fetchHistoryUsers = useCallback(async () => {
+        try {
+            const data = await apiRequest('/history/users');
+            setHistoryUsers(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error('Failed to load history users:', error);
+        }
+    }, [apiRequest]);
+
     useEffect(() => {
         if (!effectiveUser?.email) return;
         if (initialDataFetchRef.current) return;
@@ -2423,7 +2433,8 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
         fetchProjects();
         fetchJobs();
         fetchHistory();
-    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs, fetchHistory]);
+        fetchHistoryUsers();
+    }, [effectiveUser?.email, fetchCandidates, fetchProjects, fetchJobs, fetchHistory, fetchHistoryUsers]);
 
     // --- RESUME & CANDIDATE HANDLERS ---
     const handleUpdateCandidate = async (updatedCandidate: Candidate) => {
@@ -3093,7 +3104,7 @@ Qualifications: ${jd.qualifications?.join(', ') || 'N/A'}`;
                     onNavigateTo={handleNavigateTo}
                     currentUser={currentUser!}
                     impersonatedUser={impersonatedUser}
-                    allUsers={users}
+                    allUsers={historyUsers}
                     onLoadMore={handleLoadMoreHistory}
                     hasMore={hasMoreHistory}
                     onFilterByUser={fetchHistory}

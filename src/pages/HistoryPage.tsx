@@ -19,7 +19,7 @@ const HistoryPage = ({
     onNavigateTo: (type: any, id: number) => void,
     currentUser: User,
     impersonatedUser: User | null,
-    allUsers: User[],
+    allUsers: Array<{id: number, name: string}>,
     onLoadMore?: () => void,
     hasMore?: boolean,
     onFilterByUser?: (userId: number | null) => void
@@ -63,16 +63,11 @@ const HistoryPage = ({
     };
 
     const selectableUsers = useMemo(() => {
-        const seen = new Map<number, string>();
-        historyLog.forEach(log => {
-            if (!seen.has(log.userId)) {
-                seen.set(log.userId, log.userName);
-            }
-        });
-        return Array.from(seen.entries())
-            .map(([id, name]) => ({ id, name }))
+        // Filter out the current user from the list of all users to avoid duplication
+        return allUsers
+            .filter(u => u.id !== currentUser.id)
             .sort((a, b) => a.name.localeCompare(b.name));
-    }, [historyLog]);
+    }, [allUsers, currentUser.id]);
 
     return (
         <div className="page-content">
@@ -88,7 +83,7 @@ const HistoryPage = ({
                             <select className="history-user-select" value={selectedUserId} onChange={e => handleUserChange(e.target.value)}>
                                 <option value="all">All Users</option>
                                 <option value={currentUser.id.toString()}>My History</option>
-                                {selectableUsers.filter(u => u.id !== currentUser.id).map(user => (
+                                {selectableUsers.map(user => (
                                     <option key={user.id} value={user.id.toString()}>{user.name}</option>
                                 ))}
                             </select>
