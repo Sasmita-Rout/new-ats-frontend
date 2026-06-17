@@ -10,40 +10,40 @@ const HistoryPage = ({
     currentUser,
     impersonatedUser,
     allUsers,
+    onLoadMore,
+    hasMore,
+    onFilterByUser
 }: { 
     historyLog: HistoryEntry[], 
     effectiveUser: User,
     onNavigateTo: (type: any, id: number) => void,
     currentUser: User,
     impersonatedUser: User | null,
-    allUsers: User[],
+    allUsers: Array<{id: number, name: string}>,
+    onLoadMore?: () => void,
+    hasMore?: boolean,
+    onFilterByUser?: (userId: number | null) => void
 }) => {
-    // Super Admin default view is their own history
-    const [selectedUserId, setSelectedUserId] = useState<string>(currentUser.id.toString());
     const isSuperAdmin = (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role.includes('Admin')) && !impersonatedUser;
+    const [selectedUserId, setSelectedUserId] = useState<string>(isSuperAdmin ? 'all' : effectiveUser.id.toString());
 
     // Reset filter when the view context changes (e.g., stops impersonating)
     useEffect(() => {
-        if (isSuperAdmin) {
-            setSelectedUserId(currentUser.id.toString());
+        if (!isSuperAdmin) {
+            setSelectedUserId(effectiveUser.id.toString());
         }
-    }, [isSuperAdmin, currentUser.id]);
+    }, [isSuperAdmin, effectiveUser.id]);
+
+    const handleUserChange = (userId: string) => {
+        setSelectedUserId(userId);
+        if (onFilterByUser) {
+            onFilterByUser(userId === 'all' ? null : parseInt(userId, 10));
+        }
+    };
 
     const visibleLogs = useMemo(() => {
-        let logs = [...historyLog];
-
-        if (isSuperAdmin) {
-            if (selectedUserId === currentUser.id.toString()) {
-                logs = logs.filter(log => log.userId === currentUser.id);
-            } else if (selectedUserId !== 'all') {
-                logs = logs.filter(log => log.userId === parseInt(selectedUserId, 10));
-            }
-        } else {
-            logs = logs.filter(log => log.userId === effectiveUser.id);
-        }
-
-        return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    }, [historyLog, effectiveUser, isSuperAdmin, selectedUserId, currentUser.id]);
+        return [...historyLog].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }, [historyLog]);
 
     const formatTimestamp = (isoString: string) => {
         return new Date(isoString).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -63,16 +63,18 @@ const HistoryPage = ({
     };
 
     const selectableUsers = useMemo(() => {
-        const seen = new Map<number, string>();
-        historyLog.forEach(log => {
-            if (!seen.has(log.userId)) {
-                seen.set(log.userId, log.userName);
+        // Use a Map to guarantee unique user IDs
+        const uniqueUsersMap = new Map<number, {id: number, name: string}>();
+        
+        allUsers.forEach(user => {
+            if (user.id !== currentUser.id) {
+                uniqueUsersMap.set(user.id, user);
             }
         });
-        return Array.from(seen.entries())
-            .map(([id, name]) => ({ id, name }))
+
+        return Array.from(uniqueUsersMap.values())
             .sort((a, b) => a.name.localeCompare(b.name));
-    }, [historyLog]);
+    }, [allUsers, currentUser.id]);
 
     return (
         <div className="page-content">
@@ -85,10 +87,10 @@ const HistoryPage = ({
                     <div className="actions-group history-actions-group">
                         <div className="filter-group">
                             <label>Filter by User</label>
-                            <select className="history-user-select" value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
-                                <option value={currentUser.id.toString()}>My History</option>
+                            <select className="history-user-select" value={selectedUserId} onChange={e => handleUserChange(e.target.value)}>
                                 <option value="all">All Users</option>
-                                {selectableUsers.filter(u => u.id !== currentUser.id).map(user => (
+                                <option value={currentUser.id.toString()}>My History</option>
+                                {selectableUsers.map(user => (
                                     <option key={user.id} value={user.id.toString()}>{user.name}</option>
                                 ))}
                             </select>
@@ -135,6 +137,13 @@ const HistoryPage = ({
                         )}
                      </tbody>
                  </table>
+                 {hasMore && (
+                     <div style={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
+                         <button className="btn btn-secondary" onClick={onLoadMore}>
+                             Load More
+                         </button>
+                     </div>
+                 )}
             </div>
         </div>
     );

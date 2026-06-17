@@ -193,9 +193,11 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                             />
                             <label htmlFor="select-all-jobs-checkbox">{selectedJobIds.length} job(s) selected</label>
                         </div>
-                        <button className="btn btn-danger" onClick={handleDeleteSelectedJobs}>
-                            <span className="material-symbols-outlined">delete_sweep</span> Delete Selected
-                        </button>
+                        {showOwner && (
+                            <button className="btn btn-danger" onClick={handleDeleteSelectedJobs}>
+                                <span className="material-symbols-outlined">delete_sweep</span> Delete Selected
+                            </button>
+                        )}
                     </>
                 ) : (
                     <>
@@ -270,6 +272,7 @@ const ProjectDetailPage = ({ project, jobsForProject, onBack, onJobSelect, onJob
                                                                     onSelect={handleSelectJob}
                                                                     onDelete={handleDeleteJob}
                                                                     showOwner={showOwner}
+                                                                    canDelete={showOwner}
                                                                  />                                {analyzingJobId === job.id && (
                                     <InlineATSAnalysis
                                         job={job}
