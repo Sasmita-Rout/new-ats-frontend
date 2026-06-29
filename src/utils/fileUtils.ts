@@ -28,7 +28,10 @@ export const downloadResumeText = (candidate: Candidate) => {
     URL.revokeObjectURL(url);
 };
 
-export const downloadOriginalResume = (candidate: Candidate) => {
+const ATS_BACKEND_BASE_URL = "https://intranet.accionlabs.com/atsbackend";
+//const ATS_BACKEND_BASE_URL = "http://localhost:8003";
+
+export const downloadOriginalResume = async (candidate: Candidate) => {
     if (candidate.originalResumeFile) {
         const url = URL.createObjectURL(candidate.originalResumeFile);
         const a = document.createElement('a');
@@ -42,8 +45,30 @@ export const downloadOriginalResume = (candidate: Candidate) => {
     }
 
     if (candidate.email) {
-        const vaultUrl = `${RESUME_VAULT_BASE_URL}/api/v1/resumes/download/${encodeURIComponent(candidate.email)}`;
-        window.open(vaultUrl, '_blank');
+        try {
+            const response = await fetch(`${ATS_BACKEND_BASE_URL}/candidate-resumes?email=${encodeURIComponent(candidate.email)}`, {
+                method: 'GET',
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.filenames && data.filenames.length > 0) {
+                    window.open(data.filenames[0], '_blank');
+                } else {
+                    console.error('No resume files found for this candidate.');
+                    alert('No resume files found for this candidate.');
+                }
+            } else {
+                console.error('Failed to fetch resume:', response.statusText);
+                alert('Failed to fetch resume.');
+            }
+        } catch (error) {
+            console.error('Error fetching resume:', error);
+            alert('Error fetching resume.');
+        }
     }
 };
 
