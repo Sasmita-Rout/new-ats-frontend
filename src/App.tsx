@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { GoogleGenAI, Type, FunctionDeclaration, Chat, GenerateContentResponse, Tool } from "@google/genai";
@@ -51,6 +51,28 @@ const ATS_SSO_APP_NAME = ('accion_talent_search').toLowerCase();
 //const RESUME_VAULT_BASE_URL = import.meta.env.VITE_RESUME_VAULT_BASE_URL || 'https://13.233.241.103/resume_vault';
 //const RESUME_VAULT_BASE_URL = 'http://localhost:8002/resume_vault';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+
+// --- Global Fetch Override for Authentication ---
+// This intercepts every fetch call in the app and automatically attaches cookies and tokens
+const originalFetch = window.fetch;
+window.fetch = async (...args) => {
+    let [resource, config] = args;
+    config = config || {};
+    
+    // Automatically include credentials for ALL requests (sends SSO cookies)
+    config.credentials = 'include';
+
+    // If the intranet app saves the token in localStorage, attach it
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('ssoToken');
+    if (token) {
+        config.headers = {
+            ...config.headers,
+            'Authorization': `Bearer ${token}`
+        };
+    }
+
+    return originalFetch(resource, config);
+};
 
 const API_BASE_URL = "https://intranet.accionlabs.com/recruiter-tool";
 const SSO_API_URL = "https://intranet.accionlabs.com/sso_backend"
@@ -110,7 +132,7 @@ async function getCurrentUserSession(): Promise<{ email: string; name?: string; 
         });
 
         if (response.ok) {
-            const data = await response.json();
+            const data: any = await response.json();
             if (data.authenticated && data.email) {
                 const apps = Array.isArray(data.apps) ? data.apps : [];
                 const atsApp = apps.find((app: any) => {
